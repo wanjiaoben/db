@@ -493,7 +493,6 @@ footer {
   50% { opacity: 1; }
 }
 </style>
-<script src="config.js"></script>
 </head>
 <body>
 
@@ -577,43 +576,43 @@ footer {
     <div class="update-time" id="sns-time">等待数据上报</div>
   </div>
 
-  <!-- 4. GitHub 网站 -->
+  <!-- 4. 网站访问量 -->
   <div class="card blue">
     <div class="card-head">
       <div class="card-meta">
         <span class="card-icon">⬡</span>
-        <div class="card-title">GitHub 网站</div>
+        <div class="card-title">网站访问量</div>
       </div>
-      <span class="badge badge-active" id="gh-badge">同步中</span>
+      <span class="badge badge-active" id="gh-badge">今日</span>
     </div>
     <div class="row-list" id="gh-list">
       <div class="row-item">
         <span class="row-name">bjt.nice.okinawa</span>
-        <span class="row-meta" id="gh-bjt">读取中</span>
+        <span class="row-meta" id="gh-bjt">— 访客</span>
         <span class="tag tag-wip" id="gh-bjt-tag">—</span>
       </div>
       <div class="row-item">
         <span class="row-name">snorkel.nice.okinawa</span>
-        <span class="row-meta" id="gh-snorkel">读取中</span>
+        <span class="row-meta" id="gh-snorkel">— 访客</span>
         <span class="tag tag-wip" id="gh-snorkel-tag">—</span>
       </div>
       <div class="row-item">
         <span class="row-name">fishing.nice.okinawa</span>
-        <span class="row-meta" id="gh-fishing">读取中</span>
+        <span class="row-meta" id="gh-fishing">— 访客</span>
         <span class="tag tag-wip" id="gh-fishing-tag">—</span>
       </div>
       <div class="row-item">
         <span class="row-name">golf.nice.okinawa</span>
-        <span class="row-meta" id="gh-golf">读取中</span>
+        <span class="row-meta" id="gh-golf">— 访客</span>
         <span class="tag tag-wip" id="gh-golf-tag">—</span>
       </div>
       <div class="row-item">
         <span class="row-name">lab.nice.okinawa</span>
-        <span class="row-meta" id="gh-lab">读取中</span>
+        <span class="row-meta" id="gh-lab">— 访客</span>
         <span class="tag tag-wip" id="gh-lab-tag">—</span>
       </div>
     </div>
-    <div class="update-time" id="gh-time">通过GitHub API读取</div>
+    <div class="update-time" id="gh-time">等待GA数据</div>
   </div>
 
   <!-- 2. Kindle 书籍 -->
@@ -871,29 +870,30 @@ const REPOS = [
   { id: 'gh-lab',     name: 'lab',     tagId: 'gh-lab-tag' },
 ];
 
-const GH_TOKEN = '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';
+const GH_TOKEN = window.GH_TOKEN || '';
 
-async function loadGitHub() {
-  for (const repo of REPOS) {
-    try {
-      const r = await fetch(`https://api.github.com/repos/${GH_USER}/${repo.name}`, {
-        headers: { 'Authorization': `token ${GH_TOKEN}` }
-      });
-      if (!r.ok) throw new Error('not found');
-      const d = await r.json();
-      const pushed = new Date(d.pushed_at);
-      const diff = Math.floor((Date.now() - pushed) / 86400000);
-      const timeStr = diff === 0 ? '今天' : diff === 1 ? '昨天' : `${diff}天前`;
-      document.getElementById(repo.id).textContent = timeStr;
-      document.getElementById(repo.tagId).textContent = 'active';
-      document.getElementById(repo.tagId).className = 'tag tag-new';
-    } catch {
-      document.getElementById(repo.id).textContent = '未找到';
-      document.getElementById(repo.tagId).textContent = '—';
-      document.getElementById(repo.tagId).className = 'tag tag-done';
+function applyGAData(d) {
+  const sites = d.sites || {};
+  const siteMap = {
+    'bjt.nice.okinawa':     { meta: 'gh-bjt',     tag: 'gh-bjt-tag' },
+    'snorkel.nice.okinawa': { meta: 'gh-snorkel',  tag: 'gh-snorkel-tag' },
+    'fishing.nice.okinawa': { meta: 'gh-fishing',  tag: 'gh-fishing-tag' },
+    'golf.nice.okinawa':    { meta: 'gh-golf',     tag: 'gh-golf-tag' },
+    'lab.nice.okinawa':     { meta: 'gh-lab',      tag: 'gh-lab-tag' },
+  };
+  for (const [site, ids] of Object.entries(siteMap)) {
+    const data = sites[site] || {};
+    const today = data.today || {};
+    const users = today.users || 0;
+    const pv = today.pageviews || 0;
+    setVal(ids.meta, `${users} 访客 · ${pv} 浏览`);
+    const tagEl = document.getElementById(ids.tag);
+    if (tagEl) {
+      tagEl.textContent = users > 0 ? '有流量' : '待流量';
+      tagEl.className = users > 0 ? 'tag tag-new' : 'tag tag-done';
     }
   }
-  document.getElementById('gh-time').textContent = `GitHub API · ${new Date().toLocaleTimeString('zh-CN')}`;
+  setVal('gh-time', '更新于 ' + (d.updated || '—'));
 }
 
 // ── 读取本地status JSON ──
@@ -906,28 +906,25 @@ async function loadStatus() {
   // Mac 数据
   try {
     const r = await fetch(DATA_BASE + 'status-mac.json?t=' + Date.now());
-    if (r.ok) {
-      const d = await r.json();
-      applyMacData(d);
-    }
+    if (r.ok) { const d = await r.json(); applyMacData(d); }
   } catch {}
 
   // PC 数据
   try {
     const r = await fetch(DATA_BASE + 'status-pc.json?t=' + Date.now());
-    if (r.ok) {
-      const d = await r.json();
-      applyPCData(d);
-    }
+    if (r.ok) { const d = await r.json(); applyPCData(d); }
   } catch {}
 
   // 小粉数据
   try {
     const r = await fetch(DATA_BASE + 'status-coco.json?t=' + Date.now());
-    if (r.ok) {
-      const d = await r.json();
-      applyCocoData(d);
-    }
+    if (r.ok) { const d = await r.json(); applyCocoData(d); }
+  } catch {}
+
+  // GA 数据
+  try {
+    const r = await fetch(DATA_BASE + 'status-ga.json?t=' + Date.now());
+    if (r.ok) { const d = await r.json(); applyGAData(d); }
   } catch {}
 }
 
