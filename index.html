@@ -870,10 +870,14 @@ const REPOS = [
   { id: 'gh-lab',     name: 'lab',     tagId: 'gh-lab-tag' },
 ];
 
+const GH_TOKEN = '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';
+
 async function loadGitHub() {
   for (const repo of REPOS) {
     try {
-      const r = await fetch(`https://api.github.com/repos/${GH_USER}/${repo.name}`);
+      const r = await fetch(`https://api.github.com/repos/${GH_USER}/${repo.name}`, {
+        headers: { 'Authorization': `token ${GH_TOKEN}` }
+      });
       if (!r.ok) throw new Error('not found');
       const d = await r.json();
       const pushed = new Date(d.pushed_at);
