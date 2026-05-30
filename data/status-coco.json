@@ -1,0 +1,19 @@
+{
+  "updated": "2026-05-30 21:40",
+  "queue": 0,
+  "inbox_new": 0,
+  "published": {
+    "this_month": 105,
+    "last_night": 18,
+    "platforms": {
+      "other": 85,
+      "twitter": 13,
+      "instagram": 7
+    }
+  },
+  "last_night_detail": {
+    "other": {
+      "count": 18
+    }
+  }
+}
