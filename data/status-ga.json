@@ -1,0 +1,90 @@
+{
+  "updated": "2026-05-30 22:08",
+  "sites": {
+    "bjt.nice.okinawa": {
+      "today": {
+        "users": 0,
+        "sessions": 0,
+        "pageviews": 0
+      },
+      "yesterday": {
+        "users": 0,
+        "sessions": 0,
+        "pageviews": 0
+      },
+      "this_month": {
+        "users": 0,
+        "sessions": 0,
+        "pageviews": 0
+      }
+    },
+    "snorkel.nice.okinawa": {
+      "today": {
+        "users": 0,
+        "sessions": 0,
+        "pageviews": 0
+      },
+      "yesterday": {
+        "users": 0,
+        "sessions": 0,
+        "pageviews": 0
+      },
+      "this_month": {
+        "users": 0,
+        "sessions": 0,
+        "pageviews": 0
+      }
+    },
+    "fishing.nice.okinawa": {
+      "today": {
+        "users": 0,
+        "sessions": 0,
+        "pageviews": 0
+      },
+      "yesterday": {
+        "users": 0,
+        "sessions": 0,
+        "pageviews": 0
+      },
+      "this_month": {
+        "users": 0,
+        "sessions": 0,
+        "pageviews": 0
+      }
+    },
+    "golf.nice.okinawa": {
+      "today": {
+        "users": 0,
+        "sessions": 0,
+        "pageviews": 0
+      },
+      "yesterday": {
+        "users": 0,
+        "sessions": 0,
+        "pageviews": 0
+      },
+      "this_month": {
+        "users": 0,
+        "sessions": 0,
+        "pageviews": 0
+      }
+    },
+    "lab.nice.okinawa": {
+      "today": {
+        "users": 0,
+        "sessions": 0,
+        "pageviews": 0
+      },
+      "yesterday": {
+        "users": 0,
+        "sessions": 0,
+        "pageviews": 0
+      },
+      "this_month": {
+        "users": 0,
+        "sessions": 0,
+        "pageviews": 0
+      }
+    }
+  }
+}
