@@ -232,6 +232,59 @@ async function summary(request, env) {
     LIMIT 60
   `, [since, ...(selectedSite ? [selectedSite] : [])]);
 
+  const pageRows = await all(env.DB, `
+    WITH page_views AS (
+      SELECT site, path, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions, COUNT(DISTINCT visitor_id) AS visitors
+      FROM events
+      WHERE created_at >= ?${filterClause} AND type='page_view'
+      GROUP BY site, path
+    ),
+    source_rank AS (
+      SELECT site, path, source, COUNT(*) AS views,
+        ROW_NUMBER() OVER (PARTITION BY site, path ORDER BY COUNT(*) DESC) AS rn
+      FROM events
+      WHERE created_at >= ?${filterClause} AND type='page_view'
+      GROUP BY site, path, source
+    ),
+    lang_rank AS (
+      SELECT site, path, lang, COUNT(*) AS views,
+        ROW_NUMBER() OVER (PARTITION BY site, path ORDER BY COUNT(*) DESC) AS rn
+      FROM events
+      WHERE created_at >= ?${filterClause} AND type='page_view'
+      GROUP BY site, path, lang
+    ),
+    contacts AS (
+      SELECT site, path, COUNT(*) AS clicks
+      FROM events
+      WHERE created_at >= ?${filterClause} AND type='click' AND event_name LIKE 'contact_%'
+      GROUP BY site, path
+    ),
+    leave_stats AS (
+      SELECT site, path, ROUND(AVG(duration_ms)) AS avg_duration_ms, ROUND(AVG(max_scroll)) AS avg_scroll
+      FROM events
+      WHERE created_at >= ?${filterClause} AND type='page_leave'
+      GROUP BY site, path
+    )
+    SELECT
+      pv.site,
+      pv.path,
+      pv.views,
+      pv.sessions,
+      pv.visitors,
+      COALESCE(sr.source, '') AS top_source,
+      COALESCE(lr.lang, '') AS top_lang,
+      COALESCE(c.clicks, 0) AS contact_clicks,
+      ls.avg_duration_ms,
+      ls.avg_scroll
+    FROM page_views pv
+    LEFT JOIN source_rank sr ON sr.site = pv.site AND sr.path = pv.path AND sr.rn = 1
+    LEFT JOIN lang_rank lr ON lr.site = pv.site AND lr.path = pv.path AND lr.rn = 1
+    LEFT JOIN contacts c ON c.site = pv.site AND c.path = pv.path
+    LEFT JOIN leave_stats ls ON ls.site = pv.site AND ls.path = pv.path
+    ORDER BY pv.views DESC
+    LIMIT 100
+  `, [since, ...filterParams, since, ...filterParams, since, ...filterParams, since, ...filterParams, since, ...filterParams]);
+
   const sites = await all(env.DB, `
     SELECT site, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
     FROM events
@@ -313,6 +366,7 @@ async function summary(request, env) {
     today: todayTotals,
     sites,
     pages,
+    page_rows: pageRows,
     sources,
     sections,
     contacts,

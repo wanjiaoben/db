@@ -78,7 +78,7 @@ td button {
 }
 main {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 8px;
   max-width: none;
   margin: 0;
@@ -90,19 +90,9 @@ main {
 }
 .metrics {
   grid-column: 1 / -1;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 .error {
   grid-column: 1 / -1;
-}
-.grid:not(.metrics) {
-  display: contents;
-}
-.two {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-.three {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .card {
   background: var(--panel);
@@ -110,26 +100,8 @@ main {
   border-radius: 6px;
   padding: 9px;
   min-width: 0;
-  max-height: 172px;
+  max-height: 64vh;
   overflow: auto;
-}
-.metric {
-  max-height: none;
-}
-.metric .label {
-  color: var(--muted);
-  font-size: 11px;
-}
-.metric .value {
-  margin-top: 4px;
-  font-size: 22px;
-  line-height: 1;
-  font-weight: 700;
-}
-.metric .hint {
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: 10px;
 }
 h2 {
   position: sticky;
@@ -144,18 +116,23 @@ h2 {
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 11px;
+  font-size: 12px;
 }
 th, td {
-  padding: 5px 0;
+  padding: 6px 8px;
   border-bottom: 1px solid #ece6da;
   text-align: left;
   vertical-align: top;
 }
 th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--panel);
   color: var(--muted);
   font-weight: 600;
 }
+tr:hover td { background: #fbf7ee; }
 td.num, th.num { text-align: right; }
 .bar {
   height: 6px;
@@ -204,8 +181,6 @@ td.num, th.num { text-align: right; }
   header { align-items: flex-start; flex-direction: column; }
   .controls { justify-content: flex-start; }
   main { grid-template-columns: 1fr; }
-  .metrics, .two, .three { grid-template-columns: 1fr; }
-  .grid:not(.metrics) { display: grid; }
   .card { max-height: none; }
 }
 </style>
@@ -239,61 +214,24 @@ td.num, th.num { text-align: right; }
 <main>
   <div class="error" id="error"></div>
 
-  <section class="grid metrics">
-    <div class="card metric"><div class="label">实时在线</div><div class="value" id="online">-</div><div class="hint">最近 5 分钟活跃 session</div></div>
-    <div class="card metric"><div class="label">今日访问</div><div class="value" id="todayViews">-</div><div class="hint">今日 page view</div></div>
-    <div class="card metric"><div class="label">区间访问</div><div class="value" id="views">-</div><div class="hint">所选日期内 page view</div></div>
-    <div class="card metric"><div class="label">访客</div><div class="value" id="visitors">-</div><div class="hint">去重 visitor</div></div>
-    <div class="card metric"><div class="label">平均停留</div><div class="value" id="duration">-</div><div class="hint">基于离开页面事件</div></div>
-    <div class="card metric"><div class="label">平均滚动</div><div class="value" id="scroll">-</div><div class="hint">看到了页面百分比</div></div>
+  <section class="card metrics">
+    <table>
+      <thead><tr><th>实时在线</th><th>今日访问</th><th>区间访问</th><th>访客</th><th>平均停留</th><th>平均滚动</th></tr></thead>
+      <tbody><tr><td id="online">-</td><td id="todayViews">-</td><td id="views">-</td><td id="visitors">-</td><td id="duration">-</td><td id="scroll">-</td></tr></tbody>
+    </table>
   </section>
 
-  <section class="grid two" style="margin-top:14px">
-    <div class="card">
-      <h2>站点排行</h2>
-      <table><thead><tr><th>站点</th><th class="num">访问</th><th class="num">Session</th></tr></thead><tbody id="sites"></tbody></table>
-    </div>
-    <div class="card">
-      <h2>来源排行</h2>
-      <table><thead><tr><th>来源</th><th>媒介</th><th class="num">访问</th><th class="num">Session</th></tr></thead><tbody id="sources"></tbody></table>
-    </div>
+  <section class="card">
+    <h2>页面总表</h2>
+    <table>
+      <thead><tr><th>站点</th><th>页面</th><th class="num">访问</th><th class="num">Session</th><th class="num">访客</th><th>主来源</th><th>语言</th><th class="num">联系</th><th class="num">停留</th><th class="num">滚动</th></tr></thead>
+      <tbody id="pageTable"></tbody>
+    </table>
   </section>
 
-  <section class="grid two" style="margin-top:14px">
-    <div class="card">
-      <h2>页面排行</h2>
-      <table><thead><tr><th>站点</th><th>页面</th><th class="num">访问</th><th class="num">Session</th></tr></thead><tbody id="pages"></tbody></table>
-    </div>
-    <div class="card">
-      <h2>实时日志</h2>
-      <table><thead><tr><th>时间</th><th>站点</th><th>事件</th><th>页面</th><th>来源</th><th>细节</th></tr></thead><tbody id="recent"></tbody></table>
-    </div>
-  </section>
-
-  <section class="grid three" style="margin-top:14px">
-    <div class="card">
-      <h2>语言页面</h2>
-      <table><thead><tr><th>语言</th><th class="num">访问</th><th class="num">Session</th></tr></thead><tbody id="languages"></tbody></table>
-    </div>
-    <div class="card">
-      <h2>联系按钮</h2>
-      <table><thead><tr><th>按钮</th><th class="num">点击</th></tr></thead><tbody id="contacts"></tbody></table>
-    </div>
-    <div class="card">
-      <h2>设备</h2>
-      <table><thead><tr><th>设备</th><th class="num">访问</th></tr></thead><tbody id="devices"></tbody></table>
-    </div>
-  </section>
-
-  <section class="grid two" style="margin-top:14px">
-    <div class="card">
-      <h2>页面区域</h2>
-      <table><thead><tr><th>区域</th><th class="num">查看</th><th class="num">平均停留</th></tr></thead><tbody id="sections"></tbody></table>
-    </div>
-    <div class="card">
-      <h2>国家/地区</h2>
-      <table><thead><tr><th>国家/地区</th><th class="num">访问</th></tr></thead><tbody id="countries"></tbody></table>
-    </div>
+  <section class="card">
+    <h2>实时日志</h2>
+    <table><thead><tr><th>时间</th><th>站点</th><th>事件</th><th>页面</th><th>来源</th><th>细节</th></tr></thead><tbody id="recent"></tbody></table>
   </section>
 
 </main>
@@ -398,44 +336,17 @@ async function load() {
     updateSiteOptions(data.sites);
     updatePageOptions(data.pages);
 
-    renderRows('sites', data.sites, (r) => row([
-      '<button type="button" data-site="' + escapeHtml(r.site || '') + '">' + escapeHtml(r.site || '-') + '</button>',
-      { html: n(r.views), num: true },
-      { html: n(r.sessions), num: true }
-    ]));
-    renderRows('sources', data.sources, (r) => row([
-      escapeHtml(r.source || '-'),
-      escapeHtml(r.medium || '-'),
-      { html: n(r.views), num: true },
-      { html: n(r.sessions), num: true }
-    ]));
-    renderRows('pages', data.pages, (r) => row([
+    renderRows('pageTable', data.page_rows, (r) => row([
       '<button type="button" data-site="' + escapeHtml(r.site || '') + '">' + escapeHtml(r.site || '-') + '</button>',
       '<button type="button" data-path="' + escapeHtml(r.path || '/') + '">' + escapeHtml(r.path || '/') + '</button>',
       { html: n(r.views), num: true },
-      { html: n(r.sessions), num: true }
-    ]));
-    renderRows('languages', data.languages, (r) => row([
-      escapeHtml(r.lang || '-'),
-      { html: n(r.views), num: true },
-      { html: n(r.sessions), num: true }
-    ]));
-    renderRows('contacts', data.contacts, (r) => row([
-      escapeHtml((r.event_name || '').replace('contact_', '') + (r.label ? ' · ' + r.label : '')),
-      { html: n(r.clicks), num: true }
-    ]));
-    renderRows('devices', data.devices, (r) => row([
-      escapeHtml(r.device || '-'),
-      { html: n(r.views), num: true }
-    ]));
-    renderRows('sections', data.sections, (r) => row([
-      escapeHtml(r.section || '-'),
-      { html: n(r.views), num: true },
-      { html: seconds(r.avg_duration_ms), num: true }
-    ]));
-    renderRows('countries', data.countries, (r) => row([
-      escapeHtml(r.country || '-'),
-      { html: n(r.views), num: true }
+      { html: n(r.sessions), num: true },
+      { html: n(r.visitors), num: true },
+      escapeHtml(r.top_source || '-'),
+      escapeHtml(r.top_lang || '-'),
+      { html: n(r.contact_clicks), num: true },
+      { html: seconds(r.avg_duration_ms), num: true },
+      { html: r.avg_scroll ? Math.round(r.avg_scroll) + '%' : '-', num: true }
     ]));
     renderRows('recent', data.recent, (r) => row([
       escapeHtml(new Date(r.created_at).toLocaleTimeString()),
@@ -470,16 +381,7 @@ $('pageFilter').addEventListener('change', () => {
   selectedPage = $('pageFilter').value;
   load();
 });
-$('sites').addEventListener('click', (event) => {
-  const button = event.target.closest('button[data-site]');
-  if (!button) return;
-  $('siteFilter').value = button.dataset.site;
-  $('pageFilter').value = '';
-  selectedSite = button.dataset.site;
-  selectedPage = '';
-  load();
-});
-$('pages').addEventListener('click', (event) => {
+$('pageTable').addEventListener('click', (event) => {
   const button = event.target.closest('button[data-path]');
   const siteButton = event.target.closest('button[data-site]');
   if (siteButton) {
