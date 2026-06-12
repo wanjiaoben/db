@@ -68,6 +68,14 @@ button {
   color: white;
   border-color: var(--ink);
 }
+td button {
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--blue);
+  text-align: left;
+}
 main {
   max-width: 1320px;
   margin: 0 auto;
@@ -192,6 +200,9 @@ td.num, th.num { text-align: right; }
       <option value="30">最近 30 天</option>
       <option value="90">最近 90 天</option>
     </select>
+    <select id="pageFilter">
+      <option value="">全部页面</option>
+    </select>
     <input id="key" type="password" placeholder="Dashboard key">
     <button id="saveKey">保存</button>
     <button id="refresh">刷新</button>
@@ -257,6 +268,7 @@ td.num, th.num { text-align: right; }
 const API = 'https://analytics.nice.okinawa/summary';
 const $ = (id) => document.getElementById(id);
 const fmt = new Intl.NumberFormat('ja-JP');
+let selectedPage = '';
 
 function n(value) {
   return fmt.format(Number(value || 0));
@@ -287,13 +299,31 @@ function renderRows(id, rows, mapper) {
   body.innerHTML = rows.map(mapper).join('');
 }
 
+function updatePageOptions(pages) {
+  const current = $('pageFilter').value || selectedPage;
+  const known = new Set(['']);
+  const options = ['<option value="">全部页面</option>'];
+  (pages || []).forEach((page) => {
+    const path = page.path || '/';
+    if (known.has(path)) return;
+    known.add(path);
+    options.push('<option value="' + escapeHtml(path) + '">' + escapeHtml(path) + '</option>');
+  });
+  $('pageFilter').innerHTML = options.join('');
+  $('pageFilter').value = known.has(current) ? current : '';
+  selectedPage = $('pageFilter').value;
+}
+
 async function load() {
   $('error').style.display = 'none';
   $('status').textContent = '连接中';
   const key = localStorage.getItem('nice_dashboard_key') || '';
   const days = $('days').value || '7';
+  const path = $('pageFilter').value || '';
+  const qs = new URLSearchParams({ days });
+  if (path) qs.set('path', path);
   try {
-    const res = await fetch(API + '?days=' + encodeURIComponent(days), {
+    const res = await fetch(API + '?' + qs.toString(), {
       headers: key ? { 'x-dashboard-key': key } : {}
     });
     const data = await res.json();
@@ -306,7 +336,8 @@ async function load() {
     $('visitors').textContent = n(totals.visitors);
     $('duration').textContent = seconds(totals.avg_duration_ms);
     $('scroll').textContent = totals.avg_scroll ? Math.round(totals.avg_scroll) + '%' : '-';
-    $('status').textContent = '已更新 ' + new Date(data.generated_at).toLocaleTimeString();
+    $('status').textContent = (path ? path + ' · ' : '') + '已更新 ' + new Date(data.generated_at).toLocaleTimeString();
+    updatePageOptions(data.pages);
 
     renderRows('sources', data.sources, (r) => row([
       escapeHtml(r.source || '-'),
@@ -315,7 +346,7 @@ async function load() {
       { html: n(r.sessions), num: true }
     ]));
     renderRows('pages', data.pages, (r) => row([
-      escapeHtml(r.path || '/'),
+      '<button type="button" data-path="' + escapeHtml(r.path || '/') + '">' + escapeHtml(r.path || '/') + '</button>',
       { html: n(r.views), num: true },
       { html: n(r.sessions), num: true }
     ]));
@@ -352,7 +383,9 @@ async function load() {
     ]));
   } catch (e) {
     $('status').textContent = '连接失败';
-    $('error').textContent = e.message + '。确认 Worker 已部署，DASHBOARD_KEY 正确。';
+    $('error').textContent = e.message === 'unauthorized'
+      ? 'unauthorized。右上角 Dashboard key 没有保存，或保存的是旧 key。请重新粘贴最新 key 后点保存。'
+      : e.message + '。确认 Worker 已部署，DASHBOARD_KEY 正确。';
     $('error').style.display = 'block';
   }
 }
@@ -363,6 +396,17 @@ $('saveKey').addEventListener('click', () => {
 });
 $('refresh').addEventListener('click', load);
 $('days').addEventListener('change', load);
+$('pageFilter').addEventListener('change', () => {
+  selectedPage = $('pageFilter').value;
+  load();
+});
+$('pages').addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-path]');
+  if (!button) return;
+  $('pageFilter').value = button.dataset.path;
+  selectedPage = button.dataset.path;
+  load();
+});
 $('key').value = localStorage.getItem('nice_dashboard_key') || '';
 load();
 setInterval(load, 30000);

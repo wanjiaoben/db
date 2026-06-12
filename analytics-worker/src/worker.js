@@ -165,6 +165,9 @@ async function summary(request, env) {
 
   const url = new URL(request.url);
   const days = Math.min(Math.max(Number(url.searchParams.get('days') || 7), 1), 90);
+  const selectedPath = clean(url.searchParams.get('path'), 300);
+  const pathClause = selectedPath ? ' AND path = ?' : '';
+  const pathParams = selectedPath ? [selectedPath] : [];
   const since = new Date(Date.now() - days * 86400000).toISOString();
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
@@ -180,8 +183,8 @@ async function summary(request, env) {
       ROUND(AVG(CASE WHEN type='page_leave' AND duration_ms IS NOT NULL THEN duration_ms END)) AS avg_duration_ms,
       ROUND(AVG(CASE WHEN type='page_leave' AND max_scroll IS NOT NULL THEN max_scroll END)) AS avg_scroll
     FROM events
-    WHERE created_at >= ?
-  `, [since]);
+    WHERE created_at >= ?${pathClause}
+  `, [since, ...pathParams]);
 
   const todayTotals = await first(env.DB, `
     SELECT
@@ -189,14 +192,14 @@ async function summary(request, env) {
       COUNT(DISTINCT CASE WHEN type='page_view' THEN session_id END) AS sessions,
       COUNT(DISTINCT CASE WHEN type='page_view' THEN visitor_id END) AS visitors
     FROM events
-    WHERE created_at >= ?
-  `, [todayIso]);
+    WHERE created_at >= ?${pathClause}
+  `, [todayIso, ...pathParams]);
 
   const online = await first(env.DB, `
     SELECT COUNT(DISTINCT session_id) AS sessions
     FROM events
-    WHERE created_at >= ?
-  `, [onlineSince]);
+    WHERE created_at >= ?${pathClause}
+  `, [onlineSince, ...pathParams]);
 
   const pages = await all(env.DB, `
     SELECT path, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
@@ -210,66 +213,68 @@ async function summary(request, env) {
   const sources = await all(env.DB, `
     SELECT source, medium, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
     FROM events
-    WHERE created_at >= ? AND type='page_view'
+    WHERE created_at >= ?${pathClause} AND type='page_view'
     GROUP BY source, medium
     ORDER BY views DESC
     LIMIT 20
-  `, [since]);
+  `, [since, ...pathParams]);
 
   const sections = await all(env.DB, `
     SELECT section, COUNT(*) AS views, ROUND(AVG(duration_ms)) AS avg_duration_ms
     FROM events
-    WHERE created_at >= ? AND section <> ''
+    WHERE created_at >= ?${pathClause} AND section <> ''
     GROUP BY section
     ORDER BY views DESC
     LIMIT 20
-  `, [since]);
+  `, [since, ...pathParams]);
 
   const contacts = await all(env.DB, `
     SELECT event_name, label, COUNT(*) AS clicks
     FROM events
-    WHERE created_at >= ? AND type='click' AND event_name LIKE 'contact_%'
+    WHERE created_at >= ?${pathClause} AND type='click' AND event_name LIKE 'contact_%'
     GROUP BY event_name, label
     ORDER BY clicks DESC
     LIMIT 20
-  `, [since]);
+  `, [since, ...pathParams]);
 
   const languages = await all(env.DB, `
     SELECT lang, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
     FROM events
-    WHERE created_at >= ? AND type='page_view'
+    WHERE created_at >= ?${pathClause} AND type='page_view'
     GROUP BY lang
     ORDER BY views DESC
     LIMIT 20
-  `, [since]);
+  `, [since, ...pathParams]);
 
   const countries = await all(env.DB, `
     SELECT country, COUNT(*) AS views
     FROM events
-    WHERE created_at >= ? AND type='page_view' AND country <> ''
+    WHERE created_at >= ?${pathClause} AND type='page_view' AND country <> ''
     GROUP BY country
     ORDER BY views DESC
     LIMIT 20
-  `, [since]);
+  `, [since, ...pathParams]);
 
   const devices = await all(env.DB, `
     SELECT device, COUNT(*) AS views
     FROM events
-    WHERE created_at >= ? AND type='page_view'
+    WHERE created_at >= ?${pathClause} AND type='page_view'
     GROUP BY device
     ORDER BY views DESC
-  `, [since]);
+  `, [since, ...pathParams]);
 
   const recent = await all(env.DB, `
     SELECT created_at, type, path, source, country, device, lang, event_name, section, duration_ms, max_scroll
     FROM events
+    WHERE created_at >= ?${pathClause}
     ORDER BY created_at DESC
     LIMIT 50
-  `);
+  `, [since, ...pathParams]);
 
   return json({
     ok: true,
     days,
+    selected_path: selectedPath,
     generated_at: new Date().toISOString(),
     online: online?.sessions || 0,
     totals,
