@@ -1,0 +1,12 @@
+name = "nice-analytics"
+main = "src/worker.js"
+compatibility_date = "2026-06-12"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "nice_analytics"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[vars]
+ALLOWED_ORIGIN = "https://translation.nice.okinawa"
+DASHBOARD_ORIGIN = "https://db.nice.okinawa"

@@ -3,1054 +3,369 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>工作台</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600&family=DM+Mono:ital,wght@0,300;0,400;1,300&family=Shippori+Mincho:wght@400;600&display=swap" rel="stylesheet">
+<title>Nice Okinawa Analytics</title>
 <style>
 :root {
-  --bg: #0a1210;
-  --s1: #0f1a16;
-  --s2: #152018;
-  --s3: #1c2a22;
-  --border: #1e3028;
-  --border2: #2a4035;
-  --text: #e8f0ec;
-  --dim: #9abfaa;
-  --muted: #6a9080;
-  --gold: #d4b46e;
-  --gold2: #e8c88a;
-  --green: #5dd4a0;
-  --blue: #7aaac4;
-  --rose: #d48888;
-  --purple: #a898d0;
-  --orange: #d4a070;
-  --teal: #4ec4b0;
+  --bg: #f6f4ef;
+  --panel: #fffefa;
+  --ink: #1d2520;
+  --muted: #647067;
+  --line: #ddd6c8;
+  --green: #0f8b64;
+  --blue: #2b6b9f;
+  --red: #b94c4c;
+  --gold: #a7792a;
 }
-
-* { margin:0; padding:0; box-sizing:border-box; }
-
-html { scroll-behavior: smooth; }
-
+* { box-sizing: border-box; }
 body {
+  margin: 0;
   background: var(--bg);
-  color: var(--text);
-  font-family: 'Noto Serif SC', serif;
-  min-height: 100vh;
-  overflow-x: hidden;
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
-
-/* 噪点纹理 */
-body::before {
-  content:'';
-  position:fixed;
-  inset:0;
-  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
-  opacity:0.025;
-  pointer-events:none;
-  z-index:9999;
-}
-
-/* ── HEADER ── */
 header {
-  padding: 1.8rem 2.5rem 1.4rem;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   position: sticky;
   top: 0;
-  background: rgba(12,12,11,0.92);
-  backdrop-filter: blur(20px);
-  z-index: 100;
-}
-
-.h-title {
+  z-index: 10;
   display: flex;
-  align-items: baseline;
-  gap: 1rem;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  padding: 18px 28px;
+  background: rgba(246, 244, 239, 0.92);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(16px);
 }
-
-.h-title h1 {
-  font-family: 'Shippori Mincho', serif;
-  font-size: 1.35rem;
-  font-weight: 400;
-  letter-spacing: 0.2em;
-  color: var(--text);
+h1 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: 0.04em;
 }
-
-.h-title .en {
-  font-family: 'DM Mono', monospace;
-  font-size: 0.62rem;
+.sub {
+  margin-top: 4px;
   color: var(--muted);
-  letter-spacing: 0.25em;
-  text-transform: uppercase;
+  font-size: 13px;
 }
-
-.h-right {
+.controls {
   display: flex;
   align-items: center;
-  gap: 2rem;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
-
-.live {
-  display: flex;
+button, input, select {
+  height: 36px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 0 10px;
+  font: inherit;
+}
+button {
+  cursor: pointer;
+  background: var(--ink);
+  color: white;
+  border-color: var(--ink);
+}
+main {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 22px 28px 40px;
+}
+.grid {
+  display: grid;
+  gap: 14px;
+}
+.metrics {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  min-width: 0;
+}
+.metric .label {
+  color: var(--muted);
+  font-size: 12px;
+}
+.metric .value {
+  margin-top: 8px;
+  font-size: 28px;
+  line-height: 1;
+  font-weight: 700;
+}
+.metric .hint {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+h2 {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+th, td {
+  padding: 9px 0;
+  border-bottom: 1px solid #ece6da;
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  color: var(--muted);
+  font-weight: 600;
+}
+td.num, th.num { text-align: right; }
+.bar {
+  height: 6px;
+  background: #e8e0d3;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+.bar span {
+  display: block;
+  height: 100%;
+  background: var(--green);
+}
+.pill {
+  display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  font-family: 'DM Mono', monospace;
-  font-size: 0.65rem;
-  color: var(--dim);
-  letter-spacing: 0.15em;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--muted);
+  font-size: 12px;
 }
-
-.live-dot {
-  width: 6px; height: 6px;
+.dot {
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--green);
-  animation: blink 2.5s ease-in-out infinite;
 }
-
-@keyframes blink {
-  0%,100% { opacity:1; }
-  50% { opacity:0.3; }
+.muted { color: var(--muted); }
+.error {
+  display: none;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid #e0b5b5;
+  background: #fff4f4;
+  color: var(--red);
+  border-radius: 8px;
 }
-
-#clock {
-  font-family: 'DM Mono', monospace;
-  font-size: 0.9rem;
-  color: var(--dim);
-  letter-spacing: 0.08em;
-  font-weight: 300;
-}
-
-/* ── 昨晚动态横幅 ── */
-.overnight {
-  margin: 1.5rem 2.5rem;
-  background: var(--s1);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--gold);
-  padding: 1.2rem 1.5rem;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 2rem;
-  animation: fadeUp 0.4s ease both;
-}
-
-.overnight-label {
-  font-family: 'DM Mono', monospace;
-  font-size: 0.72rem;
-  color: var(--gold);
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.overnight-items {
-  display: flex;
-  gap: 2rem;
-  flex-wrap: wrap;
-}
-
-.o-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.o-item .num {
-  font-family: 'DM Mono', monospace;
-  font-size: 1.4rem;
-  font-weight: 300;
-  color: var(--text);
-  line-height: 1;
-}
-
-.o-item .lbl {
-  font-family: 'DM Mono', monospace;
-  font-size: 0.6rem;
+.empty {
   color: var(--muted);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-size: 13px;
+  padding: 10px 0;
 }
-
-.overnight-posts {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.o-post {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  font-family: 'DM Mono', monospace;
-  font-size: 0.68rem;
-  color: var(--dim);
-}
-
-.o-post .platform {
-  color: var(--text);
-  min-width: 70px;
-}
-
-.o-post .stats {
-  color: var(--muted);
-}
-
-/* ── MAIN GRID ── */
-main {
-  padding: 0 2.5rem 2.5rem;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-/* ── CARD ── */
-.card {
-  background: var(--s1);
-  border: 1px solid var(--border);
-  padding: 1.4rem;
-  position: relative;
-  overflow: hidden;
-  transition: border-color 0.25s, transform 0.2s;
-  animation: fadeUp 0.5s ease both;
-}
-
-.card:hover {
-  border-color: var(--border2);
-  transform: translateY(-2px);
-}
-
-.card::after {
-  content:'';
-  position:absolute;
-  top:0; left:0;
-  width:2px; height:100%;
-}
-
-.card.gold::after { background: var(--gold); }
-.card.green::after { background: var(--green); }
-.card.blue::after { background: var(--blue); }
-.card.rose::after { background: var(--rose); }
-.card.purple::after { background: var(--purple); }
-.card.teal::after { background: var(--teal); }
-.card.orange::after { background: var(--orange); }
-
-.card:nth-child(1){animation-delay:0.05s}
-.card:nth-child(2){animation-delay:0.1s}
-.card:nth-child(3){animation-delay:0.15s}
-.card:nth-child(4){animation-delay:0.2s}
-.card:nth-child(5){animation-delay:0.25s}
-.card:nth-child(6){animation-delay:0.3s}
-.card:nth-child(7){animation-delay:0.35s}
-
-@keyframes fadeUp {
-  from { opacity:0; transform:translateY(10px); }
-  to   { opacity:1; transform:translateY(0); }
-}
-
-.card-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 1.1rem;
-}
-
-.card-meta {}
-
-.card-icon {
-  font-size: 0.9rem;
-  margin-bottom: 0.3rem;
-  display: block;
-  opacity: 0.7;
-}
-
-.card-title {
-  font-family: 'DM Mono', monospace;
-  font-size: 0.78rem;
-  letter-spacing: 0.18em;
-  color: var(--dim);
-  text-transform: uppercase;
-}
-
-.badge {
-  font-family: 'DM Mono', monospace;
-  font-size: 0.65rem;
-  letter-spacing: 0.1em;
-  padding: 3px 9px;
-  text-transform: uppercase;
-  border: 1px solid;
-}
-
-.badge-active { color: var(--green); border-color: rgba(109,184,154,0.3); background: rgba(109,184,154,0.06); }
-.badge-pending { color: var(--gold); border-color: rgba(200,169,106,0.3); background: rgba(200,169,106,0.06); }
-.badge-idle { color: var(--muted); border-color: var(--border); background: transparent; }
-.badge-done { color: var(--blue); border-color: rgba(122,170,196,0.3); background: rgba(122,170,196,0.06); }
-
-/* 大数字 */
-.big {
-  font-family: 'DM Mono', monospace;
-  font-size: 2.6rem;
-  font-weight: 300;
-  color: var(--text);
-  line-height: 1;
-  letter-spacing: -0.02em;
-}
-
-.big-sub {
-  font-family: 'DM Mono', monospace;
-  font-size: 0.62rem;
-  color: var(--muted);
-  letter-spacing: 0.15em;
-  margin-top: 4px;
-  text-transform: uppercase;
-}
-
-/* 进度条 */
-.prog-list { margin-top: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
-
-.prog-item {}
-
-.prog-top {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 4px;
-}
-
-.prog-name {
-  font-size: 0.86rem;
-  color: var(--dim);
-  font-weight: 300;
-}
-
-.prog-pct {
-  font-family: 'DM Mono', monospace;
-  font-size: 0.78rem;
-  color: var(--muted);
-}
-
-.prog-track {
-  height: 1.5px;
-  background: var(--s3);
-}
-
-.prog-fill {
-  height: 100%;
-  transition: width 1.2s cubic-bezier(0.4,0,0.2,1);
-}
-
-/* 行列表 */
-.row-list { margin-top: 0.9rem; display: flex; flex-direction: column; }
-
-.row-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.55rem 0;
-  border-bottom: 1px solid var(--border);
-  gap: 0.5rem;
-}
-
-.row-item:last-child { border-bottom: none; }
-
-.row-name {
-  font-size: 0.9rem;
-  color: var(--dim);
-  font-weight: 300;
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.row-meta {
-  font-family: 'DM Mono', monospace;
-  font-size: 0.75rem;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-.tag {
-  font-family: 'DM Mono', monospace;
-  font-size: 0.55rem;
-  padding: 1px 5px;
-  border: 1px solid;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  white-space: nowrap;
-}
-
-.tag-wip { color: var(--gold); border-color: rgba(200,169,106,0.3); }
-.tag-new { color: var(--green); border-color: rgba(109,184,154,0.3); }
-.tag-done { color: var(--muted); border-color: var(--border); }
-.tag-queue { color: var(--blue); border-color: rgba(122,170,196,0.3); }
-
-/* 双列stat */
-.stat-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.8rem;
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border);
-}
-
-.stat-block .n {
-  font-family: 'DM Mono', monospace;
-  font-size: 1.7rem;
-  font-weight: 300;
-  color: var(--text);
-  line-height: 1;
-}
-
-.stat-block .l {
-  font-family: 'DM Mono', monospace;
-  font-size: 0.68rem;
-  color: var(--muted);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  margin-top: 3px;
-}
-
-.update-time {
-  font-family: 'DM Mono', monospace;
-  font-size: 0.68rem;
-  color: var(--muted);
-  margin-top: 0.9rem;
-  letter-spacing: 0.08em;
-}
-
-/* 分隔 */
-hr.div { border: none; border-top: 1px solid var(--border); margin: 0.9rem 0; }
-
-/* ── SNS 平台网格 ── */
-.platform-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.4rem;
-  margin-top: 0.9rem;
-}
-
-.plat-item {
-  background: var(--s2);
-  padding: 0.5rem 0.6rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.plat-name {
-  font-family: 'DM Mono', monospace;
-  font-size: 0.72rem;
-  color: var(--dim);
-}
-
-.plat-count {
-  font-family: 'DM Mono', monospace;
-  font-size: 0.72rem;
-  color: var(--muted);
-}
-
-/* ── FOOTER ── */
-footer {
-  text-align: center;
-  padding: 1.5rem;
-  font-family: 'DM Mono', monospace;
-  font-size: 0.58rem;
-  color: var(--muted);
-  letter-spacing: 0.2em;
-  border-top: 1px solid var(--border);
-  text-transform: uppercase;
-}
-
-/* ── 手机适配 ── */
-@media (max-width: 900px) {
-  header { padding: 1rem 1.2rem; }
-  .h-title .en { display: none; }
-  #clock { font-size: 0.75rem; }
-  .overnight { margin: 1rem 1.2rem; grid-template-columns: 1fr; gap: 1rem; }
-  main { padding: 0 1.2rem 2rem; grid-template-columns: 1fr; }
-  .overnight-items { gap: 1.5rem; }
-}
-
-@media (max-width: 1100px) and (min-width: 901px) {
-  main { grid-template-columns: repeat(2, 1fr); }
-}
-
-/* loading状态 */
-.loading {
-  font-family: 'DM Mono', monospace;
-  font-size: 0.65rem;
-  color: var(--muted);
-  letter-spacing: 0.15em;
-  animation: pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%,100% { opacity: 0.4; }
-  50% { opacity: 1; }
+@media (max-width: 980px) {
+  header { align-items: flex-start; flex-direction: column; }
+  .controls { justify-content: flex-start; }
+  .metrics, .two, .three { grid-template-columns: 1fr; }
 }
 </style>
 </head>
 <body>
-
 <header>
-  <div class="h-title">
-    <h1>工作台</h1>
-    <span class="en">Personal Dashboard · wanjiaoben</span>
+  <div>
+    <h1>Nice Okinawa Analytics</h1>
+    <div class="sub">translation.nice.okinawa 实时访问、来源、页面、停留与联系按钮</div>
   </div>
-  <div class="h-right">
-    <div class="live">
-      <div class="live-dot"></div>
-      LIVE
-    </div>
-    <div id="clock">--:--:--</div>
+  <div class="controls">
+    <span class="pill"><span class="dot"></span><span id="status">等待连接</span></span>
+    <select id="days">
+      <option value="1">最近 1 天</option>
+      <option value="7" selected>最近 7 天</option>
+      <option value="30">最近 30 天</option>
+      <option value="90">最近 90 天</option>
+    </select>
+    <input id="key" type="password" placeholder="Dashboard key">
+    <button id="saveKey">保存</button>
+    <button id="refresh">刷新</button>
   </div>
 </header>
 
-<!-- 昨晚动态 -->
-<div class="overnight" id="overnight-banner">
-  <div class="overnight-label">昨晚 Coco<br>干了什么</div>
-  <div class="overnight-items" id="overnight-items">
-    <div class="o-item">
-      <div class="num" id="o-published">—</div>
-      <div class="lbl">篇已发布</div>
-    </div>
-    <div class="o-item">
-      <div class="num" id="o-queue">—</div>
-      <div class="lbl">篇待发布</div>
-    </div>
-    <div class="o-item">
-      <div class="num" id="o-inbox">—</div>
-      <div class="lbl">篇新inbox</div>
-    </div>
-  </div>
-  <div class="overnight-posts" id="overnight-posts">
-    <div class="o-post"><span class="platform">小红书</span><span class="stats" id="p-xhs">读取中...</span></div>
-    <div class="o-post"><span class="platform">Instagram</span><span class="stats" id="p-ins">读取中...</span></div>
-    <div class="o-post"><span class="platform">TikTok</span><span class="stats" id="p-tiktok">读取中...</span></div>
-  </div>
-</div>
-
 <main>
+  <div class="error" id="error"></div>
 
-  <!-- 3. SNS 流水线 -->
-  <div class="card rose">
-    <div class="card-head">
-      <div class="card-meta">
-        <span class="card-icon">◈</span>
-        <div class="card-title">SNS 流水线</div>
-      </div>
-      <span class="badge badge-active" id="sns-badge">运行中</span>
-    </div>
-    <div class="row-list">
-      <div class="row-item">
-        <span class="row-name">📥 02_inbox · 待拆分</span>
-        <span class="row-meta" id="sns-inbox">— 篇</span>
-      </div>
-      <div class="row-item">
-        <span class="row-name">📄 coco_draft · 待审核</span>
-        <span class="row-meta" id="sns-draft">— 篇</span>
-      </div>
-      <div class="row-item">
-        <span class="row-name">📬 coco_queue · 待发布</span>
-        <span class="row-meta" id="sns-queue">— 篇</span>
-      </div>
-      <div class="row-item">
-        <span class="row-name">✅ 本月已发</span>
-        <span class="row-meta" id="sns-published">— 篇</span>
-      </div>
-    </div>
-    <hr class="div">
-    <div style="font-family:'DM Mono',monospace;font-size:0.62rem;color:var(--muted);letter-spacing:0.1em;margin-bottom:0.5rem;">本月平台分布</div>
-    <div class="platform-grid">
-      <div class="plat-item"><span class="plat-name">小红书</span><span class="plat-count" id="pl-xhs">—</span></div>
-      <div class="plat-item"><span class="plat-name">Instagram</span><span class="plat-count" id="pl-ins">—</span></div>
-      <div class="plat-item"><span class="plat-name">Twitter/X</span><span class="plat-count" id="pl-tw">—</span></div>
-      <div class="plat-item"><span class="plat-name">TikTok</span><span class="plat-count" id="pl-tt">—</span></div>
-      <div class="plat-item"><span class="plat-name">Facebook</span><span class="plat-count" id="pl-fb">—</span></div>
-      <div class="plat-item"><span class="plat-name">YouTube</span><span class="plat-count" id="pl-yt">—</span></div>
-    </div>
-    <div class="update-time" id="sns-time">等待数据上报</div>
-  </div>
+  <section class="grid metrics">
+    <div class="card metric"><div class="label">实时在线</div><div class="value" id="online">-</div><div class="hint">最近 5 分钟活跃 session</div></div>
+    <div class="card metric"><div class="label">今日访问</div><div class="value" id="todayViews">-</div><div class="hint">今日 page view</div></div>
+    <div class="card metric"><div class="label">区间访问</div><div class="value" id="views">-</div><div class="hint">所选日期内 page view</div></div>
+    <div class="card metric"><div class="label">访客</div><div class="value" id="visitors">-</div><div class="hint">去重 visitor</div></div>
+    <div class="card metric"><div class="label">平均停留</div><div class="value" id="duration">-</div><div class="hint">基于离开页面事件</div></div>
+    <div class="card metric"><div class="label">平均滚动</div><div class="value" id="scroll">-</div><div class="hint">看到了页面百分比</div></div>
+  </section>
 
-  <!-- 4. 网站访问量 -->
-  <div class="card blue">
-    <div class="card-head">
-      <div class="card-meta">
-        <span class="card-icon">⬡</span>
-        <div class="card-title">网站访问量</div>
-      </div>
-      <span class="badge badge-active" id="gh-badge">今日</span>
+  <section class="grid two" style="margin-top:14px">
+    <div class="card">
+      <h2>来源排行</h2>
+      <table><thead><tr><th>来源</th><th>媒介</th><th class="num">访问</th><th class="num">Session</th></tr></thead><tbody id="sources"></tbody></table>
     </div>
-    <div class="row-list" id="gh-list">
-      <div class="row-item">
-        <span class="row-name">bjt.nice.okinawa</span>
-        <span class="row-meta" id="gh-bjt">— 访客</span>
-        <span class="tag tag-wip" id="gh-bjt-tag">—</span>
-      </div>
-      <div class="row-item">
-        <span class="row-name">snorkel.nice.okinawa</span>
-        <span class="row-meta" id="gh-snorkel">— 访客</span>
-        <span class="tag tag-wip" id="gh-snorkel-tag">—</span>
-      </div>
-      <div class="row-item">
-        <span class="row-name">fishing.nice.okinawa</span>
-        <span class="row-meta" id="gh-fishing">— 访客</span>
-        <span class="tag tag-wip" id="gh-fishing-tag">—</span>
-      </div>
-      <div class="row-item">
-        <span class="row-name">golf.nice.okinawa</span>
-        <span class="row-meta" id="gh-golf">— 访客</span>
-        <span class="tag tag-wip" id="gh-golf-tag">—</span>
-      </div>
-      <div class="row-item">
-        <span class="row-name">lab.nice.okinawa</span>
-        <span class="row-meta" id="gh-lab">— 访客</span>
-        <span class="tag tag-wip" id="gh-lab-tag">—</span>
-      </div>
+    <div class="card">
+      <h2>页面排行</h2>
+      <table><thead><tr><th>页面</th><th class="num">访问</th><th class="num">Session</th></tr></thead><tbody id="pages"></tbody></table>
     </div>
-    <div class="update-time" id="gh-time">等待GA数据</div>
-  </div>
+  </section>
 
-  <!-- 2. Kindle 书籍 -->
-  <div class="card teal">
-    <div class="card-head">
-      <div class="card-meta">
-        <span class="card-icon">◎</span>
-        <div class="card-title">Kindle 书籍</div>
-      </div>
-      <span class="badge badge-active">写作中</span>
+  <section class="grid three" style="margin-top:14px">
+    <div class="card">
+      <h2>语言页面</h2>
+      <table><thead><tr><th>语言</th><th class="num">访问</th><th class="num">Session</th></tr></thead><tbody id="languages"></tbody></table>
     </div>
-    <div class="prog-list" id="books-list">
-      <div class="prog-item">
-        <div class="prog-top">
-          <span class="prog-name">BJT敬语语法专题</span>
-          <span class="prog-pct" id="b1p">0字</span>
-        </div>
-        <div class="prog-track">
-          <div class="prog-fill" id="b1f" style="width:0%;background:var(--teal)"></div>
-        </div>
-      </div>
-      <div class="prog-item">
-        <div class="prog-top">
-          <span class="prog-name">BJT高频单词秒记</span>
-          <span class="prog-pct" id="b2p">0字</span>
-        </div>
-        <div class="prog-track">
-          <div class="prog-fill" id="b2f" style="width:0%;background:var(--teal)"></div>
-        </div>
-      </div>
-      <div class="prog-item">
-        <div class="prog-top">
-          <span class="prog-name">BJT速记技巧</span>
-          <span class="prog-pct" id="b3p">0字</span>
-        </div>
-        <div class="prog-track">
-          <div class="prog-fill" id="b3f" style="width:0%;background:var(--teal)"></div>
-        </div>
-      </div>
-      <div class="prog-item">
-        <div class="prog-top">
-          <span class="prog-name">AI虚拟员工养成</span>
-          <span class="prog-pct" id="b4p">0字</span>
-        </div>
-        <div class="prog-track">
-          <div class="prog-fill" id="b4f" style="width:0%;background:var(--teal)"></div>
-        </div>
-      </div>
-      <div class="prog-item">
-        <div class="prog-top">
-          <span class="prog-name">Fishing in Okinawa</span>
-          <span class="prog-pct" id="b5p">0字</span>
-        </div>
-        <div class="prog-track">
-          <div class="prog-fill" id="b5f" style="width:0%;background:var(--teal)"></div>
-        </div>
-      </div>
-      <div class="prog-item">
-        <div class="prog-top">
-          <span class="prog-name">Golf in Okinawa</span>
-          <span class="prog-pct" id="b6p">0字</span>
-        </div>
-        <div class="prog-track">
-          <div class="prog-fill" id="b6f" style="width:0%;background:var(--teal)"></div>
-        </div>
-      </div>
-      <div class="prog-item">
-        <div class="prog-top">
-          <span class="prog-name">Snorkel in Okinawa</span>
-          <span class="prog-pct" id="b7p">0字</span>
-        </div>
-        <div class="prog-track">
-          <div class="prog-fill" id="b7f" style="width:0%;background:var(--teal)"></div>
-        </div>
-      </div>
+    <div class="card">
+      <h2>联系按钮</h2>
+      <table><thead><tr><th>按钮</th><th class="num">点击</th></tr></thead><tbody id="contacts"></tbody></table>
     </div>
-    <div class="update-time" id="books-time">等待Mac上报数据</div>
-  </div>
+    <div class="card">
+      <h2>设备</h2>
+      <table><thead><tr><th>设备</th><th class="num">访问</th></tr></thead><tbody id="devices"></tbody></table>
+    </div>
+  </section>
 
-  <!-- 5. 日语课件 -->
-  <div class="card green">
-    <div class="card-head">
-      <div class="card-meta">
-        <span class="card-icon">あ</span>
-        <div class="card-title">日語課件</div>
-      </div>
-      <span class="badge badge-pending">整理中</span>
+  <section class="grid two" style="margin-top:14px">
+    <div class="card">
+      <h2>页面区域</h2>
+      <table><thead><tr><th>区域</th><th class="num">查看</th><th class="num">平均停留</th></tr></thead><tbody id="sections"></tbody></table>
     </div>
-    <div class="prog-list">
-      <div class="prog-item">
-        <div class="prog-top">
-          <span class="prog-name">零基础 BJT方向</span>
-          <span class="prog-pct" id="jp1p">—</span>
-        </div>
-        <div class="prog-track">
-          <div class="prog-fill" id="jp1f" style="width:0%;background:var(--green)"></div>
-        </div>
-      </div>
-      <div class="prog-item">
-        <div class="prog-top">
-          <span class="prog-name">旅游购物日语</span>
-          <span class="prog-pct" id="jp2p">—</span>
-        </div>
-        <div class="prog-track">
-          <div class="prog-fill" id="jp2f" style="width:0%;background:var(--green)"></div>
-        </div>
-      </div>
-      <div class="prog-item">
-        <div class="prog-top">
-          <span class="prog-name">BJT 职场方向</span>
-          <span class="prog-pct" id="jp3p">—</span>
-        </div>
-        <div class="prog-track">
-          <div class="prog-fill" id="jp3f" style="width:0%;background:var(--green)"></div>
-        </div>
-      </div>
+    <div class="card">
+      <h2>国家/地区</h2>
+      <table><thead><tr><th>国家/地区</th><th class="num">访问</th></tr></thead><tbody id="countries"></tbody></table>
     </div>
-    <div class="stat-row">
-      <div class="stat-block">
-        <div class="n" id="jp-student">—</div>
-        <div class="l">学生版课件</div>
-      </div>
-      <div class="stat-block">
-        <div class="n" id="jp-teacher">—</div>
-        <div class="l">教案文件</div>
-      </div>
-    </div>
-    <div class="update-time" id="jp-time">等待Mac上报数据</div>
-  </div>
+  </section>
 
-  <!-- 6. Obsidian 笔记 -->
-  <div class="card purple">
-    <div class="card-head">
-      <div class="card-meta">
-        <span class="card-icon">◉</span>
-        <div class="card-title">Obsidian 笔记</div>
-      </div>
-      <span class="badge badge-active">同步中</span>
-    </div>
-    <div class="row-list">
-      <div class="row-item">
-        <span class="row-name">💭 00_spark · 灵感碎片</span>
-        <span class="row-meta" id="ob-spark">— 篇</span>
-      </div>
-      <div class="row-item">
-        <span class="row-name">🧠 01_notes · 思考沉淀</span>
-        <span class="row-meta" id="ob-notes">— 篇</span>
-      </div>
-      <div class="row-item">
-        <span class="row-name">📚 03_books · 书稿</span>
-        <span class="row-meta" id="ob-books">— 篇</span>
-      </div>
-      <div class="row-item">
-        <span class="row-name">📖 coco_kindle · 素材</span>
-        <span class="row-meta" id="ob-kindle">— 篇</span>
-      </div>
-    </div>
-    <div class="stat-row">
-      <div class="stat-block">
-        <div class="n" id="ob-total">—</div>
-        <div class="l">总笔记数</div>
-      </div>
-      <div class="stat-block">
-        <div class="n" id="ob-today">—</div>
-        <div class="l">今日新增</div>
-      </div>
-    </div>
-    <div class="update-time" id="ob-time">等待Mac上报数据</div>
-  </div>
-
-  <!-- 1. Eagle 素材 -->
-  <div class="card gold">
-    <div class="card-head">
-      <div class="card-meta">
-        <span class="card-icon">⊞</span>
-        <div class="card-title">Eagle 素材库</div>
-      </div>
-      <span class="badge badge-pending" id="eagle-badge">整理中</span>
-    </div>
-    <div class="prog-list" id="eagle-libs">
-      <div class="prog-item">
-        <div class="prog-top">
-          <span class="prog-name">okinawa</span>
-          <span class="prog-pct" id="ep1">—</span>
-        </div>
-        <div class="prog-track">
-          <div class="prog-fill" id="ef1" style="width:0%;background:var(--gold)"></div>
-        </div>
-      </div>
-      <div class="prog-item">
-        <div class="prog-top">
-          <span class="prog-name">三岛</span>
-          <span class="prog-pct" id="ep2">—</span>
-        </div>
-        <div class="prog-track">
-          <div class="prog-fill" id="ef2" style="width:0%;background:var(--gold)"></div>
-        </div>
-      </div>
-      <div class="prog-item">
-        <div class="prog-top">
-          <span class="prog-name">my书架</span>
-          <span class="prog-pct" id="ep3">—</span>
-        </div>
-        <div class="prog-track">
-          <div class="prog-fill" id="ef3" style="width:0%;background:var(--gold)"></div>
-        </div>
-      </div>
-      <div class="prog-item">
-        <div class="prog-top">
-          <span class="prog-name">eagle保存到这里</span>
-          <span class="prog-pct" id="ep4">—</span>
-        </div>
-        <div class="prog-track">
-          <div class="prog-fill" id="ef4" style="width:0%;background:var(--gold)"></div>
-        </div>
-      </div>
-    </div>
-    <div class="stat-row">
-      <div class="stat-block">
-        <div class="n" id="eagle-total">—</div>
-        <div class="l">总素材数</div>
-      </div>
-      <div class="stat-block">
-        <div class="n" id="eagle-tagged">—</div>
-        <div class="l">已打标签</div>
-      </div>
-    </div>
-    <div class="update-time" id="eagle-time">等待PC上报数据</div>
-  </div>
-
+  <section class="card" style="margin-top:14px">
+    <h2>实时日志</h2>
+    <table><thead><tr><th>时间</th><th>事件</th><th>页面</th><th>来源</th><th>地区</th><th>设备</th><th>细节</th></tr></thead><tbody id="recent"></tbody></table>
+  </section>
 </main>
 
-<footer>
-  工作台 · wanjiaoben · 数据来自 Mac / PC / 小粉 / GitHub · 每5分钟自动刷新
-</footer>
-
 <script>
-// ── 时钟 ──
-function tick() {
-  const now = new Date();
-  const pad = n => String(n).padStart(2,'0');
-  document.getElementById('clock').textContent =
-    `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+const API = 'https://analytics.nice.okinawa/summary';
+const $ = (id) => document.getElementById(id);
+const fmt = new Intl.NumberFormat('ja-JP');
+
+function n(value) {
+  return fmt.format(Number(value || 0));
 }
-tick();
-setInterval(tick, 1000);
 
-// ── 读取 GitHub 数据 ──
-const GH_USER = 'wanjiaoben';
-const REPOS = [
-  { id: 'gh-bjt',     name: 'bjt',     tagId: 'gh-bjt-tag' },
-  { id: 'gh-snorkel', name: 'snorkel', tagId: 'gh-snorkel-tag' },
-  { id: 'gh-fishing', name: 'fishing', tagId: 'gh-fishing-tag' },
-  { id: 'gh-golf',    name: 'golf',    tagId: 'gh-golf-tag' },
-  { id: 'gh-lab',     name: 'lab',     tagId: 'gh-lab-tag' },
-];
+function seconds(ms) {
+  const value = Number(ms || 0);
+  if (!value) return '-';
+  const sec = Math.round(value / 1000);
+  if (sec < 60) return sec + 's';
+  return Math.floor(sec / 60) + 'm ' + (sec % 60) + 's';
+}
 
-const GH_TOKEN = window.GH_TOKEN || '';
+function row(cells) {
+  return '<tr>' + cells.map((cell) => '<td' + (cell.num ? ' class="num"' : '') + '>' + (cell.html ?? cell) + '</td>').join('') + '</tr>';
+}
 
-function applyGAData(d) {
-  const sites = d.sites || {};
-  const siteMap = {
-    'bjt.nice.okinawa':     { meta: 'gh-bjt',     tag: 'gh-bjt-tag' },
-    'snorkel.nice.okinawa': { meta: 'gh-snorkel',  tag: 'gh-snorkel-tag' },
-    'fishing.nice.okinawa': { meta: 'gh-fishing',  tag: 'gh-fishing-tag' },
-    'golf.nice.okinawa':    { meta: 'gh-golf',     tag: 'gh-golf-tag' },
-    'lab.nice.okinawa':     { meta: 'gh-lab',      tag: 'gh-lab-tag' },
-  };
-  for (const [site, ids] of Object.entries(siteMap)) {
-    const data = sites[site] || {};
-    const today = data.today || {};
-    const users = today.users || 0;
-    const pv = today.pageviews || 0;
-    setVal(ids.meta, `${users} 访客 · ${pv} 浏览`);
-    const tagEl = document.getElementById(ids.tag);
-    if (tagEl) {
-      tagEl.textContent = users > 0 ? '有流量' : '待流量';
-      tagEl.className = users > 0 ? 'tag tag-new' : 'tag tag-done';
-    }
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (s) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[s]));
+}
+
+function renderRows(id, rows, mapper) {
+  const body = $(id);
+  if (!rows || !rows.length) {
+    body.innerHTML = '<tr><td colspan="4" class="empty">暂无数据</td></tr>';
+    return;
   }
-  setVal('gh-time', '更新于 ' + (d.updated || '—'));
+  body.innerHTML = rows.map(mapper).join('');
 }
 
-// ── 读取本地status JSON ──
-// 脚本会把数据推到 GitHub repo 的 data/ 文件夹
-// 网页从同一个 repo 读取
-
-const DATA_BASE = `https://raw.githubusercontent.com/${GH_USER}/my-dashboard/main/data/`;
-
-async function loadStatus() {
-  // Mac 数据
+async function load() {
+  $('error').style.display = 'none';
+  $('status').textContent = '连接中';
+  const key = localStorage.getItem('nice_dashboard_key') || '';
+  const days = $('days').value || '7';
   try {
-    const r = await fetch(DATA_BASE + 'status-mac.json?t=' + Date.now());
-    if (r.ok) { const d = await r.json(); applyMacData(d); }
-  } catch {}
+    const res = await fetch(API + '?days=' + encodeURIComponent(days), {
+      headers: key ? { 'x-dashboard-key': key } : {}
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'API 请求失败');
+    const totals = data.totals || {};
+    const today = data.today || {};
+    $('online').textContent = n(data.online);
+    $('todayViews').textContent = n(today.page_views);
+    $('views').textContent = n(totals.page_views);
+    $('visitors').textContent = n(totals.visitors);
+    $('duration').textContent = seconds(totals.avg_duration_ms);
+    $('scroll').textContent = totals.avg_scroll ? Math.round(totals.avg_scroll) + '%' : '-';
+    $('status').textContent = '已更新 ' + new Date(data.generated_at).toLocaleTimeString();
 
-  // PC 数据
-  try {
-    const r = await fetch(DATA_BASE + 'status-pc.json?t=' + Date.now());
-    if (r.ok) { const d = await r.json(); applyPCData(d); }
-  } catch {}
-
-  // 小粉数据
-  try {
-    const r = await fetch(DATA_BASE + 'status-coco.json?t=' + Date.now());
-    if (r.ok) { const d = await r.json(); applyCocoData(d); }
-  } catch {}
-
-  // GA 数据
-  try {
-    const r = await fetch(DATA_BASE + 'status-ga.json?t=' + Date.now());
-    if (r.ok) { const d = await r.json(); applyGAData(d); }
-  } catch {}
+    renderRows('sources', data.sources, (r) => row([
+      escapeHtml(r.source || '-'),
+      escapeHtml(r.medium || '-'),
+      { html: n(r.views), num: true },
+      { html: n(r.sessions), num: true }
+    ]));
+    renderRows('pages', data.pages, (r) => row([
+      escapeHtml(r.path || '/'),
+      { html: n(r.views), num: true },
+      { html: n(r.sessions), num: true }
+    ]));
+    renderRows('languages', data.languages, (r) => row([
+      escapeHtml(r.lang || '-'),
+      { html: n(r.views), num: true },
+      { html: n(r.sessions), num: true }
+    ]));
+    renderRows('contacts', data.contacts, (r) => row([
+      escapeHtml((r.event_name || '').replace('contact_', '') + (r.label ? ' · ' + r.label : '')),
+      { html: n(r.clicks), num: true }
+    ]));
+    renderRows('devices', data.devices, (r) => row([
+      escapeHtml(r.device || '-'),
+      { html: n(r.views), num: true }
+    ]));
+    renderRows('sections', data.sections, (r) => row([
+      escapeHtml(r.section || '-'),
+      { html: n(r.views), num: true },
+      { html: seconds(r.avg_duration_ms), num: true }
+    ]));
+    renderRows('countries', data.countries, (r) => row([
+      escapeHtml(r.country || '-'),
+      { html: n(r.views), num: true }
+    ]));
+    renderRows('recent', data.recent, (r) => row([
+      escapeHtml(new Date(r.created_at).toLocaleTimeString()),
+      escapeHtml(r.type || '-'),
+      escapeHtml(r.path || '-'),
+      escapeHtml(r.source || '-'),
+      escapeHtml(r.country || '-'),
+      escapeHtml(r.device || '-'),
+      escapeHtml(r.event_name || r.section || (r.max_scroll ? 'scroll ' + r.max_scroll + '%' : ''))
+    ]));
+  } catch (e) {
+    $('status').textContent = '连接失败';
+    $('error').textContent = e.message + '。确认 Worker 已部署，DASHBOARD_KEY 正确。';
+    $('error').style.display = 'block';
+  }
 }
 
-function applyMacData(d) {
-  // 书籍进度
-  const target = 30000;
-  const books = d.books || {};
-  const bookIds = ['BJT敬语语法专题','BJT高频单词秒记','BJT速记技巧','AI虚拟员工养成实践','Fishing in Okinawa','Golf in Okinawa','Snorkel in Okinawa'];
-  bookIds.forEach((name, i) => {
-    const n = i + 1;
-    const words = books[name] || 0;
-    const pct = Math.min(Math.round(words / target * 100), 100);
-    const el = document.getElementById(`b${n}p`);
-    const bar = document.getElementById(`b${n}f`);
-    if (el) el.textContent = words > 0 ? `${words.toLocaleString()}字 · ${pct}%` : '0字';
-    if (bar) bar.style.width = pct + '%';
-  });
-
-  // SNS 流水线
-  const sns = d.sns || {};
-  setVal('sns-inbox', (sns.inbox || 0) + ' 篇');
-  setVal('sns-draft', (sns.draft || 0) + ' 篇');
-  setVal('sns-queue', (sns.queue || 0) + ' 篇');
-
-  // Obsidian 笔记
-  const ob = d.obsidian || {};
-  setVal('ob-spark', (ob.spark || 0) + ' 篇');
-  setVal('ob-notes', (ob.notes || 0) + ' 篇');
-  setVal('ob-books', (ob.books || 0) + ' 篇');
-  setVal('ob-kindle', (ob.kindle || 0) + ' 篇');
-  setVal('ob-total', ob.total || 0);
-  setVal('ob-today', ob.today || 0);
-
-  // 日语课件
-  const jp = d.japanese || {};
-  applyProgress('jp1', jp.bjt_basic, 50);
-  applyProgress('jp2', jp.travel, 30);
-  applyProgress('jp3', jp.bjt_work, 40);
-  setVal('jp-student', jp.student_files || 0);
-  setVal('jp-teacher', jp.teacher_files || 0);
-
-  setVal('books-time', '更新于 ' + (d.updated || '—'));
-  setVal('ob-time', '更新于 ' + (d.updated || '—'));
-  setVal('sns-time', '更新于 ' + (d.updated || '—'));
-  setVal('jp-time', '更新于 ' + (d.updated || '—'));
-}
-
-function applyPCData(d) {
-  const libs = d.eagle || {};
-  const libNames = ['okinawa','三岛','my书架','eagle保存到这里'];
-  const ids = ['1','2','3','4'];
-  let total = 0, tagged = 0;
-
-  libNames.forEach((name, i) => {
-    const lib = libs[name] || {};
-    const t = lib.total || 0;
-    const tg = lib.tagged || 0;
-    total += t;
-    tagged += tg;
-    const pct = t > 0 ? Math.round(tg / t * 100) : 0;
-    const ep = document.getElementById(`ep${ids[i]}`);
-    const ef = document.getElementById(`ef${ids[i]}`);
-    if (ep) ep.textContent = `${tg}/${t} · ${pct}%`;
-    if (ef) ef.style.width = pct + '%';
-  });
-
-  setVal('eagle-total', total.toLocaleString());
-  setVal('eagle-tagged', tagged.toLocaleString());
-  setVal('eagle-time', '更新于 ' + (d.updated || '—'));
-}
-
-function applyCocoData(d) {
-  const pub = d.published || {};
-  setVal('sns-published', (pub.this_month || 0) + ' 篇');
-  setVal('o-published', pub.last_night || 0);
-  setVal('o-queue', d.queue || 0);
-  setVal('o-inbox', d.inbox_new || 0);
-
-  // 平台分布
-  const platforms = pub.platforms || {};
-  setVal('pl-xhs', (platforms['小红书'] || 0) + ' 篇');
-  setVal('pl-ins', (platforms['instagram'] || 0) + ' 篇');
-  setVal('pl-tw', (platforms['twitter'] || 0) + ' 篇');
-  setVal('pl-tt', (platforms['tiktok'] || 0) + ' 篇');
-  setVal('pl-fb', (platforms['facebook'] || 0) + ' 篇');
-  setVal('pl-yt', (platforms['youtube'] || 0) + ' 篇');
-
-  // 昨晚详情
-  const lastNight = d.last_night_detail || {};
-  setVal('p-xhs', lastNight['小红书'] ? `${lastNight['小红书'].count}篇` : '昨晚未发');
-  setVal('p-ins', lastNight['instagram'] ? `${lastNight['instagram'].count}篇` : '昨晚未发');
-  setVal('p-tiktok', lastNight['tiktok'] ? `${lastNight['tiktok'].count}篇` : '昨晚未发');
-}
-
-function applyProgress(prefix, val, max) {
-  const pct = val > 0 ? Math.min(Math.round(val / max * 100), 100) : 0;
-  const ep = document.getElementById(prefix + 'p');
-  const ef = document.getElementById(prefix + 'f');
-  if (ep) ep.textContent = val > 0 ? `${val}/${max} · ${pct}%` : '待开始';
-  if (ef) ef.style.width = pct + '%';
-}
-
-function setVal(id, val) {
-  const el = document.getElementById(id);
-  if (el) el.textContent = val;
-}
-
-// ── 进度条入场动画 ──
-function animateBars() {
-  document.querySelectorAll('.prog-fill').forEach(el => {
-    const w = el.style.width;
-    el.style.width = '0';
-    setTimeout(() => { el.style.width = w; }, 300);
-  });
-}
-
-// ── 启动 ──
-async function init() {
-  await Promise.all([loadGitHub(), loadStatus()]);
-  animateBars();
-}
-
-init();
-
-// 每5分钟自动刷新
-setInterval(init, 5 * 60 * 1000);
+$('saveKey').addEventListener('click', () => {
+  localStorage.setItem('nice_dashboard_key', $('key').value);
+  load();
+});
+$('refresh').addEventListener('click', load);
+$('days').addEventListener('change', load);
+$('key').value = localStorage.getItem('nice_dashboard_key') || '';
+load();
+setInterval(load, 30000);
 </script>
 </body>
 </html>
