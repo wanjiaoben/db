@@ -200,6 +200,9 @@ td.num, th.num { text-align: right; }
       <option value="30">最近 30 天</option>
       <option value="90">最近 90 天</option>
     </select>
+    <select id="siteFilter">
+      <option value="">全部站点</option>
+    </select>
     <select id="pageFilter">
       <option value="">全部页面</option>
     </select>
@@ -223,12 +226,23 @@ td.num, th.num { text-align: right; }
 
   <section class="grid two" style="margin-top:14px">
     <div class="card">
+      <h2>站点排行</h2>
+      <table><thead><tr><th>站点</th><th class="num">访问</th><th class="num">Session</th></tr></thead><tbody id="sites"></tbody></table>
+    </div>
+    <div class="card">
       <h2>来源排行</h2>
       <table><thead><tr><th>来源</th><th>媒介</th><th class="num">访问</th><th class="num">Session</th></tr></thead><tbody id="sources"></tbody></table>
     </div>
+  </section>
+
+  <section class="grid two" style="margin-top:14px">
     <div class="card">
       <h2>页面排行</h2>
-      <table><thead><tr><th>页面</th><th class="num">访问</th><th class="num">Session</th></tr></thead><tbody id="pages"></tbody></table>
+      <table><thead><tr><th>站点</th><th>页面</th><th class="num">访问</th><th class="num">Session</th></tr></thead><tbody id="pages"></tbody></table>
+    </div>
+    <div class="card">
+      <h2>实时日志</h2>
+      <table><thead><tr><th>时间</th><th>站点</th><th>事件</th><th>页面</th><th>来源</th><th>细节</th></tr></thead><tbody id="recent"></tbody></table>
     </div>
   </section>
 
@@ -258,17 +272,20 @@ td.num, th.num { text-align: right; }
     </div>
   </section>
 
-  <section class="card" style="margin-top:14px">
-    <h2>实时日志</h2>
-    <table><thead><tr><th>时间</th><th>事件</th><th>页面</th><th>来源</th><th>地区</th><th>设备</th><th>细节</th></tr></thead><tbody id="recent"></tbody></table>
-  </section>
 </main>
 
 <script>
 const API = 'https://analytics.nice.okinawa/summary';
 const $ = (id) => document.getElementById(id);
 const fmt = new Intl.NumberFormat('ja-JP');
+let selectedSite = '';
 let selectedPage = '';
+
+const hash = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+if (hash.get('key')) {
+  localStorage.setItem('nice_dashboard_key', hash.get('key'));
+  history.replaceState(null, '', location.pathname + location.search);
+}
 
 function n(value) {
   return fmt.format(Number(value || 0));
@@ -299,6 +316,21 @@ function renderRows(id, rows, mapper) {
   body.innerHTML = rows.map(mapper).join('');
 }
 
+function updateSiteOptions(sites) {
+  const current = $('siteFilter').value || selectedSite;
+  const known = new Set(['']);
+  const options = ['<option value="">全部站点</option>'];
+  (sites || []).forEach((site) => {
+    const name = site.site || '';
+    if (!name || known.has(name)) return;
+    known.add(name);
+    options.push('<option value="' + escapeHtml(name) + '">' + escapeHtml(name) + '</option>');
+  });
+  $('siteFilter').innerHTML = options.join('');
+  $('siteFilter').value = known.has(current) ? current : '';
+  selectedSite = $('siteFilter').value;
+}
+
 function updatePageOptions(pages) {
   const current = $('pageFilter').value || selectedPage;
   const known = new Set(['']);
@@ -319,8 +351,10 @@ async function load() {
   $('status').textContent = '连接中';
   const key = localStorage.getItem('nice_dashboard_key') || '';
   const days = $('days').value || '7';
+  const site = $('siteFilter').value || '';
   const path = $('pageFilter').value || '';
   const qs = new URLSearchParams({ days });
+  if (site) qs.set('site', site);
   if (path) qs.set('path', path);
   try {
     const res = await fetch(API + '?' + qs.toString(), {
@@ -336,9 +370,15 @@ async function load() {
     $('visitors').textContent = n(totals.visitors);
     $('duration').textContent = seconds(totals.avg_duration_ms);
     $('scroll').textContent = totals.avg_scroll ? Math.round(totals.avg_scroll) + '%' : '-';
-    $('status').textContent = (path ? path + ' · ' : '') + '已更新 ' + new Date(data.generated_at).toLocaleTimeString();
+    $('status').textContent = (site ? site + ' · ' : '') + (path ? path + ' · ' : '') + '已更新 ' + new Date(data.generated_at).toLocaleTimeString();
+    updateSiteOptions(data.sites);
     updatePageOptions(data.pages);
 
+    renderRows('sites', data.sites, (r) => row([
+      '<button type="button" data-site="' + escapeHtml(r.site || '') + '">' + escapeHtml(r.site || '-') + '</button>',
+      { html: n(r.views), num: true },
+      { html: n(r.sessions), num: true }
+    ]));
     renderRows('sources', data.sources, (r) => row([
       escapeHtml(r.source || '-'),
       escapeHtml(r.medium || '-'),
@@ -346,6 +386,7 @@ async function load() {
       { html: n(r.sessions), num: true }
     ]));
     renderRows('pages', data.pages, (r) => row([
+      '<button type="button" data-site="' + escapeHtml(r.site || '') + '">' + escapeHtml(r.site || '-') + '</button>',
       '<button type="button" data-path="' + escapeHtml(r.path || '/') + '">' + escapeHtml(r.path || '/') + '</button>',
       { html: n(r.views), num: true },
       { html: n(r.sessions), num: true }
@@ -374,11 +415,10 @@ async function load() {
     ]));
     renderRows('recent', data.recent, (r) => row([
       escapeHtml(new Date(r.created_at).toLocaleTimeString()),
+      escapeHtml(r.site || '-'),
       escapeHtml(r.type || '-'),
       escapeHtml(r.path || '-'),
       escapeHtml(r.source || '-'),
-      escapeHtml(r.country || '-'),
-      escapeHtml(r.device || '-'),
       escapeHtml(r.event_name || r.section || (r.max_scroll ? 'scroll ' + r.max_scroll + '%' : ''))
     ]));
   } catch (e) {
@@ -396,13 +436,42 @@ $('saveKey').addEventListener('click', () => {
 });
 $('refresh').addEventListener('click', load);
 $('days').addEventListener('change', load);
+$('siteFilter').addEventListener('change', () => {
+  selectedSite = $('siteFilter').value;
+  $('pageFilter').value = '';
+  selectedPage = '';
+  load();
+});
 $('pageFilter').addEventListener('change', () => {
   selectedPage = $('pageFilter').value;
   load();
 });
+$('sites').addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-site]');
+  if (!button) return;
+  $('siteFilter').value = button.dataset.site;
+  $('pageFilter').value = '';
+  selectedSite = button.dataset.site;
+  selectedPage = '';
+  load();
+});
 $('pages').addEventListener('click', (event) => {
   const button = event.target.closest('button[data-path]');
+  const siteButton = event.target.closest('button[data-site]');
+  if (siteButton) {
+    $('siteFilter').value = siteButton.dataset.site;
+    selectedSite = siteButton.dataset.site;
+    $('pageFilter').value = '';
+    selectedPage = '';
+    load();
+    return;
+  }
   if (!button) return;
+  const rowSite = event.target.closest('tr')?.querySelector('button[data-site]')?.dataset.site || '';
+  if (rowSite) {
+    $('siteFilter').value = rowSite;
+    selectedSite = rowSite;
+  }
   $('pageFilter').value = button.dataset.path;
   selectedPage = button.dataset.path;
   load();

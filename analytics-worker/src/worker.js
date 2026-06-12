@@ -1,5 +1,6 @@
 const COLLECT_ORIGIN = 'https://translation.nice.okinawa';
 const DASHBOARD_ORIGIN = 'https://db.nice.okinawa';
+const TRACKING_SCRIPT = `(function(){var endpoint='https://analytics.nice.okinawa/collect';var site=location.hostname;var sessionKey='nice_analytics_session';var start=Date.now();var maxScroll=0;var sectionTimers={};var lastSection='';function uuid(){if(window.crypto&&crypto.randomUUID)return crypto.randomUUID();return String(Date.now())+'-'+Math.random().toString(16).slice(2)}function sid(){try{var e=sessionStorage.getItem(sessionKey);if(e)return e;var id=uuid();sessionStorage.setItem(sessionKey,id);return id}catch(e){return uuid()}}var sessionId=sid();var visitorId=function(){try{var k='nice_analytics_visitor';var e=localStorage.getItem(k);if(e)return e;var id=uuid();localStorage.setItem(k,id);return id}catch(e){return''}}();function lang(){return document.documentElement.dataset.staticLang||document.body.dataset.lang||document.documentElement.lang||navigator.language||''}function depth(){var d=document.documentElement,b=document.body,t=window.scrollY||d.scrollTop||b.scrollTop||0,h=Math.max(b.scrollHeight,d.scrollHeight)-window.innerHeight;if(h<=0)return 100;return Math.max(0,Math.min(100,Math.round(t/h*100)))}function data(type,extra){var out={type:type,site:site,session_id:sessionId,visitor_id:visitorId,path:location.pathname,title:document.title,url:location.href,referrer:document.referrer,lang:lang(),browser_lang:navigator.language||'',screen:(screen&&screen.width?screen.width+'x'+screen.height:''),viewport:window.innerWidth+'x'+window.innerHeight,ts:new Date().toISOString()};if(extra)Object.keys(extra).forEach(function(k){out[k]=extra[k]});return out}function send(type,extra,keepalive){var body=JSON.stringify(data(type,extra));if(navigator.sendBeacon&&keepalive){try{navigator.sendBeacon(endpoint,new Blob([body],{type:'application/json'}));return}catch(e){}}try{fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:body,keepalive:!!keepalive,mode:'cors'}).catch(function(){})}catch(e){}}function contactType(el){var href=el.getAttribute('href')||'',text=(el.textContent||'').toLowerCase();if(href.indexOf('wa.me')>=0||text.indexOf('whatsapp')>=0)return'whatsapp';if(href.indexOf('mailto:')===0||text.indexOf('email')>=0)return'email';if(text.indexOf('wechat')>=0||text.indexOf('okinawaonline')>=0)return'wechat';if(href.indexOf('line')>=0||text.indexOf('line')>=0)return'line';if(href.indexOf('tel:')===0)return'phone';if(href.indexOf('#contact')>=0)return'contact';return''}document.addEventListener('click',function(event){var link=event.target.closest&&event.target.closest('a,button,summary,select');if(!link)return;var label=(link.textContent||link.getAttribute('aria-label')||'').trim().replace(/\\s+/g,' ').slice(0,120);var href=link.getAttribute&&link.getAttribute('href');var contact=link.matches('a')?contactType(link):'';var kind=contact?'contact_'+contact:(link.closest('nav')?'nav':(link.tagName||'').toLowerCase());send('click',{event_name:kind,label:label,href:href||'',section:lastSection})},true);window.addEventListener('scroll',function(){maxScroll=Math.max(maxScroll,depth())},{passive:true});if('IntersectionObserver'in window){var observer=new IntersectionObserver(function(entries){entries.forEach(function(entry){var id=entry.target.id||entry.target.tagName.toLowerCase();if(entry.isIntersecting){lastSection=id;sectionTimers[id]=Date.now();send('section_view',{section:id})}else if(sectionTimers[id]){var ms=Date.now()-sectionTimers[id];sectionTimers[id]=0;if(ms>800)send('section_time',{section:id,duration_ms:ms})}})},{threshold:.55});document.querySelectorAll('header[id],main[id],section[id]').forEach(function(s){observer.observe(s)})}var qs=new URLSearchParams(location.search);send('page_view',{utm_source:qs.get('utm_source')||'',utm_medium:qs.get('utm_medium')||'',utm_campaign:qs.get('utm_campaign')||''});window.addEventListener('pagehide',function(){send('page_leave',{duration_ms:Date.now()-start,max_scroll:Math.max(maxScroll,depth()),section:lastSection},true)})})();`;
 
 export default {
   async fetch(request, env, ctx) {
@@ -11,6 +12,16 @@ export default {
 
     if (url.pathname === '/collect' && request.method === 'POST') {
       return collect(request, env, ctx);
+    }
+
+    if (url.pathname === '/script.js' && (request.method === 'GET' || request.method === 'HEAD')) {
+      return new Response(request.method === 'HEAD' ? null : TRACKING_SCRIPT, {
+        headers: {
+          'content-type': 'application/javascript; charset=utf-8',
+          'cache-control': 'public, max-age=3600',
+          ...corsHeaders(request)
+        }
+      });
     }
 
     if (url.pathname === '/summary' && request.method === 'GET') {
@@ -27,7 +38,7 @@ export default {
 
 function corsHeaders(request) {
   const origin = request.headers.get('origin') || '';
-  const allowed = origin === COLLECT_ORIGIN || origin === DASHBOARD_ORIGIN ? origin : DASHBOARD_ORIGIN;
+  const allowed = isAllowedOrigin(origin) ? origin : DASHBOARD_ORIGIN;
   return {
     'access-control-allow-origin': allowed,
     'access-control-allow-methods': 'GET,POST,OPTIONS',
@@ -35,6 +46,16 @@ function corsHeaders(request) {
     'access-control-max-age': '86400',
     'vary': 'Origin'
   };
+}
+
+function isAllowedOrigin(origin) {
+  if (origin === COLLECT_ORIGIN || origin === DASHBOARD_ORIGIN || origin === 'https://nice.okinawa') return true;
+  try {
+    const host = new URL(origin).hostname;
+    return host === 'nice.okinawa' || host.endsWith('.nice.okinawa');
+  } catch (e) {
+    return false;
+  }
 }
 
 function json(data, request, status = 200) {
@@ -165,9 +186,10 @@ async function summary(request, env) {
 
   const url = new URL(request.url);
   const days = Math.min(Math.max(Number(url.searchParams.get('days') || 7), 1), 90);
+  const selectedSite = clean(url.searchParams.get('site'), 120);
   const selectedPath = clean(url.searchParams.get('path'), 300);
-  const pathClause = selectedPath ? ' AND path = ?' : '';
-  const pathParams = selectedPath ? [selectedPath] : [];
+  const filterClause = `${selectedSite ? ' AND site = ?' : ''}${selectedPath ? ' AND path = ?' : ''}`;
+  const filterParams = [...(selectedSite ? [selectedSite] : []), ...(selectedPath ? [selectedPath] : [])];
   const since = new Date(Date.now() - days * 86400000).toISOString();
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
@@ -183,8 +205,8 @@ async function summary(request, env) {
       ROUND(AVG(CASE WHEN type='page_leave' AND duration_ms IS NOT NULL THEN duration_ms END)) AS avg_duration_ms,
       ROUND(AVG(CASE WHEN type='page_leave' AND max_scroll IS NOT NULL THEN max_scroll END)) AS avg_scroll
     FROM events
-    WHERE created_at >= ?${pathClause}
-  `, [since, ...pathParams]);
+    WHERE created_at >= ?${filterClause}
+  `, [since, ...filterParams]);
 
   const todayTotals = await first(env.DB, `
     SELECT
@@ -192,93 +214,104 @@ async function summary(request, env) {
       COUNT(DISTINCT CASE WHEN type='page_view' THEN session_id END) AS sessions,
       COUNT(DISTINCT CASE WHEN type='page_view' THEN visitor_id END) AS visitors
     FROM events
-    WHERE created_at >= ?${pathClause}
-  `, [todayIso, ...pathParams]);
+    WHERE created_at >= ?${filterClause}
+  `, [todayIso, ...filterParams]);
 
   const online = await first(env.DB, `
     SELECT COUNT(DISTINCT session_id) AS sessions
     FROM events
-    WHERE created_at >= ?${pathClause}
-  `, [onlineSince, ...pathParams]);
+    WHERE created_at >= ?${filterClause}
+  `, [onlineSince, ...filterParams]);
 
   const pages = await all(env.DB, `
-    SELECT path, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
+    SELECT site, path, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
+    FROM events
+    WHERE created_at >= ?${selectedSite ? ' AND site = ?' : ''} AND type='page_view'
+    GROUP BY site, path
+    ORDER BY views DESC
+    LIMIT 60
+  `, [since, ...(selectedSite ? [selectedSite] : [])]);
+
+  const sites = await all(env.DB, `
+    SELECT site, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
     FROM events
     WHERE created_at >= ? AND type='page_view'
-    GROUP BY path
+    GROUP BY site
     ORDER BY views DESC
-    LIMIT 20
+    LIMIT 50
   `, [since]);
 
   const sources = await all(env.DB, `
     SELECT source, medium, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
     FROM events
-    WHERE created_at >= ?${pathClause} AND type='page_view'
+    WHERE created_at >= ?${filterClause} AND type='page_view'
     GROUP BY source, medium
     ORDER BY views DESC
     LIMIT 20
-  `, [since, ...pathParams]);
+  `, [since, ...filterParams]);
 
   const sections = await all(env.DB, `
     SELECT section, COUNT(*) AS views, ROUND(AVG(duration_ms)) AS avg_duration_ms
     FROM events
-    WHERE created_at >= ?${pathClause} AND section <> ''
+    WHERE created_at >= ?${filterClause} AND section <> ''
     GROUP BY section
     ORDER BY views DESC
     LIMIT 20
-  `, [since, ...pathParams]);
+  `, [since, ...filterParams]);
 
   const contacts = await all(env.DB, `
     SELECT event_name, label, COUNT(*) AS clicks
     FROM events
-    WHERE created_at >= ?${pathClause} AND type='click' AND event_name LIKE 'contact_%'
+    WHERE created_at >= ?${filterClause} AND type='click' AND event_name LIKE 'contact_%'
     GROUP BY event_name, label
     ORDER BY clicks DESC
     LIMIT 20
-  `, [since, ...pathParams]);
+  `, [since, ...filterParams]);
 
   const languages = await all(env.DB, `
     SELECT lang, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
     FROM events
-    WHERE created_at >= ?${pathClause} AND type='page_view'
+    WHERE created_at >= ?${filterClause} AND type='page_view'
     GROUP BY lang
     ORDER BY views DESC
     LIMIT 20
-  `, [since, ...pathParams]);
+  `, [since, ...filterParams]);
 
   const countries = await all(env.DB, `
     SELECT country, COUNT(*) AS views
     FROM events
-    WHERE created_at >= ?${pathClause} AND type='page_view' AND country <> ''
+    WHERE created_at >= ?${filterClause} AND type='page_view' AND country <> ''
     GROUP BY country
     ORDER BY views DESC
     LIMIT 20
-  `, [since, ...pathParams]);
+  `, [since, ...filterParams]);
 
   const devices = await all(env.DB, `
     SELECT device, COUNT(*) AS views
     FROM events
-    WHERE created_at >= ?${pathClause} AND type='page_view'
+    WHERE created_at >= ?${filterClause} AND type='page_view'
     GROUP BY device
     ORDER BY views DESC
-  `, [since, ...pathParams]);
+  `, [since, ...filterParams]);
 
   const recent = await all(env.DB, `
-    SELECT created_at, type, path, source, country, device, lang, event_name, section, duration_ms, max_scroll
+    SELECT created_at, type, site, path, source, country, device, lang, event_name, section, duration_ms, max_scroll
     FROM events
-    WHERE created_at >= ?${pathClause}
+    WHERE created_at >= ?${filterClause}
     ORDER BY created_at DESC
     LIMIT 50
-  `, [since, ...pathParams]);
+  `, [since, ...filterParams]);
 
   return json({
     ok: true,
     days,
+    selected_site: selectedSite,
     selected_path: selectedPath,
     generated_at: new Date().toISOString(),
     online: online?.sessions || 0,
     totals,
     today: todayTotals,
+    sites,
     pages,
     sources,
     sections,
