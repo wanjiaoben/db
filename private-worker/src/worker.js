@@ -32,6 +32,7 @@ export default {
     const headers = new Headers(upstream.headers);
     headers.set('cache-control', 'no-store');
     headers.set('x-robots-tag', 'noindex, nofollow');
+    headers.set('content-type', contentTypeFor(target));
     headers.delete('content-security-policy');
     return new Response(upstream.body, {
       status: upstream.status,
@@ -45,6 +46,19 @@ function targetUrl(url, env) {
   let pathname = url.pathname;
   if (pathname === '/' || pathname.endsWith('/')) pathname += 'index.html';
   return `${env.DASHBOARD_ORIGIN}${pathname}`;
+}
+
+function contentTypeFor(target) {
+  const pathname = new URL(target).pathname;
+  if (pathname.endsWith('.html')) return 'text/html; charset=utf-8';
+  if (pathname.endsWith('.css')) return 'text/css; charset=utf-8';
+  if (pathname.endsWith('.js')) return 'application/javascript; charset=utf-8';
+  if (pathname.endsWith('.json')) return 'application/json; charset=utf-8';
+  if (pathname.endsWith('.svg')) return 'image/svg+xml';
+  if (pathname.endsWith('.png')) return 'image/png';
+  if (pathname.endsWith('.jpg') || pathname.endsWith('.jpeg')) return 'image/jpeg';
+  if (pathname.endsWith('.webp')) return 'image/webp';
+  return 'application/octet-stream';
 }
 
 function isAuthorized(request, env) {
