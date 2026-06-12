@@ -30,21 +30,21 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 18px;
-  padding: 18px 28px;
+  gap: 10px;
+  padding: 10px 14px;
   background: rgba(246, 244, 239, 0.92);
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(16px);
 }
 h1 {
   margin: 0;
-  font-size: 20px;
+  font-size: 16px;
   letter-spacing: 0.04em;
 }
 .sub {
-  margin-top: 4px;
+  margin-top: 2px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 11px;
 }
 .controls {
   display: flex;
@@ -54,12 +54,12 @@ h1 {
   justify-content: flex-end;
 }
 button, input, select {
-  height: 36px;
+  height: 30px;
   border: 1px solid var(--line);
   background: var(--panel);
   color: var(--ink);
-  border-radius: 6px;
-  padding: 0 10px;
+  border-radius: 5px;
+  padding: 0 8px;
   font: inherit;
 }
 button {
@@ -77,16 +77,26 @@ td button {
   text-align: left;
 }
 main {
-  max-width: 1320px;
-  margin: 0 auto;
-  padding: 22px 28px 40px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  max-width: none;
+  margin: 0;
+  padding: 8px;
 }
 .grid {
   display: grid;
-  gap: 14px;
+  gap: 8px;
 }
 .metrics {
+  grid-column: 1 / -1;
   grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.error {
+  grid-column: 1 / -1;
+}
+.grid:not(.metrics) {
+  display: contents;
 }
 .two {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -97,36 +107,47 @@ main {
 .card {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 16px;
+  border-radius: 6px;
+  padding: 9px;
   min-width: 0;
+  max-height: 172px;
+  overflow: auto;
+}
+.metric {
+  max-height: none;
 }
 .metric .label {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
 }
 .metric .value {
-  margin-top: 8px;
-  font-size: 28px;
+  margin-top: 4px;
+  font-size: 22px;
   line-height: 1;
   font-weight: 700;
 }
 .metric .hint {
-  margin-top: 8px;
+  margin-top: 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 10px;
 }
 h2 {
-  margin: 0 0 12px;
-  font-size: 15px;
+  position: sticky;
+  top: -9px;
+  z-index: 1;
+  margin: -9px -9px 6px;
+  padding: 8px 9px 5px;
+  background: var(--panel);
+  border-bottom: 1px solid #ece6da;
+  font-size: 13px;
 }
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 11px;
 }
 th, td {
-  padding: 9px 0;
+  padding: 5px 0;
   border-bottom: 1px solid #ece6da;
   text-align: left;
   vertical-align: top;
@@ -154,9 +175,9 @@ td.num, th.num { text-align: right; }
   gap: 6px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 4px 8px;
+  padding: 3px 7px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
 }
 .dot {
   width: 7px;
@@ -167,8 +188,8 @@ td.num, th.num { text-align: right; }
 .muted { color: var(--muted); }
 .error {
   display: none;
-  margin: 0 0 16px;
-  padding: 12px 14px;
+  margin: 0;
+  padding: 8px 10px;
   border: 1px solid #e0b5b5;
   background: #fff4f4;
   color: var(--red);
@@ -176,13 +197,16 @@ td.num, th.num { text-align: right; }
 }
 .empty {
   color: var(--muted);
-  font-size: 13px;
-  padding: 10px 0;
+  font-size: 11px;
+  padding: 6px 0;
 }
 @media (max-width: 980px) {
   header { align-items: flex-start; flex-direction: column; }
   .controls { justify-content: flex-start; }
+  main { grid-template-columns: 1fr; }
   .metrics, .two, .three { grid-template-columns: 1fr; }
+  .grid:not(.metrics) { display: grid; }
+  .card { max-height: none; }
 }
 </style>
 </head>
