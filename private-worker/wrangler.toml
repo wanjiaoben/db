@@ -1,0 +1,11 @@
+name = "db-private"
+main = "src/worker.js"
+compatibility_date = "2026-06-12"
+workers_dev = false
+preview_urls = false
+routes = [
+  { pattern = "db.nice.okinawa/*", zone_name = "nice.okinawa" }
+]
+
+[vars]
+DASHBOARD_ORIGIN = "https://raw.githubusercontent.com/wanjiaoben/db/main"
