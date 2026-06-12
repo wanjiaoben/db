@@ -1,11 +1,16 @@
 name = "nice-analytics"
 main = "src/worker.js"
 compatibility_date = "2026-06-12"
+workers_dev = false
+preview_urls = false
+routes = [
+  { pattern = "analytics.nice.okinawa/*", zone_name = "nice.okinawa" }
+]
 
 [[d1_databases]]
 binding = "DB"
 database_name = "nice_analytics"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "fbcc9bc2-3556-4ac4-8168-8611940114d3"
 
 [vars]
 ALLOWED_ORIGIN = "https://translation.nice.okinawa"
