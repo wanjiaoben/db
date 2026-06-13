@@ -1,0 +1,507 @@
+{
+  "generatedAt": "2026-06-13T21:52:14",
+  "postsChecked": 40,
+  "totals": {
+    "facebookLikes": 0,
+    "facebookComments": 0,
+    "facebookShares": 0,
+    "instagramLikes": 4,
+    "instagramComments": 0,
+    "instagramShares": 0
+  },
+  "dmSummary": {
+    "available": false,
+    "error": "HTTP 403 {\"error\":{\"message\":\"(#200) Requires permission: pages_messaging or User associated with the Page access token does not have an appropriate role on the Page.\",\"type\":\"OAuthException\",\"code\":200,\"fbtrace_id\":\"AKWKx3MdqZk4IuYQpS_vFYL\"}}"
+  },
+  "byTheme": [
+    {
+      "theme": "snorkel",
+      "posts": 19,
+      "fbLikes": 0,
+      "fbComments": 0,
+      "igLikes": 4,
+      "igComments": 0,
+      "score": 4
+    },
+    {
+      "theme": "fishing",
+      "posts": 11,
+      "fbLikes": 0,
+      "fbComments": 0,
+      "igLikes": 0,
+      "igComments": 0,
+      "score": 0
+    },
+    {
+      "theme": "rental_car",
+      "posts": 10,
+      "fbLikes": 0,
+      "fbComments": 0,
+      "igLikes": 0,
+      "igComments": 0,
+      "score": 0
+    }
+  ],
+  "topPosts": [
+    {
+      "rank": 1,
+      "id": "snorkel-okinawa-blue-02.mp4",
+      "kind": "video",
+      "theme": "snorkel",
+      "language": null,
+      "captionType": "video",
+      "source": "snorkel-okinawa-blue-02.mp4",
+      "publishedAt": "2026-06-12T23:08:00.847236+00:00",
+      "score": 3,
+      "facebook": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "/reel/2051368848810639/"
+      },
+      "instagram": {
+        "likes": 3,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.instagram.com/reel/DZgPIDkDb2e/"
+      }
+    },
+    {
+      "rank": 2,
+      "id": "snorkel-okinawa-blue-01.mp4",
+      "kind": "video",
+      "theme": "snorkel",
+      "language": null,
+      "captionType": "video",
+      "source": "snorkel-okinawa-blue-01.mp4",
+      "publishedAt": "2026-06-12T23:07:07.982991+00:00",
+      "score": 1,
+      "facebook": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "/reel/871068409380348/"
+      },
+      "instagram": {
+        "likes": 1,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.instagram.com/reel/DZgPDCzkrBD/"
+      }
+    },
+    {
+      "rank": 3,
+      "id": "e629f3b3a7f97a6a",
+      "kind": "queue",
+      "theme": "snorkel",
+      "language": "zh_tw",
+      "captionType": "zh_tw",
+      "source": "DJI_20250820100733_0087_D.jpg",
+      "publishedAt": "2026-06-13T10:58:59.301821+00:00",
+      "score": 0,
+      "facebook": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.facebook.com/1423532093141175/posts/1428352702659114"
+      },
+      "instagram": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.instagram.com/p/DZhi6TZk__0/"
+      }
+    },
+    {
+      "rank": 4,
+      "id": "0a7f677125ccacf3",
+      "kind": "queue",
+      "theme": "fishing",
+      "language": "en",
+      "captionType": "trust",
+      "source": "2025-05-22-001.jpg",
+      "publishedAt": "2026-06-13T10:43:34.505548+00:00",
+      "score": 0,
+      "facebook": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.facebook.com/1423532093141175/posts/1428340532660331"
+      },
+      "instagram": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.instagram.com/p/DZhhKgfE9-k/"
+      }
+    },
+    {
+      "rank": 5,
+      "id": "5829cccd245e3075",
+      "kind": "queue",
+      "theme": "rental_car",
+      "language": "en",
+      "captionType": "conversion",
+      "source": "DJI_20250514141538_0011_D.JPG",
+      "publishedAt": "2026-06-13T10:28:25.687927+00:00",
+      "score": 0,
+      "facebook": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.facebook.com/1423532093141175/posts/1428322105995507"
+      },
+      "instagram": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.instagram.com/p/DZhfY_Xk8Q7/"
+      }
+    },
+    {
+      "rank": 6,
+      "id": "35bea7c73a8d654c",
+      "kind": "queue",
+      "theme": "snorkel",
+      "language": "zh_tw",
+      "captionType": "zh_tw",
+      "source": "DJI_20250826092612_0140_D.jpg",
+      "publishedAt": "2026-06-13T08:02:39.246160+00:00",
+      "score": 0,
+      "facebook": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.facebook.com/1423532093141175/posts/1428230346004683"
+      },
+      "instagram": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.instagram.com/p/DZhOsqvk45H/"
+      }
+    },
+    {
+      "rank": 7,
+      "id": "5e2b7b5b21f93b0e",
+      "kind": "queue",
+      "theme": "snorkel",
+      "language": "en",
+      "captionType": "trust",
+      "source": "DJI_20250828134341_0254_D.jpg",
+      "publishedAt": "2026-06-13T07:02:05.135643+00:00",
+      "score": 0,
+      "facebook": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.facebook.com/1423532093141175/posts/1428193986008319"
+      },
+      "instagram": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.instagram.com/p/DZhHxUPE8r_/"
+      }
+    },
+    {
+      "rank": 8,
+      "id": "45f69ca940bc857b",
+      "kind": "queue",
+      "theme": "fishing",
+      "language": "en",
+      "captionType": "conversion",
+      "source": "2025-11-18-001.jpg",
+      "publishedAt": "2026-06-13T05:56:07.734073+00:00",
+      "score": 0,
+      "facebook": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.facebook.com/1423532093141175/posts/1428152046012513"
+      },
+      "instagram": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.instagram.com/p/DZhAQUMCDaT/"
+      }
+    },
+    {
+      "rank": 9,
+      "id": "7d9eccabef457055",
+      "kind": "queue",
+      "theme": "rental_car",
+      "language": "zh_tw",
+      "captionType": "zh_tw",
+      "source": "DJI_20250514141426_0009_D.JPG",
+      "publishedAt": "2026-06-13T05:40:40.611899+00:00",
+      "score": 0,
+      "facebook": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.facebook.com/1423532093141175/posts/1428141029346948"
+      },
+      "instagram": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.instagram.com/p/DZg-gC9E4Rf/"
+      }
+    },
+    {
+      "rank": 10,
+      "id": "b9def6121ddada77",
+      "kind": "queue",
+      "theme": "snorkel",
+      "language": "en",
+      "captionType": "trust",
+      "source": "DJI_20250820100728_0086_D.jpg",
+      "publishedAt": "2026-06-13T05:25:30.456657+00:00",
+      "score": 0,
+      "facebook": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.facebook.com/1423532093141175/posts/1428130179348033"
+      },
+      "instagram": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.instagram.com/p/DZg8u8Dk4Wa/"
+      }
+    },
+    {
+      "rank": 11,
+      "id": "14afc155eb48aee9",
+      "kind": "queue",
+      "theme": "snorkel",
+      "language": "en",
+      "captionType": "trust",
+      "source": "DJI_20250818134722_0063_D.jpg",
+      "publishedAt": "2026-06-13T04:04:54.912250+00:00",
+      "score": 0,
+      "facebook": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.facebook.com/1423532093141175/posts/1428073196020398"
+      },
+      "instagram": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.instagram.com/p/DZgy6tOk3Hv/"
+      }
+    },
+    {
+      "rank": 12,
+      "id": "19dad9da041c219c",
+      "kind": "queue",
+      "theme": "fishing",
+      "language": "zh_tw",
+      "captionType": "zh_tw",
+      "source": "2025-12-22-001.jpg",
+      "publishedAt": "2026-06-13T03:04:21.423192+00:00",
+      "score": 0,
+      "facebook": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.facebook.com/1423532093141175/posts/1428034736024244"
+      },
+      "instagram": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.instagram.com/p/DZgsj_gE5wh/"
+      }
+    },
+    {
+      "rank": 13,
+      "id": "128ff3337450b181",
+      "kind": "queue",
+      "theme": "rental_car",
+      "language": "en",
+      "captionType": "emotion",
+      "source": "DJI_20250514141253_0005_D.JPG",
+      "publishedAt": "2026-06-13T02:03:48.694362+00:00",
+      "score": 0,
+      "facebook": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.facebook.com/1423532093141175/posts/1427999329361118"
+      },
+      "instagram": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.instagram.com/p/DZglojxn3Ke/"
+      }
+    },
+    {
+      "rank": 14,
+      "id": "3308d8ae5fa9c23b",
+      "kind": "queue",
+      "theme": "snorkel",
+      "language": "en",
+      "captionType": "trust",
+      "source": "DJI_20250825155617_0112_D.jpg",
+      "publishedAt": "2026-06-13T01:28:05.137916+00:00",
+      "score": 0,
+      "facebook": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.facebook.com/1423532093141175/posts/1427978556029862"
+      },
+      "instagram": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.instagram.com/p/DZghkyekyiV/"
+      }
+    },
+    {
+      "rank": 15,
+      "id": "2b5c7926e32c3c64",
+      "kind": "queue",
+      "theme": "snorkel",
+      "language": "zh_tw",
+      "captionType": "zh_tw",
+      "source": "DJI_20250828134349_0255_D.jpg",
+      "publishedAt": "2026-06-13T01:12:39.850158+00:00",
+      "score": 0,
+      "facebook": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.facebook.com/1423532093141175/posts/1427970149364036"
+      },
+      "instagram": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.instagram.com/p/DZgf0lfkxV3/"
+      }
+    },
+    {
+      "rank": 16,
+      "id": "424f53fe5032281a",
+      "kind": "queue",
+      "theme": "fishing",
+      "language": "en",
+      "captionType": "trust",
+      "source": "2026-04-21-001.jpg",
+      "publishedAt": "2026-06-13T00:57:24.689481+00:00",
+      "score": 0,
+      "facebook": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.facebook.com/1423532093141175/posts/1427961766031541"
+      },
+      "instagram": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.instagram.com/p/DZgeDrwE5T-/"
+      }
+    },
+    {
+      "rank": 17,
+      "id": "c86653f1f40e34a3",
+      "kind": "queue",
+      "theme": "rental_car",
+      "language": "en",
+      "captionType": "trust",
+      "source": "DJI_20250514141320_0007_D.JPG",
+      "publishedAt": "2026-06-13T00:01:53.960682+00:00",
+      "score": 0,
+      "facebook": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.facebook.com/1423532093141175/posts/1427931779367873"
+      },
+      "instagram": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.instagram.com/p/DZgXrYtH3hM/"
+      }
+    },
+    {
+      "rank": 18,
+      "id": "55b7e86b6e01e0f8",
+      "kind": "queue",
+      "theme": "snorkel",
+      "language": "zh_tw",
+      "captionType": "zh_tw",
+      "source": "DJI_20250826093020_0160_D.jpg",
+      "publishedAt": "2026-06-12T23:08:35.778738+00:00",
+      "score": 0,
+      "facebook": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.facebook.com/1423532093141175/posts/1427900656037652"
+      },
+      "instagram": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.instagram.com/p/DZgQwZMGqcb/"
+      }
+    },
+    {
+      "rank": 19,
+      "id": "rental-car-okinawa-road-02.mp4",
+      "kind": "video",
+      "theme": "rental_car",
+      "language": null,
+      "captionType": "video",
+      "source": "rental-car-okinawa-road-02.mp4",
+      "publishedAt": "2026-06-12T23:05:36.686639+00:00",
+      "score": 0,
+      "facebook": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "/reel/1335079295435112/"
+      },
+      "instagram": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.instagram.com/reel/DZgO2M4D7Fs/"
+      }
+    },
+    {
+      "rank": 20,
+      "id": "rental-car-okinawa-road-01.mp4",
+      "kind": "video",
+      "theme": "rental_car",
+      "language": null,
+      "captionType": "video",
+      "source": "rental-car-okinawa-road-01.mp4",
+      "publishedAt": "2026-06-12T23:04:41.185505+00:00",
+      "score": 0,
+      "facebook": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "/reel/1358488616139593/"
+      },
+      "instagram": {
+        "likes": 0,
+        "comments": 0,
+        "shares": 0,
+        "url": "https://www.instagram.com/reel/DZgOwrLDPQb/"
+      }
+    }
+  ]
+}

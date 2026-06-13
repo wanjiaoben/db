@@ -244,6 +244,18 @@ td.num, th.num { text-align: right; }
     <table><thead><tr><th>时间</th><th>站点</th><th>事件</th><th>页面</th><th>来源</th><th>细节</th></tr></thead><tbody id="recent"></tbody></table>
   </section>
 
+  <section class="card">
+    <h2>SNS 反馈</h2>
+    <table>
+      <thead><tr><th>检查条数</th><th class="num">IG赞</th><th class="num">IG评论</th><th class="num">FB赞</th><th class="num">FB评论</th><th>DM状态</th><th>更新时间</th></tr></thead>
+      <tbody><tr><td id="snsPosts">-</td><td class="num" id="snsIgLikes">-</td><td class="num" id="snsIgComments">-</td><td class="num" id="snsFbLikes">-</td><td class="num" id="snsFbComments">-</td><td id="snsDm">-</td><td id="snsUpdated">-</td></tr></tbody>
+    </table>
+    <table style="margin-top:8px">
+      <thead><tr><th>排名</th><th>主题</th><th>类型</th><th>素材</th><th class="num">IG赞/评</th><th class="num">FB赞/评</th><th>链接</th></tr></thead>
+      <tbody id="snsTable"><tr><td colspan="7" class="empty">等待SNS统计数据</td></tr></tbody>
+    </table>
+  </section>
+
 </main>
 
 <script>
@@ -329,6 +341,37 @@ function updatePageOptions(pages) {
   $('pageFilter').innerHTML = options.join('');
   $('pageFilter').value = known.has(current) ? current : '';
   selectedPage = $('pageFilter').value;
+}
+
+async function loadSnsMetrics() {
+  try {
+    const res = await fetch('data/sns-metrics.json?t=' + Date.now());
+    if (!res.ok) throw new Error('SNS metrics not found');
+    const data = await res.json();
+    const totals = data.totals || {};
+    $('snsPosts').textContent = n(data.postsChecked);
+    $('snsIgLikes').textContent = n(totals.instagramLikes);
+    $('snsIgComments').textContent = n(totals.instagramComments);
+    $('snsFbLikes').textContent = n(totals.facebookLikes);
+    $('snsFbComments').textContent = n(totals.facebookComments);
+    const dm = data.dmSummary || {};
+    $('snsDm').textContent = dm.available ? (n(dm.conversations) + ' conversations') : '无权限';
+    $('snsUpdated').textContent = data.generatedAt ? new Date(data.generatedAt).toLocaleString() : '-';
+    renderRows('snsTable', (data.topPosts || []).slice(0, 10), (r) => row([
+      { html: n(r.rank), num: true },
+      escapeHtml(r.theme || '-'),
+      escapeHtml(r.kind || '-'),
+      escapeHtml(r.source || r.id || '-'),
+      { html: n((r.instagram || {}).likes) + '/' + n((r.instagram || {}).comments), num: true },
+      { html: n((r.facebook || {}).likes) + '/' + n((r.facebook || {}).comments), num: true },
+      { html: [
+        (r.instagram || {}).url ? '<a href="' + escapeHtml((r.instagram || {}).url) + '" target="_blank">IG</a>' : '',
+        (r.facebook || {}).url ? '<a href="' + escapeHtml((r.facebook || {}).url) + '" target="_blank">FB</a>' : ''
+      ].filter(Boolean).join(' ') || '-' }
+    ]));
+  } catch (e) {
+    $('snsTable').innerHTML = '<tr><td colspan="7" class="empty">SNS统计读取失败：' + escapeHtml(e.message) + '</td></tr>';
+  }
 }
 
 async function load() {
@@ -462,7 +505,8 @@ $('pageTable').addEventListener('click', (event) => {
 });
 $('key').value = localStorage.getItem('nice_dashboard_key') || '';
 load();
-setInterval(load, 30000);
+loadSnsMetrics();
+setInterval(() => { load(); loadSnsMetrics(); }, 30000);
 </script>
 </body>
 </html>
