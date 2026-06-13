@@ -18,4 +18,4 @@ database_id = "fbcc9bc2-3556-4ac4-8168-8611940114d3"
 [vars]
 ALLOWED_ORIGIN = "https://translation.nice.okinawa"
 DASHBOARD_ORIGIN = "https://db.nice.okinawa"
-GSC_SITE_URLS = "https://translation.nice.okinawa/,https://nice.okinawa/,https://golf.nice.okinawa/,https://fishing.nice.okinawa/,https://rental.nice.okinawa/,https://snorkel.nice.okinawa/,https://japanusedcars.nice.okinawa/,https://bjt.nice.okinawa/"
+GSC_SITE_URLS = "https://translation.nice.okinawa/,https://nice.okinawa/,https://activity.nice.okinawa/,https://golf.nice.okinawa/,https://fishing.nice.okinawa/,https://rental.nice.okinawa/,https://snorkel.nice.okinawa/,https://japanusedcars.nice.okinawa/,https://bjt.nice.okinawa/"
