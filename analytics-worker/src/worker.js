@@ -28,11 +28,23 @@ export default {
       return summary(request, env);
     }
 
+    if (url.pathname === '/search-console/sync' && request.method === 'POST') {
+      return syncSearchConsole(request, env);
+    }
+
+    if (url.pathname === '/search-console/status' && request.method === 'GET') {
+      return searchConsoleStatus(request, env);
+    }
+
     if (url.pathname === '/health') {
       return json({ ok: true, service: 'nice-analytics' }, request);
     }
 
     return json({ ok: false, error: 'not_found' }, request, 404);
+  },
+
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(syncSearchConsoleRange(env));
   }
 };
 
@@ -355,6 +367,12 @@ async function summary(request, env) {
     LIMIT 50
   `, [since, ...filterParams]);
 
+  const searchConsole = await searchConsoleSummary(env.DB, {
+    since: dateOnly(Date.now() - days * 86400000),
+    site: selectedSite,
+    path: selectedPath
+  });
+
   return json({
     ok: true,
     days,
@@ -373,6 +391,260 @@ async function summary(request, env) {
     languages,
     countries,
     devices,
-    recent
+    recent,
+    search_console: searchConsole
   }, request);
+}
+
+async function searchConsoleSummary(db, filters) {
+  try {
+    const clause = `${filters.site ? ' AND site = ?' : ''}${filters.path ? ' AND path = ?' : ''}`;
+    const params = [filters.since, ...(filters.site ? [filters.site] : []), ...(filters.path ? [filters.path] : [])];
+    const totals = await first(db, `
+      SELECT
+        COALESCE(SUM(clicks), 0) AS clicks,
+        COALESCE(SUM(impressions), 0) AS impressions,
+        CASE WHEN SUM(impressions) > 0 THEN SUM(clicks) * 1.0 / SUM(impressions) ELSE 0 END AS ctr,
+        CASE WHEN SUM(impressions) > 0 THEN SUM(position * impressions) / SUM(impressions) ELSE 0 END AS position,
+        MAX(imported_at) AS imported_at
+      FROM search_console_daily
+      WHERE date >= ?${clause}
+    `, params);
+    const queries = await all(db, `
+      SELECT
+        query,
+        site,
+        path,
+        SUM(clicks) AS clicks,
+        SUM(impressions) AS impressions,
+        CASE WHEN SUM(impressions) > 0 THEN SUM(clicks) * 1.0 / SUM(impressions) ELSE 0 END AS ctr,
+        CASE WHEN SUM(impressions) > 0 THEN SUM(position * impressions) / SUM(impressions) ELSE 0 END AS position
+      FROM search_console_daily
+      WHERE date >= ?${clause}
+      GROUP BY query, site, path
+      ORDER BY clicks DESC, impressions DESC
+      LIMIT 80
+    `, params);
+    const pages = await all(db, `
+      SELECT
+        site,
+        path,
+        SUM(clicks) AS clicks,
+        SUM(impressions) AS impressions,
+        CASE WHEN SUM(impressions) > 0 THEN SUM(clicks) * 1.0 / SUM(impressions) ELSE 0 END AS ctr,
+        CASE WHEN SUM(impressions) > 0 THEN SUM(position * impressions) / SUM(impressions) ELSE 0 END AS position
+      FROM search_console_daily
+      WHERE date >= ?${clause}
+      GROUP BY site, path
+      ORDER BY clicks DESC, impressions DESC
+      LIMIT 80
+    `, params);
+    return { ok: true, totals, queries, pages };
+  } catch (e) {
+    return { ok: false, error: 'search_console_not_ready' };
+  }
+}
+
+async function searchConsoleStatus(request, env) {
+  if (!requireDashboard(request, env)) {
+    return json({ ok: false, error: 'unauthorized' }, request, 401);
+  }
+  const data = await searchConsoleSummary(env.DB, {
+    since: new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
+    site: '',
+    path: ''
+  });
+  return json({
+    ok: true,
+    configured: hasSearchConsoleConfig(env),
+    sites: configuredSearchConsoleSites(env),
+    search_console: data
+  }, request);
+}
+
+async function syncSearchConsole(request, env) {
+  if (!requireDashboard(request, env)) {
+    return json({ ok: false, error: 'unauthorized' }, request, 401);
+  }
+  const url = new URL(request.url);
+  const days = Math.min(Math.max(Number(url.searchParams.get('days') || 7), 1), 30);
+  const endDate = url.searchParams.get('end') || dateOnly(Date.now() - 2 * 86400000);
+  const startDate = url.searchParams.get('start') || dateOnly(Date.parse(endDate + 'T00:00:00Z') - (days - 1) * 86400000);
+  const result = await syncSearchConsoleRange(env, startDate, endDate);
+  return json({ ok: true, ...result }, request);
+}
+
+async function syncSearchConsoleRange(env, startDate, endDate) {
+  if (!hasSearchConsoleConfig(env)) {
+    return { configured: false, imported_rows: 0, error: 'missing_search_console_config' };
+  }
+  const end = endDate || dateOnly(Date.now() - 2 * 86400000);
+  const start = startDate || dateOnly(Date.now() - 8 * 86400000);
+  const token = await googleAccessToken(env);
+  const sites = configuredSearchConsoleSites(env);
+  let imported = 0;
+  const details = [];
+  for (const siteUrl of sites) {
+    const rows = await fetchSearchConsoleRows(token, siteUrl, start, end);
+    const count = await storeSearchConsoleRows(env.DB, siteUrl, rows);
+    imported += count;
+    details.push({ site_url: siteUrl, rows: count });
+  }
+  return { configured: true, start_date: start, end_date: end, imported_rows: imported, sites: details };
+}
+
+function hasSearchConsoleConfig(env) {
+  return Boolean(env.GSC_CLIENT_EMAIL && env.GSC_PRIVATE_KEY && configuredSearchConsoleSites(env).length);
+}
+
+function configuredSearchConsoleSites(env) {
+  return clean(env.GSC_SITE_URLS || '', 5000)
+    .split(',')
+    .map((site) => site.trim())
+    .filter(Boolean);
+}
+
+function dateOnly(ms) {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+async function googleAccessToken(env) {
+  const now = Math.floor(Date.now() / 1000);
+  const assertion = await signJwt(env.GSC_CLIENT_EMAIL, env.GSC_PRIVATE_KEY, {
+    iss: env.GSC_CLIENT_EMAIL,
+    scope: 'https://www.googleapis.com/auth/webmasters.readonly',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now,
+    exp: now + 3600
+  });
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion
+    })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.access_token) {
+    throw new Error(data.error_description || data.error || 'google_token_failed');
+  }
+  return data.access_token;
+}
+
+async function signJwt(clientEmail, privateKeyPem, claims) {
+  const header = { alg: 'RS256', typ: 'JWT' };
+  const encodedHeader = base64UrlJson(header);
+  const encodedClaims = base64UrlJson(claims);
+  const input = `${encodedHeader}.${encodedClaims}`;
+  const key = await crypto.subtle.importKey(
+    'pkcs8',
+    pemToArrayBuffer(privateKeyPem),
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(input));
+  return `${input}.${base64UrlBytes(signature)}`;
+}
+
+function base64UrlJson(value) {
+  return base64UrlBytes(new TextEncoder().encode(JSON.stringify(value)));
+}
+
+function base64UrlBytes(bytes) {
+  let binary = '';
+  const array = bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : new Uint8Array(bytes.buffer || bytes);
+  for (const byte of array) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function pemToArrayBuffer(pem) {
+  const body = pem
+    .replace(/\\n/g, '\n')
+    .replace(/-----BEGIN PRIVATE KEY-----/g, '')
+    .replace(/-----END PRIVATE KEY-----/g, '')
+    .replace(/\s+/g, '');
+  const binary = atob(body);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+async function fetchSearchConsoleRows(token, siteUrl, startDate, endDate) {
+  const endpoint = `https://searchconsole.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`;
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      startDate,
+      endDate,
+      dimensions: ['date', 'page', 'query', 'country', 'device'],
+      rowLimit: 25000,
+      dataState: 'final'
+    })
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error?.message || 'search_console_query_failed');
+  }
+  return data.rows || [];
+}
+
+async function storeSearchConsoleRows(db, siteUrl, rows) {
+  if (!rows.length) return 0;
+  const statements = rows.map((row) => {
+    const keys = row.keys || [];
+    const date = clean(keys[0], 20);
+    const page = clean(keys[1], 1000);
+    const query = clean(keys[2], 500);
+    const country = clean(keys[3], 20);
+    const device = clean(keys[4], 30);
+    const parsed = parsePage(siteUrl, page);
+    return db.prepare(`
+      INSERT INTO search_console_daily (
+        date, site_url, site, page, path, query, country, device, clicks, impressions, ctr, position, imported_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      ON CONFLICT(date, site_url, page, query, country, device) DO UPDATE SET
+        site = excluded.site,
+        path = excluded.path,
+        clicks = excluded.clicks,
+        impressions = excluded.impressions,
+        ctr = excluded.ctr,
+        position = excluded.position,
+        imported_at = excluded.imported_at
+    `).bind(
+      date,
+      clean(siteUrl, 300),
+      parsed.site,
+      page,
+      parsed.path,
+      query,
+      country,
+      device,
+      Math.round(Number(row.clicks || 0)),
+      Math.round(Number(row.impressions || 0)),
+      Number(row.ctr || 0),
+      Number(row.position || 0)
+    );
+  });
+  await db.batch(statements);
+  return statements.length;
+}
+
+function parsePage(siteUrl, page) {
+  try {
+    const parsed = new URL(page);
+    return { site: parsed.hostname, path: parsed.pathname || '/' };
+  } catch (e) {
+    try {
+      const fallback = new URL(siteUrl);
+      return { site: fallback.hostname, path: '/' };
+    } catch (err) {
+      return { site: '', path: '/' };
+    }
+  }
 }

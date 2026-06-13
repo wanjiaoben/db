@@ -208,6 +208,7 @@ td.num, th.num { text-align: right; }
     </select>
     <input id="key" type="password" placeholder="Dashboard key">
     <button id="saveKey">保存</button>
+    <button id="syncGsc">同步搜索词</button>
     <button id="refresh">刷新</button>
   </div>
 </header>
@@ -231,6 +232,14 @@ td.num, th.num { text-align: right; }
   </section>
 
   <section class="card">
+    <h2>Google 搜索词</h2>
+    <table>
+      <thead><tr><th>关键词</th><th>站点</th><th>页面</th><th class="num">点击</th><th class="num">曝光</th><th class="num">CTR</th><th class="num">排名</th></tr></thead>
+      <tbody id="queryTable"></tbody>
+    </table>
+  </section>
+
+  <section class="card">
     <h2>实时日志</h2>
     <table><thead><tr><th>时间</th><th>站点</th><th>事件</th><th>页面</th><th>来源</th><th>细节</th></tr></thead><tbody id="recent"></tbody></table>
   </section>
@@ -238,7 +247,8 @@ td.num, th.num { text-align: right; }
 </main>
 
 <script>
-const API = 'https://analytics.nice.okinawa/summary';
+const API_ROOT = 'https://analytics.nice.okinawa';
+const API = API_ROOT + '/summary';
 const $ = (id) => document.getElementById(id);
 const fmt = new Intl.NumberFormat('ja-JP');
 let selectedSite = '';
@@ -260,6 +270,18 @@ function seconds(ms) {
   const sec = Math.round(value / 1000);
   if (sec < 60) return sec + 's';
   return Math.floor(sec / 60) + 'm ' + (sec % 60) + 's';
+}
+
+function percent(value) {
+  const number = Number(value || 0);
+  if (!number) return '-';
+  return (number * 100).toFixed(1) + '%';
+}
+
+function position(value) {
+  const number = Number(value || 0);
+  if (!number) return '-';
+  return number.toFixed(1);
 }
 
 function row(cells) {
@@ -349,6 +371,20 @@ async function load() {
       { html: seconds(r.avg_duration_ms), num: true },
       { html: r.avg_scroll ? Math.round(r.avg_scroll) + '%' : '-', num: true }
     ]));
+    const searchConsole = data.search_console || {};
+    if (!searchConsole.ok) {
+      $('queryTable').innerHTML = '<tr><td colspan="7" class="empty">Search Console 尚未配置或还没有同步数据</td></tr>';
+    } else {
+      renderRows('queryTable', searchConsole.queries, (r) => row([
+        escapeHtml(r.query || '-'),
+        escapeHtml(r.site || '-'),
+        escapeHtml(r.path || '-'),
+        { html: n(r.clicks), num: true },
+        { html: n(r.impressions), num: true },
+        { html: percent(r.ctr), num: true },
+        { html: position(r.position), num: true }
+      ]));
+    }
     renderRows('recent', data.recent, (r) => row([
       escapeHtml(new Date(r.created_at).toLocaleTimeString()),
       escapeHtml(r.site || '-'),
@@ -371,6 +407,27 @@ $('saveKey').addEventListener('click', () => {
   load();
 });
 $('refresh').addEventListener('click', load);
+$('syncGsc').addEventListener('click', async () => {
+  $('error').style.display = 'none';
+  $('status').textContent = '同步搜索词中';
+  const key = localStorage.getItem('nice_dashboard_key') || '';
+  try {
+    const res = await fetch(API_ROOT + '/search-console/sync?days=7', {
+      method: 'POST',
+      headers: key ? { 'x-dashboard-key': key } : {}
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || '同步失败');
+    $('status').textContent = '搜索词已同步 ' + n(data.imported_rows) + ' 行';
+    load();
+  } catch (e) {
+    $('status').textContent = '同步失败';
+    $('error').textContent = e.message === 'missing_search_console_config'
+      ? 'Search Console 尚未配置。需要先设置 GSC_CLIENT_EMAIL / GSC_PRIVATE_KEY，并把服务账号加入 Search Console。'
+      : e.message;
+    $('error').style.display = 'block';
+  }
+});
 $('days').addEventListener('change', load);
 $('siteFilter').addEventListener('change', () => {
   selectedSite = $('siteFilter').value;
