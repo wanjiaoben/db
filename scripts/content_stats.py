@@ -22,7 +22,7 @@ from typing import Any
 
 
 JST = timezone(timedelta(hours=9))
-DB_REPO = Path(__file__).resolve().parents[1]
+DB_REPO = Path(os.environ.get("DB_REPO", Path(__file__).resolve().parents[1])).resolve()
 GITHUB_ROOT = DB_REPO.parent
 BJT_REPO = GITHUB_ROOT / "bjt"
 PROGRESS_REPO = GITHUB_ROOT / "progress"

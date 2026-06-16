@@ -5,7 +5,7 @@
 - Script: `/Users/jiajia/Documents/GitHub/db/scripts/content_stats.py`
 - Output: `/Users/jiajia/Documents/GitHub/db/data/content-stats.json`
 - History: `/Users/jiajia/Documents/GitHub/db/data/content-stats-history.json`
-- Schedule: `/Users/jiajia/Library/LaunchAgents/com.dashboard.content-stats.plist`, daily at 02:15 JST, log `/tmp/content-stats.log`
+- Schedule: `/Users/jiajia/Library/LaunchAgents/com.dashboard.content-stats.plist`, daily at 02:15 JST, log `/tmp/content-stats.log`. The LaunchAgent executes `/Users/jiajia/Documents/GitHub/db/scripts/content_stats_launchd.mjs` with Node because macOS launchd blocks `/usr/bin/python3` from reading files under `Documents/GitHub` on this machine.
 
 ### Data Sources
 
