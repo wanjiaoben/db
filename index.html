@@ -177,11 +177,84 @@ td.num, th.num { text-align: right; }
   font-size: 11px;
   padding: 6px 0;
 }
+.inventory-card { max-height: none; }
+.inventory-card h2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.inventory-card h2 .sub {
+  margin-top: 0;
+  font-weight: 400;
+}
+.inventory-grid {
+  display: grid;
+  gap: 4px;
+}
+.inventory-row {
+  display: grid;
+  grid-template-columns: 92px repeat(3, minmax(92px, 1fr));
+  align-items: stretch;
+  border-bottom: 1px solid #ece6da;
+}
+.inventory-row:last-child { border-bottom: 0; }
+.inventory-title {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px 6px 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.inventory-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 5px 8px;
+  border-left: 1px solid #ece6da;
+}
+.inventory-item span {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.inventory-item strong {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+  text-align: right;
+  white-space: nowrap;
+}
+.inventory-item .muted {
+  font-size: 11px;
+  font-weight: 400;
+}
 @media (max-width: 980px) {
   header { align-items: flex-start; flex-direction: column; }
   .controls { justify-content: flex-start; }
   main { grid-template-columns: 1fr; }
   .card { max-height: none; }
+}
+@media (max-width: 680px) {
+  .inventory-card h2 {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .inventory-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .inventory-title {
+    grid-column: 1 / -1;
+    padding: 7px 0 2px;
+  }
+  .inventory-item {
+    border-left: 0;
+    border-top: 1px solid #ece6da;
+    padding: 6px;
+  }
 }
 </style>
 <meta name="robots" content="noindex,nofollow">
@@ -223,21 +296,28 @@ td.num, th.num { text-align: right; }
     </table>
   </section>
 
-  <section class="card">
-    <h2>内容库存</h2>
-    <table>
-      <thead><tr><th>BJT Pro</th><th class="num">Study 词数</th><th class="num">Mogi 套题</th><th class="num">有效 Member</th></tr></thead>
-      <tbody><tr><td class="muted">当前</td><td class="num" id="bjtStudy">-</td><td class="num" id="bjtMogi">-</td><td class="num" id="bjtMembers">-</td></tr></tbody>
-    </table>
-    <table style="margin-top:8px">
-      <thead><tr><th>PATTO 词数</th><th class="num">J1</th><th class="num">J2</th><th class="num">J3</th></tr></thead>
-      <tbody><tr><td class="muted">当前</td><td class="num" id="pattoJ1">-</td><td class="num" id="pattoJ2">-</td><td class="num" id="pattoJ3">-</td></tr></tbody>
-    </table>
-    <table style="margin-top:8px">
-      <thead><tr><th>PROGRESS 词数</th><th class="num">EN</th><th class="num">JP</th><th class="num">CN</th></tr></thead>
-      <tbody><tr><td class="muted">当前</td><td class="num" id="progEn">-</td><td class="num" id="progJp">-</td><td class="num" id="progCn">-</td></tr></tbody>
-    </table>
-    <div class="sub" id="contentUpdated" style="margin-top:6px"></div>
+  <section class="card inventory-card">
+    <h2>内容库存 <span class="sub" id="contentUpdated"></span></h2>
+    <div class="inventory-grid">
+      <div class="inventory-row">
+        <div class="inventory-title">BJT Pro</div>
+        <div class="inventory-item"><span>Study</span><strong id="bjtStudy">-</strong></div>
+        <div class="inventory-item"><span>Mogi</span><strong id="bjtMogi">-</strong></div>
+        <div class="inventory-item"><span>Member</span><strong id="bjtMembers">-</strong></div>
+      </div>
+      <div class="inventory-row">
+        <div class="inventory-title">PATTO</div>
+        <div class="inventory-item"><span>J1</span><strong id="pattoJ1">-</strong></div>
+        <div class="inventory-item"><span>J2</span><strong id="pattoJ2">-</strong></div>
+        <div class="inventory-item"><span>J3</span><strong id="pattoJ3">-</strong></div>
+      </div>
+      <div class="inventory-row">
+        <div class="inventory-title">PROGRESS</div>
+        <div class="inventory-item"><span>EN</span><strong id="progEn">-</strong></div>
+        <div class="inventory-item"><span>JP</span><strong id="progJp">-</strong></div>
+        <div class="inventory-item"><span>CN</span><strong id="progCn">-</strong></div>
+      </div>
+    </div>
   </section>
 
   <section class="card">
