@@ -214,10 +214,10 @@ td.num, th.num { text-align: right; }
   letter-spacing: 0;
 }
 .inventory-item {
-  display: grid;
-  grid-template-columns: auto 1fr;
+  display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 5px;
+  justify-content: flex-start;
   min-width: 0;
   padding: 5px 8px;
   border-left: 1px solid #ece6da;
@@ -231,7 +231,6 @@ td.num, th.num { text-align: right; }
   color: var(--ink);
   font-size: 15px;
   font-weight: 700;
-  text-align: right;
   white-space: nowrap;
 }
 .inventory-item .muted {
