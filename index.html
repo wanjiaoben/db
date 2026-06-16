@@ -224,9 +224,26 @@ td.num, th.num { text-align: right; }
   </section>
 
   <section class="card">
-    <h2>页面总表</h2>
+    <h2>内容库存</h2>
     <table>
-      <thead><tr><th>站点</th><th>页面</th><th class="num">访问</th><th class="num">Session</th><th class="num">访客</th><th>主来源</th><th>语言</th><th class="num">联系</th><th class="num">停留</th><th class="num">滚动</th></tr></thead>
+      <thead><tr><th>BJT Pro</th><th class="num">Study 词数</th><th class="num">Mogi 套题</th><th class="num">有效 Member</th></tr></thead>
+      <tbody><tr><td class="muted">当前</td><td class="num" id="bjtStudy">-</td><td class="num" id="bjtMogi">-</td><td class="num" id="bjtMembers">-</td></tr></tbody>
+    </table>
+    <table style="margin-top:8px">
+      <thead><tr><th>PATTO 词数</th><th class="num">J1</th><th class="num">J2</th><th class="num">J3</th></tr></thead>
+      <tbody><tr><td class="muted">当前</td><td class="num" id="pattoJ1">-</td><td class="num" id="pattoJ2">-</td><td class="num" id="pattoJ3">-</td></tr></tbody>
+    </table>
+    <table style="margin-top:8px">
+      <thead><tr><th>PROGRESS 词数</th><th class="num">EN</th><th class="num">JP</th><th class="num">CN</th></tr></thead>
+      <tbody><tr><td class="muted">当前</td><td class="num" id="progEn">-</td><td class="num" id="progJp">-</td><td class="num" id="progCn">-</td></tr></tbody>
+    </table>
+    <div class="sub" id="contentUpdated" style="margin-top:6px"></div>
+  </section>
+
+  <section class="card">
+    <h2>站点总表</h2>
+    <table>
+      <thead><tr><th>站点</th><th class="num">访问</th><th class="num">访客</th><th>主来源</th><th>语言</th><th class="num">联系</th><th class="num">停留</th></tr></thead>
       <tbody id="pageTable"></tbody>
     </table>
   </section>
@@ -237,11 +254,6 @@ td.num, th.num { text-align: right; }
       <thead><tr><th>关键词</th><th>站点</th><th>页面</th><th class="num">点击</th><th class="num">曝光</th><th class="num">CTR</th><th class="num">排名</th></tr></thead>
       <tbody id="queryTable"></tbody>
     </table>
-  </section>
-
-  <section class="card">
-    <h2>实时日志</h2>
-    <table><thead><tr><th>时间</th><th>站点</th><th>事件</th><th>页面</th><th>来源</th><th>细节</th></tr></thead><tbody id="recent"></tbody></table>
   </section>
 
   <section class="card">
@@ -343,6 +355,75 @@ function updatePageOptions(pages) {
   selectedPage = $('pageFilter').value;
 }
 
+function aggregateBySite(rows) {
+  const map = new Map();
+  (rows || []).forEach((r) => {
+    const site = r.site || '-';
+    if (!map.has(site)) {
+      map.set(site, { site, views: 0, visitors: 0, contact_clicks: 0, durWeighted: 0, sources: new Map(), langs: new Map() });
+    }
+    const agg = map.get(site);
+    const views = Number(r.views || 0);
+    agg.views += views;
+    agg.visitors += Number(r.visitors || 0);
+    agg.contact_clicks += Number(r.contact_clicks || 0);
+    agg.durWeighted += Number(r.avg_duration_ms || 0) * views;
+    if (r.top_source) agg.sources.set(r.top_source, (agg.sources.get(r.top_source) || 0) + views);
+    if (r.top_lang) agg.langs.set(r.top_lang, (agg.langs.get(r.top_lang) || 0) + views);
+  });
+  const pick = (m) => {
+    let best = '-', bestV = -1;
+    m.forEach((v, k) => { if (v > bestV) { bestV = v; best = k; } });
+    return best;
+  };
+  return Array.from(map.values()).map((a) => ({
+    site: a.site,
+    views: a.views,
+    visitors: a.visitors,
+    contact_clicks: a.contact_clicks,
+    top_source: pick(a.sources),
+    top_lang: pick(a.langs),
+    avg_duration_ms: a.views ? a.durWeighted / a.views : 0
+  })).sort((x, y) => y.views - x.views);
+}
+
+function delta(change) {
+  const c = Number(change || 0);
+  if (!c) return '';
+  return ' <span class="muted">(' + (c > 0 ? '+' : '-') + Math.abs(c) + ')</span>';
+}
+
+function statCell(id, stat) {
+  const v = stat || {};
+  const el = $(id);
+  if (!el) return;
+  if (v.value == null) { el.textContent = '-'; return; }
+  el.innerHTML = n(v.value) + delta(v.change);
+}
+
+async function loadContentStats() {
+  try {
+    const res = await fetch('data/content-stats.json?t=' + Date.now());
+    if (!res.ok) throw new Error('content-stats not found');
+    const d = await res.json();
+    const bjt = d.bjtPro || {};
+    statCell('bjtStudy', bjt.studyWords);
+    statCell('bjtMogi', bjt.mogiSets);
+    statCell('bjtMembers', bjt.activeMembers);
+    const p = d.patto || {};
+    statCell('pattoJ1', p.j1);
+    statCell('pattoJ2', p.j2);
+    statCell('pattoJ3', p.j3);
+    const pr = d.progress || {};
+    statCell('progEn', pr.en);
+    statCell('progJp', pr.jp);
+    statCell('progCn', pr.cn);
+    $('contentUpdated').textContent = d.generatedAt ? '更新 ' + new Date(d.generatedAt).toLocaleString() : '';
+  } catch (e) {
+    $('contentUpdated').textContent = '内容库存读取失败：' + e.message;
+  }
+}
+
 async function loadSnsMetrics() {
   try {
     const res = await fetch('data/sns-metrics.json?t=' + Date.now());
@@ -402,17 +483,14 @@ async function load() {
     updateSiteOptions(data.sites);
     updatePageOptions(data.pages);
 
-    renderRows('pageTable', data.page_rows, (r) => row([
+    renderRows('pageTable', aggregateBySite(data.page_rows), (r) => row([
       '<button type="button" data-site="' + escapeHtml(r.site || '') + '">' + escapeHtml(r.site || '-') + '</button>',
-      '<button type="button" data-path="' + escapeHtml(r.path || '/') + '">' + escapeHtml(r.path || '/') + '</button>',
       { html: n(r.views), num: true },
-      { html: n(r.sessions), num: true },
       { html: n(r.visitors), num: true },
       escapeHtml(r.top_source || '-'),
       escapeHtml(r.top_lang || '-'),
       { html: n(r.contact_clicks), num: true },
-      { html: seconds(r.avg_duration_ms), num: true },
-      { html: r.avg_scroll ? Math.round(r.avg_scroll) + '%' : '-', num: true }
+      { html: seconds(r.avg_duration_ms), num: true }
     ]));
     const searchConsole = data.search_console || {};
     if (!searchConsole.ok) {
@@ -428,14 +506,6 @@ async function load() {
         { html: position(r.position), num: true }
       ]));
     }
-    renderRows('recent', data.recent, (r) => row([
-      escapeHtml(new Date(r.created_at).toLocaleTimeString()),
-      escapeHtml(r.site || '-'),
-      escapeHtml(r.type || '-'),
-      escapeHtml(r.path || '-'),
-      escapeHtml(r.source || '-'),
-      escapeHtml(r.event_name || r.section || (r.max_scroll ? 'scroll ' + r.max_scroll + '%' : ''))
-    ]));
   } catch (e) {
     $('status').textContent = '连接失败';
     $('error').textContent = e.message === 'unauthorized'
@@ -483,30 +553,19 @@ $('pageFilter').addEventListener('change', () => {
   load();
 });
 $('pageTable').addEventListener('click', (event) => {
-  const button = event.target.closest('button[data-path]');
   const siteButton = event.target.closest('button[data-site]');
-  if (siteButton) {
-    $('siteFilter').value = siteButton.dataset.site;
-    selectedSite = siteButton.dataset.site;
-    $('pageFilter').value = '';
-    selectedPage = '';
-    load();
-    return;
-  }
-  if (!button) return;
-  const rowSite = event.target.closest('tr')?.querySelector('button[data-site]')?.dataset.site || '';
-  if (rowSite) {
-    $('siteFilter').value = rowSite;
-    selectedSite = rowSite;
-  }
-  $('pageFilter').value = button.dataset.path;
-  selectedPage = button.dataset.path;
+  if (!siteButton) return;
+  $('siteFilter').value = siteButton.dataset.site;
+  selectedSite = siteButton.dataset.site;
+  $('pageFilter').value = '';
+  selectedPage = '';
   load();
 });
 $('key').value = localStorage.getItem('nice_dashboard_key') || '';
 load();
 loadSnsMetrics();
-setInterval(() => { load(); loadSnsMetrics(); }, 30000);
+loadContentStats();
+setInterval(() => { load(); loadSnsMetrics(); loadContentStats(); }, 30000);
 </script>
 </body>
 </html>

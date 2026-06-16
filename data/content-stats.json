@@ -1,0 +1,45 @@
+{
+  "generatedAt": "2026-06-16T21:27:53+09:00",
+  "bjtPro": {
+    "studyWords": {
+      "value": 889,
+      "change": 0
+    },
+    "mogiSets": {
+      "value": 2,
+      "change": 0
+    },
+    "activeMembers": {
+      "value": 15,
+      "change": 0
+    }
+  },
+  "patto": {
+    "j1": {
+      "value": 119,
+      "change": 0
+    },
+    "j2": {
+      "value": 920,
+      "change": 0
+    },
+    "j3": {
+      "value": 429,
+      "change": 0
+    }
+  },
+  "progress": {
+    "en": {
+      "value": 1000,
+      "change": 0
+    },
+    "jp": {
+      "value": 1000,
+      "change": 0
+    },
+    "cn": {
+      "value": 1000,
+      "change": 0
+    }
+  }
+}
