@@ -12,6 +12,7 @@ const OUTPUT_FILE = path.join(DB_REPO, 'data/content-stats.json');
 const HISTORY_FILE = path.join(DB_REPO, 'data/content-stats-history.json');
 const BJT_KV_NAMESPACE_ID = process.env.BJT_KV_NAMESPACE_ID || 'fc382800625e42b7bbfe13830dd39e82';
 const NPX = process.env.WRANGLER_BIN || '/Users/jiajia/.nvm/versions/node/v24.16.0/bin/npx';
+const NODE_BIN_DIR = '/Users/jiajia/.nvm/versions/node/v24.16.0/bin';
 
 function readText(file) {
   return fs.readFileSync(file, 'utf8');
@@ -64,6 +65,7 @@ function countMogiSets() {
 function runWrangler(args) {
   return execFileSync(NPX, ['wrangler', ...args], {
     cwd: path.join(BJT_REPO, 'worker'),
+    env: { ...process.env, PATH: `${NODE_BIN_DIR}:${process.env.PATH || '/usr/bin:/bin:/usr/sbin:/sbin'}` },
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
