@@ -186,11 +186,11 @@ const output = {
   },
 };
 
+git(['pull', '--rebase']);
 history[today] = flat;
 writeJson(HISTORY_FILE, Object.fromEntries(Object.entries(history).sort(([a], [b]) => a.localeCompare(b))));
 writeJson(OUTPUT_FILE, output);
 
-git(['pull', '--rebase']);
 git(['add', 'data/content-stats.json', 'data/content-stats-history.json']);
 try {
   execFileSync('git', ['-C', DB_REPO, 'diff', '--cached', '--quiet']);
