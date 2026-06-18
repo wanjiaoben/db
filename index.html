@@ -550,6 +550,10 @@ function sumStats(...stats) {
   return hasValue ? { value, change } : null;
 }
 
+function setContentOpenedTime() {
+  $('contentUpdated').textContent = '更新 ' + new Date().toLocaleString();
+}
+
 async function loadContentStats() {
   try {
     const res = await fetch('data/content-stats.json?t=' + Date.now());
@@ -570,7 +574,7 @@ async function loadContentStats() {
     statCell('progJp', pr.jp);
     statCell('progCn', pr.cn);
     statCell('progTotal', pr.total || sumStats(pr.en, pr.jp, pr.cn));
-    $('contentUpdated').textContent = d.generatedAt ? '更新 ' + new Date(d.generatedAt).toLocaleString() : '';
+    setContentOpenedTime();
   } catch (e) {
     $('contentUpdated').textContent = '内容库存读取失败：' + e.message;
   }
