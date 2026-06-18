@@ -35,14 +35,18 @@ WRANGLER_BIN = os.environ.get("WRANGLER_BIN", "/Users/jiajia/.nvm/versions/node/
 
 FLAT_KEYS = (
     "bjtPro.studyWords",
+    "bjtPro.mogiQuestions",
+    "bjtPro.totalQuestions",
     "bjtPro.mogiSets",
     "bjtPro.activeMembers",
     "patto.j1",
     "patto.j2",
     "patto.j3",
+    "patto.total",
     "progress.en",
     "progress.jp",
     "progress.cn",
+    "progress.total",
 )
 
 
@@ -78,6 +82,10 @@ def count_mogi_sets() -> int:
         if re.search(r"\bvar\s+MOGI_SET_\d+\s*=", read_text(path)):
             count += 1
     return count
+
+
+def count_mogi_questions() -> int:
+    return count_unique_nums(sorted((BJT_REPO / "pro/data").glob("mogi_set*.js")))
 
 
 def post_json(url: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -224,14 +232,18 @@ def count_progress_words() -> dict[str, int]:
 def flatten(values: dict[str, Any]) -> dict[str, int]:
     return {
         "bjtPro.studyWords": int(values["bjtPro"]["studyWords"]),
+        "bjtPro.mogiQuestions": int(values["bjtPro"]["mogiQuestions"]),
+        "bjtPro.totalQuestions": int(values["bjtPro"]["studyWords"]) + int(values["bjtPro"]["mogiQuestions"]),
         "bjtPro.mogiSets": int(values["bjtPro"]["mogiSets"]),
         "bjtPro.activeMembers": int(values["bjtPro"]["activeMembers"]),
         "patto.j1": int(values["patto"]["j1"]),
         "patto.j2": int(values["patto"]["j2"]),
         "patto.j3": int(values["patto"]["j3"]),
+        "patto.total": int(values["patto"]["j1"]) + int(values["patto"]["j2"]) + int(values["patto"]["j3"]),
         "progress.en": int(values["progress"]["en"]),
         "progress.jp": int(values["progress"]["jp"]),
         "progress.cn": int(values["progress"]["cn"]),
+        "progress.total": int(values["progress"]["en"]) + int(values["progress"]["jp"]) + int(values["progress"]["cn"]),
     }
 
 
@@ -260,6 +272,8 @@ def build_output(now: datetime, flat: dict[str, int], previous: dict[str, int] |
         "generatedAt": now.isoformat(timespec="seconds"),
         "bjtPro": {
             "studyWords": stat(flat["bjtPro.studyWords"], previous, "bjtPro.studyWords"),
+            "mogiQuestions": stat(flat["bjtPro.mogiQuestions"], previous, "bjtPro.mogiQuestions"),
+            "totalQuestions": stat(flat["bjtPro.totalQuestions"], previous, "bjtPro.totalQuestions"),
             "mogiSets": stat(flat["bjtPro.mogiSets"], previous, "bjtPro.mogiSets"),
             "activeMembers": stat(flat["bjtPro.activeMembers"], previous, "bjtPro.activeMembers"),
         },
@@ -267,11 +281,13 @@ def build_output(now: datetime, flat: dict[str, int], previous: dict[str, int] |
             "j1": stat(flat["patto.j1"], previous, "patto.j1"),
             "j2": stat(flat["patto.j2"], previous, "patto.j2"),
             "j3": stat(flat["patto.j3"], previous, "patto.j3"),
+            "total": stat(flat["patto.total"], previous, "patto.total"),
         },
         "progress": {
             "en": stat(flat["progress.en"], previous, "progress.en"),
             "jp": stat(flat["progress.jp"], previous, "progress.jp"),
             "cn": stat(flat["progress.cn"], previous, "progress.cn"),
+            "total": stat(flat["progress.total"], previous, "progress.total"),
         },
     }
 
@@ -281,9 +297,9 @@ def validate_schema(data: dict[str, Any]) -> None:
         if top not in data:
             raise RuntimeError(f"missing field: {top}")
     for group, keys in {
-        "bjtPro": ("studyWords", "mogiSets", "activeMembers"),
-        "patto": ("j1", "j2", "j3"),
-        "progress": ("en", "jp", "cn"),
+        "bjtPro": ("studyWords", "mogiQuestions", "totalQuestions", "mogiSets", "activeMembers"),
+        "patto": ("j1", "j2", "j3", "total"),
+        "progress": ("en", "jp", "cn", "total"),
     }.items():
         for key in keys:
             stat_obj = data[group].get(key)
@@ -297,6 +313,7 @@ def collect_values(now: datetime) -> dict[str, Any]:
     return {
         "bjtPro": {
             "studyWords": count_bjt_study_words(),
+            "mogiQuestions": count_mogi_questions(),
             "mogiSets": count_mogi_sets(),
             "activeMembers": count_active_members(now),
         },

@@ -11,14 +11,18 @@
     "progress.cn": 1000
   },
   "2026-06-18": {
-    "bjtPro.studyWords": 889,
-    "bjtPro.mogiSets": 2,
-    "bjtPro.activeMembers": 15,
+    "bjtPro.studyWords": 909,
+    "bjtPro.mogiQuestions": 240,
+    "bjtPro.totalQuestions": 1149,
+    "bjtPro.mogiSets": 3,
+    "bjtPro.activeMembers": 17,
     "patto.j1": 119,
     "patto.j2": 920,
     "patto.j3": 429,
+    "patto.total": 1468,
     "progress.en": 1000,
     "progress.jp": 1000,
-    "progress.cn": 1000
+    "progress.cn": 1000,
+    "progress.total": 3000
   }
 }

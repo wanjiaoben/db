@@ -182,12 +182,15 @@ td.num, th.num { text-align: right; }
   font-size: 11px;
   padding: 6px 0;
 }
-.inventory-card { max-height: none; }
+.inventory-card {
+  max-height: none;
+  overflow-x: auto;
+}
 .inventory-card h2 {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  justify-content: flex-start;
+  gap: 10px;
 }
 .inventory-card h2 .sub {
   margin-top: 0;
@@ -196,10 +199,12 @@ td.num, th.num { text-align: right; }
 .inventory-grid {
   display: grid;
   gap: 4px;
+  width: max-content;
+  max-width: 100%;
 }
 .inventory-row {
   display: grid;
-  grid-template-columns: 92px repeat(3, minmax(92px, 1fr));
+  grid-template-columns: 88px repeat(4, minmax(74px, 112px));
   align-items: stretch;
   border-bottom: 1px solid #ece6da;
 }
@@ -216,21 +221,25 @@ td.num, th.num { text-align: right; }
 .inventory-item {
   display: flex;
   align-items: baseline;
-  gap: 5px;
+  gap: 4px;
   justify-content: flex-start;
   min-width: 0;
-  padding: 5px 8px;
+  padding: 5px 6px;
   border-left: 1px solid #ece6da;
 }
 .inventory-item span {
   color: var(--muted);
   font-size: 11px;
-  white-space: nowrap;
 }
 .inventory-item strong {
   color: var(--ink);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
+  white-space: nowrap;
+}
+.score-range {
+  color: var(--muted);
+  font-size: 10px;
   white-space: nowrap;
 }
 .inventory-item .muted {
@@ -260,6 +269,7 @@ td.num, th.num { text-align: right; }
     padding: 8px;
   }
   .sub { display: none; }
+  .inventory-card h2 .sub { display: inline; }
   .controls {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -282,7 +292,11 @@ td.num, th.num { text-align: right; }
     flex-direction: column;
     gap: 2px;
   }
-  .inventory-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .inventory-row {
+    grid-template-columns: repeat(4, minmax(76px, 1fr));
+    min-width: 0;
+    width: 100%;
+  }
   .inventory-title {
     grid-column: 1 / -1;
     padding: 7px 0 2px;
@@ -342,19 +356,22 @@ td.num, th.num { text-align: right; }
         <div class="inventory-title">BJT Pro</div>
         <div class="inventory-item"><span>Study</span><strong id="bjtStudy">-</strong></div>
         <div class="inventory-item"><span>Mogi</span><strong id="bjtMogi">-</strong></div>
+        <div class="inventory-item"><span>总题数</span><strong id="bjtTotalQuestions">-</strong></div>
         <div class="inventory-item"><span>Member</span><strong id="bjtMembers">-</strong></div>
       </div>
       <div class="inventory-row">
         <div class="inventory-title">PATTO</div>
-        <div class="inventory-item"><span>J1</span><strong id="pattoJ1">-</strong></div>
-        <div class="inventory-item"><span>J2</span><strong id="pattoJ2">-</strong></div>
-        <div class="inventory-item"><span>J3</span><strong id="pattoJ3">-</strong></div>
+        <div class="inventory-item"><span>J1/J1+ <small class="score-range">(530-800)</small></span><strong id="pattoJ1">-</strong></div>
+        <div class="inventory-item"><span>J2 <small class="score-range">(420-529)</small></span><strong id="pattoJ2">-</strong></div>
+        <div class="inventory-item"><span>J3 <small class="score-range">(320-419)</small></span><strong id="pattoJ3">-</strong></div>
+        <div class="inventory-item"><span>合计</span><strong id="pattoTotal">-</strong></div>
       </div>
       <div class="inventory-row">
         <div class="inventory-title">PROGRESS</div>
         <div class="inventory-item"><span>EN</span><strong id="progEn">-</strong></div>
         <div class="inventory-item"><span>JP</span><strong id="progJp">-</strong></div>
         <div class="inventory-item"><span>CN</span><strong id="progCn">-</strong></div>
+        <div class="inventory-item"><span>合计</span><strong id="progTotal">-</strong></div>
       </div>
     </div>
   </section>
@@ -520,6 +537,19 @@ function statCell(id, stat) {
   el.innerHTML = n(v.value) + delta(v.change);
 }
 
+function sumStats(...stats) {
+  let hasValue = false;
+  let value = 0;
+  let change = 0;
+  stats.forEach((stat) => {
+    if (!stat || stat.value == null) return;
+    hasValue = true;
+    value += Number(stat.value || 0);
+    change += Number(stat.change || 0);
+  });
+  return hasValue ? { value, change } : null;
+}
+
 async function loadContentStats() {
   try {
     const res = await fetch('data/content-stats.json?t=' + Date.now());
@@ -528,15 +558,18 @@ async function loadContentStats() {
     const bjt = d.bjtPro || {};
     statCell('bjtStudy', bjt.studyWords);
     statCell('bjtMogi', bjt.mogiSets);
+    statCell('bjtTotalQuestions', bjt.totalQuestions || sumStats(bjt.studyWords, bjt.mogiQuestions));
     statCell('bjtMembers', bjt.activeMembers);
     const p = d.patto || {};
     statCell('pattoJ1', p.j1);
     statCell('pattoJ2', p.j2);
     statCell('pattoJ3', p.j3);
+    statCell('pattoTotal', p.total || sumStats(p.j1, p.j2, p.j3));
     const pr = d.progress || {};
     statCell('progEn', pr.en);
     statCell('progJp', pr.jp);
     statCell('progCn', pr.cn);
+    statCell('progTotal', pr.total || sumStats(pr.en, pr.jp, pr.cn));
     $('contentUpdated').textContent = d.generatedAt ? '更新 ' + new Date(d.generatedAt).toLocaleString() : '';
   } catch (e) {
     $('contentUpdated').textContent = '内容库存读取失败：' + e.message;
