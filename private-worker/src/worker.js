@@ -54,7 +54,8 @@ function isAnalyticsProxyPath(pathname) {
 }
 
 async function proxyAnalytics(request, env, url) {
-  const target = new URL(url.pathname + url.search, env.ANALYTICS_ORIGIN || DEFAULT_ANALYTICS_ORIGIN);
+  const origin = String(env.ANALYTICS_ORIGIN || DEFAULT_ANALYTICS_ORIGIN).replace(/\/+$/, '');
+  const target = origin + url.pathname + url.search;
   const headers = new Headers();
   headers.set('accept', request.headers.get('accept') || 'application/json');
   const key = env.DASHBOARD_KEY || request.headers.get('x-dashboard-key') || '';

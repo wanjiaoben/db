@@ -409,7 +409,7 @@ td.num, th.num { text-align: right; }
 <script>
 const DIRECT_ANALYTICS_ROOT = 'https://analytics.nice.okinawa';
 const USE_DIRECT_ANALYTICS = location.hostname === '127.0.0.1' || location.hostname === 'localhost';
-const API_ROOT = USE_DIRECT_ANALYTICS ? DIRECT_ANALYTICS_ROOT : '';
+const API_ROOT = USE_DIRECT_ANALYTICS ? DIRECT_ANALYTICS_ROOT : location.origin;
 const API = API_ROOT + '/summary';
 const $ = (id) => document.getElementById(id);
 const fmt = new Intl.NumberFormat('ja-JP');
@@ -452,6 +452,16 @@ function row(cells) {
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (s) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[s]));
+}
+
+async function readJsonResponse(res) {
+  const text = await res.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch (e) {
+    if (res.status === 401) throw new Error('unauthorized');
+    throw new Error(text ? text.slice(0, 160) : 'API 返回不是 JSON');
+  }
 }
 
 function renderRows(id, rows, mapper) {
@@ -586,7 +596,7 @@ async function loadSnsMetrics() {
   try {
     const res = await fetch('data/sns-metrics.json?t=' + Date.now());
     if (!res.ok) throw new Error('SNS metrics not found');
-    const data = await res.json();
+    const data = await readJsonResponse(res);
     const totals = data.totals || {};
     $('snsPosts').textContent = n(data.postsChecked);
     $('snsIgLikes').textContent = n(totals.instagramLikes);
@@ -625,9 +635,13 @@ async function load() {
   if (path) qs.set('path', path);
   try {
     const res = await fetch(API + '?' + qs.toString(), {
-      headers: key ? { 'x-dashboard-key': key } : {}
+      credentials: 'include',
+      headers: {
+        accept: 'application/json',
+        ...(key ? { 'x-dashboard-key': key } : {})
+      }
     });
-    const data = await res.json();
+    const data = await readJsonResponse(res);
     if (!res.ok || !data.ok) throw new Error(data.error || 'API 请求失败');
     const totals = data.totals || {};
     const today = data.today || {};
@@ -685,9 +699,13 @@ $('syncGsc').addEventListener('click', async () => {
   try {
     const res = await fetch(API_ROOT + '/search-console/sync?days=7', {
       method: 'POST',
-      headers: key ? { 'x-dashboard-key': key } : {}
+      credentials: 'include',
+      headers: {
+        accept: 'application/json',
+        ...(key ? { 'x-dashboard-key': key } : {})
+      }
     });
-    const data = await res.json();
+    const data = await readJsonResponse(res);
     if (!res.ok || !data.ok) throw new Error(data.error || '同步失败');
     $('status').textContent = '搜索词已同步 ' + n(data.imported_rows) + ' 行';
     load();
