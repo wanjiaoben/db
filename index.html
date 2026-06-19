@@ -407,7 +407,9 @@ td.num, th.num { text-align: right; }
 </main>
 
 <script>
-const API_ROOT = 'https://analytics.nice.okinawa';
+const DIRECT_ANALYTICS_ROOT = 'https://analytics.nice.okinawa';
+const USE_DIRECT_ANALYTICS = location.hostname === '127.0.0.1' || location.hostname === 'localhost';
+const API_ROOT = USE_DIRECT_ANALYTICS ? DIRECT_ANALYTICS_ROOT : '';
 const API = API_ROOT + '/summary';
 const $ = (id) => document.getElementById(id);
 const fmt = new Intl.NumberFormat('ja-JP');
@@ -663,9 +665,9 @@ async function load() {
       ]));
     }
   } catch (e) {
-    $('status').textContent = '连接失败';
+    $('status').textContent = e.message === 'unauthorized' ? '需要 Dashboard key' : '连接失败';
     $('error').textContent = e.message === 'unauthorized'
-      ? 'unauthorized。Dashboard key 没有保存，或保存的是旧 key。请重新粘贴最新 key 后点保存。'
+      ? '手机浏览器还没有保存 Dashboard key，或保存的是旧 key。请在上方输入最新 key 后点保存。'
       : e.message + '。确认 Worker 已部署，DASHBOARD_KEY 正确。';
     $('error').style.display = 'block';
   }
