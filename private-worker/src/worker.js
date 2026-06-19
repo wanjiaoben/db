@@ -62,11 +62,14 @@ async function proxyAnalytics(request, env, url) {
   if (key) headers.set('x-dashboard-key', key);
   const contentType = request.headers.get('content-type');
   if (contentType) headers.set('content-type', contentType);
-  const upstream = await fetch(target, {
+  const proxyRequest = new Request(target, {
     method: request.method,
     headers,
     body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
   });
+  const upstream = env.ANALYTICS
+    ? await env.ANALYTICS.fetch(proxyRequest)
+    : await fetch(proxyRequest);
   const outHeaders = new Headers(upstream.headers);
   outHeaders.set('cache-control', 'no-store');
   outHeaders.set('x-robots-tag', 'noindex, nofollow');

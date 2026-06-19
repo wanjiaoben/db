@@ -9,3 +9,7 @@ routes = [
 
 [vars]
 DASHBOARD_ORIGIN = "https://raw.githubusercontent.com/wanjiaoben/db/main"
+
+[[services]]
+binding = "ANALYTICS"
+service = "nice-analytics"
