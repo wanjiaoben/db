@@ -322,10 +322,10 @@ td.num, th.num { text-align: right; }
   <div class="controls">
     <span class="pill"><span class="dot"></span><span id="status">等待连接</span></span>
     <select id="days">
-      <option value="1">最近 1 天</option>
-      <option value="7" selected>最近 7 天</option>
-      <option value="30">最近 30 天</option>
-      <option value="90">最近 90 天</option>
+      <option value="today">今天</option>
+      <option value="7" selected>7天</option>
+      <option value="30">1个月</option>
+      <option value="365">1年</option>
     </select>
     <select id="siteFilter">
       <option value="">全部站点</option>
@@ -631,10 +631,10 @@ async function load() {
   $('error').style.display = 'none';
   $('status').textContent = '连接中';
   const key = localStorage.getItem('nice_dashboard_key') || '';
-  const days = $('days').value || '7';
+  const range = $('days').value || '7';
   const site = $('siteFilter').value || '';
   const path = $('pageFilter').value || '';
-  const qs = new URLSearchParams({ days });
+  const qs = new URLSearchParams(range === 'today' ? { range: 'today', days: '1' } : { days: range });
   if (site) qs.set('site', site);
   if (path) qs.set('path', path);
   try {
@@ -700,8 +700,10 @@ $('syncGsc').addEventListener('click', async () => {
   $('error').style.display = 'none';
   $('status').textContent = '同步搜索词中';
   const key = localStorage.getItem('nice_dashboard_key') || '';
+  const range = $('days').value || '7';
+  const syncDays = range === 'today' ? '1' : range;
   try {
-    const res = await fetch(API_ROOT + '/search-console/sync?days=7', {
+    const res = await fetch(API_ROOT + '/search-console/sync?days=' + encodeURIComponent(syncDays), {
       method: 'POST',
       credentials: 'include',
       headers: {

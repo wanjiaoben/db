@@ -197,15 +197,18 @@ async function summary(request, env) {
   }
 
   const url = new URL(request.url);
-  const days = Math.min(Math.max(Number(url.searchParams.get('days') || 7), 1), 90);
+  const range = clean(url.searchParams.get('range'), 20);
+  const days = range === 'today'
+    ? 1
+    : Math.min(Math.max(Number(url.searchParams.get('days') || 7), 1), 365);
   const selectedSite = clean(url.searchParams.get('site'), 120);
   const selectedPath = clean(url.searchParams.get('path'), 300);
   const filterClause = `${selectedSite ? ' AND site = ?' : ''}${selectedPath ? ' AND path = ?' : ''}`;
   const filterParams = [...(selectedSite ? [selectedSite] : []), ...(selectedPath ? [selectedPath] : [])];
-  const since = new Date(Date.now() - days * 86400000).toISOString();
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
   const todayIso = today.toISOString();
+  const since = range === 'today' ? todayIso : new Date(Date.now() - days * 86400000).toISOString();
   const onlineSince = new Date(Date.now() - 5 * 60000).toISOString();
 
   const totals = await first(env.DB, `
@@ -368,7 +371,7 @@ async function summary(request, env) {
   `, [since, ...filterParams]);
 
   const searchConsole = await searchConsoleSummary(env.DB, {
-    since: dateOnly(Date.now() - days * 86400000),
+    since: range === 'today' ? dateOnly(Date.now()) : dateOnly(Date.now() - days * 86400000),
     site: selectedSite,
     path: selectedPath
   });
@@ -376,6 +379,7 @@ async function summary(request, env) {
   return json({
     ok: true,
     days,
+    range: range === 'today' ? 'today' : `${days}d`,
     selected_site: selectedSite,
     selected_path: selectedPath,
     generated_at: new Date().toISOString(),
@@ -467,7 +471,7 @@ async function syncSearchConsole(request, env) {
     return json({ ok: false, error: 'unauthorized' }, request, 401);
   }
   const url = new URL(request.url);
-  const days = Math.min(Math.max(Number(url.searchParams.get('days') || 7), 1), 30);
+  const days = Math.min(Math.max(Number(url.searchParams.get('days') || 7), 1), 365);
   const endDate = url.searchParams.get('end') || dateOnly(Date.now() - 2 * 86400000);
   const startDate = url.searchParams.get('start') || dateOnly(Date.parse(endDate + 'T00:00:00Z') - (days - 1) * 86400000);
   const result = await syncSearchConsoleRange(env, startDate, endDate);
