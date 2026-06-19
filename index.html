@@ -58,6 +58,9 @@ h1 {
   align-items: center;
   gap: 8px;
 }
+.proxied-dashboard .auth-controls {
+  display: none;
+}
 button, input, select {
   height: 30px;
   border: 1px solid var(--line);
@@ -411,6 +414,7 @@ const DIRECT_ANALYTICS_ROOT = 'https://analytics.nice.okinawa';
 const USE_DIRECT_ANALYTICS = location.hostname === '127.0.0.1' || location.hostname === 'localhost';
 const API_ROOT = USE_DIRECT_ANALYTICS ? DIRECT_ANALYTICS_ROOT : location.origin;
 const API = API_ROOT + '/summary';
+if (!USE_DIRECT_ANALYTICS) document.documentElement.classList.add('proxied-dashboard');
 const $ = (id) => document.getElementById(id);
 const fmt = new Intl.NumberFormat('ja-JP');
 let selectedSite = '';
