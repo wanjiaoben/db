@@ -1,25 +1,25 @@
 {
-  "generatedAt": "2026-06-18T02:15:00+09:00",
+  "generatedAt": "2026-06-20T14:27:11+09:00",
   "bjtPro": {
     "studyWords": {
-      "value": 909,
-      "change": 20
+      "value": 922,
+      "change": 13
     },
     "mogiQuestions": {
       "value": 240,
       "change": 0
     },
     "totalQuestions": {
-      "value": 1149,
-      "change": 0
+      "value": 1162,
+      "change": 13
     },
     "mogiSets": {
       "value": 3,
-      "change": 1
+      "change": 0
     },
     "activeMembers": {
-      "value": 17,
-      "change": 2
+      "value": 18,
+      "change": 1
     }
   },
   "patto": {
