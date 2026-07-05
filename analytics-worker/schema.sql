@@ -72,3 +72,12 @@ CREATE TABLE IF NOT EXISTS probe_results (
 
 CREATE INDEX IF NOT EXISTS idx_probe_results_checked_at ON probe_results(checked_at);
 CREATE INDEX IF NOT EXISTS idx_probe_results_target_checked ON probe_results(target, checked_at);
+
+CREATE TABLE IF NOT EXISTS alert_state (
+  key TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  fingerprint TEXT NOT NULL DEFAULT '',
+  detail TEXT,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  notified_at TEXT
+);

@@ -40,6 +40,14 @@ export default {
       return json({ ok: true, ...result }, request);
     }
 
+    if (url.pathname === '/alerts/check' && request.method === 'POST') {
+      if (!requireDashboard(request, env)) {
+        return json({ ok: false, error: 'unauthorized' }, request, 401);
+      }
+      const result = await evaluateDashboardAlerts(env, 'manual');
+      return json({ ok: true, ...result }, request);
+    }
+
     if (url.pathname === '/search-console/sync' && request.method === 'POST') {
       return syncSearchConsole(request, env);
     }
@@ -210,6 +218,11 @@ async function runScheduledTasks(event, env) {
     } catch (e) {
       errors.push(`gsc:${e.message}`);
     }
+  }
+  try {
+    await evaluateDashboardAlerts(env, event?.cron || 'cron');
+  } catch (e) {
+    errors.push(`alerts:${e.message}`);
   }
   return { ok: errors.length === 0, errors };
 }
@@ -1118,4 +1131,168 @@ function jstDateKey(date) {
     month: '2-digit',
     day: '2-digit'
   }).format(date);
+}
+
+async function ensureAlertTable(env) {
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS alert_state (
+      key TEXT PRIMARY KEY,
+      status TEXT NOT NULL,
+      fingerprint TEXT NOT NULL DEFAULT '',
+      detail TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      notified_at TEXT
+    )
+  `).run();
+}
+
+async function evaluateDashboardAlerts(env, reason = 'cron') {
+  await ensureAlertTable(env);
+  const [backups, deployments, probes] = await Promise.all([
+    getBackupStatus(env),
+    getDeploymentStatus(env),
+    getProbeSummary(env)
+  ]);
+  const redItems = collectAlertItems(backups, deployments, probes);
+  const status = redItems.length ? 'red' : 'green';
+  const fingerprint = redItems.map((item) => `${item.type}:${item.key}`).sort().join('|');
+  const detail = JSON.stringify({
+    reason,
+    generated_at: new Date().toISOString(),
+    red_items: redItems
+  });
+  const key = 'dashboard-control';
+  const previous = await first(env.DB, 'SELECT key, status, fingerprint FROM alert_state WHERE key = ?', [key]);
+
+  if (!previous) {
+    if (status === 'red') {
+      await sendDashboardAlert(env, status, redItems);
+    }
+    await upsertAlertState(env, key, status, fingerprint, detail, status === 'red');
+    return { status, previous_status: null, sent: status === 'red', red_items: redItems };
+  }
+
+  if (previous.status !== status) {
+    await sendDashboardAlert(env, status, redItems);
+    await upsertAlertState(env, key, status, fingerprint, detail, true);
+    return { status, previous_status: previous.status, sent: true, red_items: redItems };
+  }
+
+  await upsertAlertState(env, key, status, fingerprint, detail, false);
+  return { status, previous_status: previous.status, sent: false, red_items: redItems };
+}
+
+function collectAlertItems(backups, deployments, probes) {
+  const items = [];
+  for (const item of backups?.items || []) {
+    if (!item.ok && !item.manual) {
+      items.push({
+        type: 'backup',
+        key: item.key || item.label || 'backup',
+        label: item.label || item.key || 'Backup',
+        status: item.status || 'red',
+        detail: item.error || item.latest_at || item.object_key || ''
+      });
+    }
+  }
+  for (const item of deployments?.items || []) {
+    if (!item.ok && !item.manual) {
+      items.push({
+        type: 'deployment',
+        key: item.repo || 'repo',
+        label: item.repo || 'Deployment',
+        status: item.conclusion || item.status || 'red',
+        detail: item.error || item.updated_at || item.url || ''
+      });
+    }
+  }
+  for (const item of probes?.targets || []) {
+    if (!item.ok) {
+      items.push({
+        type: 'probe',
+        key: item.target || item.label || 'probe',
+        label: item.label || item.target || 'Probe',
+        status: item.latest?.status || 'missing',
+        detail: item.latest?.error || item.url || ''
+      });
+    }
+  }
+  return items;
+}
+
+async function upsertAlertState(env, key, status, fingerprint, detail, notified) {
+  await env.DB.prepare(`
+    INSERT INTO alert_state (key, status, fingerprint, detail, updated_at, notified_at)
+    VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ${notified ? "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')" : 'NULL'})
+    ON CONFLICT(key) DO UPDATE SET
+      status = excluded.status,
+      fingerprint = excluded.fingerprint,
+      detail = excluded.detail,
+      updated_at = excluded.updated_at,
+      notified_at = COALESCE(excluded.notified_at, alert_state.notified_at)
+  `).bind(key, status, fingerprint, detail).run();
+}
+
+async function sendDashboardAlert(env, status, redItems) {
+  const config = getAlertConfig(env);
+  const subject = status === 'red'
+    ? `[Nice Dashboard] ALERT: ${redItems.length} red item(s)`
+    : '[Nice Dashboard] RECOVERY: all monitored items green';
+  const text = status === 'red'
+    ? [
+      'Nice dashboard alert: one or more monitored items are red.',
+      '',
+      ...redItems.map((item) => `- ${item.type}/${item.label}: ${item.status}${item.detail ? ` (${item.detail})` : ''}`),
+      '',
+      `Time: ${new Date().toISOString()}`
+    ].join('\n')
+    : [
+      'Nice dashboard recovery: backups, deployments, and probes are all green.',
+      '',
+      `Time: ${new Date().toISOString()}`
+    ].join('\n');
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${config.apiKey}`,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      from: config.from,
+      to: [config.to],
+      subject,
+      text
+    })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.message || data.error || `resend_http_${res.status}`);
+  }
+  return data;
+}
+
+function getAlertConfig(env) {
+  const apiKey = env.RESEND_API_KEY || '';
+  const to = normalizeEmailForAlert(env.WAN_ALERT_EMAIL || '');
+  const from = env.ALERT_FROM_EMAIL || '';
+  const allowlist = parseAlertAllowlist(env.ALERT_EMAIL_ALLOWLIST || '');
+  if (!apiKey) throw new Error('missing_RESEND_API_KEY');
+  if (!to) throw new Error('missing_WAN_ALERT_EMAIL');
+  if (!from) throw new Error('missing_ALERT_FROM_EMAIL');
+  if (allowlist.length !== 1 || allowlist[0] !== to) {
+    throw new Error('invalid_alert_email_allowlist');
+  }
+  return { apiKey, to, from };
+}
+
+function parseAlertAllowlist(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => normalizeEmailForAlert(item))
+    .filter(Boolean);
+}
+
+function normalizeEmailForAlert(value) {
+  return String(value || '').trim().toLowerCase();
 }
