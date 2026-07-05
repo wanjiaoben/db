@@ -919,14 +919,15 @@ async function readR2Json(bucket, key) {
 function backupItem(key, label, result, dateFields) {
   const data = result.data || {};
   const dateValue = firstDateValue(data, dateFields) || result.updated_at || '';
+  const fresh = result.ok && isTodayJst(dateValue);
   return {
     key,
     label,
     object_key: result.key,
-    status: result.status,
-    ok: result.ok && isTodayJst(dateValue),
+    status: fresh ? result.status : (result.ok ? 'stale' : result.status),
+    ok: fresh,
     latest_at: dateValue,
-    error: result.error || '',
+    error: result.error || (result.ok && dateValue ? `latest manifest is not from today JST: ${dateValue}` : ''),
     source: 'R2'
   };
 }
@@ -1191,7 +1192,8 @@ function collectAlertItems(backups, deployments, probes) {
         key: item.key || item.label || 'backup',
         label: item.label || item.key || 'Backup',
         status: item.status || 'red',
-        detail: item.error || item.latest_at || item.object_key || ''
+        detail: item.error || item.latest_at || item.object_key || '',
+        latest_at: item.latest_at || ''
       });
     }
   }
@@ -1202,7 +1204,8 @@ function collectAlertItems(backups, deployments, probes) {
         key: item.repo || 'repo',
         label: item.repo || 'Deployment',
         status: item.conclusion || item.status || 'red',
-        detail: item.error || item.updated_at || item.url || ''
+        detail: item.error || item.updated_at || item.url || '',
+        latest_at: item.updated_at || ''
       });
     }
   }
@@ -1213,7 +1216,8 @@ function collectAlertItems(backups, deployments, probes) {
         key: item.target || item.label || 'probe',
         label: item.label || item.target || 'Probe',
         status: item.latest?.status || 'missing',
-        detail: item.latest?.error || item.url || ''
+        detail: item.latest?.error || item.url || '',
+        latest_at: item.latest?.checked_at || ''
       });
     }
   }
@@ -1243,7 +1247,12 @@ async function sendDashboardAlert(env, status, redItems) {
     ? [
       'Nice dashboard alert: one or more monitored items are red.',
       '',
-      ...redItems.map((item) => `- ${item.type}/${item.label}: ${item.status}${item.detail ? ` (${item.detail})` : ''}`),
+      ...redItems.map((item) => [
+        `- ${item.type}/${item.label}`,
+        `  status: ${item.status || 'red'}`,
+        `  latest_at: ${item.latest_at || '-'}`,
+        `  detail: ${item.detail || '-'}`,
+      ].join('\n')),
       '',
       `Time: ${new Date().toISOString()}`
     ].join('\n')
