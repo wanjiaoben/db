@@ -1166,21 +1166,31 @@ async function evaluateDashboardAlerts(env, reason = 'cron') {
   const previous = await first(env.DB, 'SELECT key, status, fingerprint FROM alert_state WHERE key = ?', [key]);
 
   if (!previous) {
+    let alert = null;
     if (status === 'red') {
-      await sendDashboardAlert(env, status, redItems);
+      alert = await trySendDashboardAlert(env, status, redItems);
     }
     await upsertAlertState(env, key, status, fingerprint, detail, status === 'red');
-    return { status, previous_status: null, sent: status === 'red', red_items: redItems };
+    return { status, previous_status: null, sent: !!alert?.ok, alert, red_items: redItems };
   }
 
   if (previous.status !== status) {
-    await sendDashboardAlert(env, status, redItems);
+    const alert = await trySendDashboardAlert(env, status, redItems);
     await upsertAlertState(env, key, status, fingerprint, detail, true);
-    return { status, previous_status: previous.status, sent: true, red_items: redItems };
+    return { status, previous_status: previous.status, sent: !!alert.ok, alert, red_items: redItems };
   }
 
   await upsertAlertState(env, key, status, fingerprint, detail, false);
   return { status, previous_status: previous.status, sent: false, red_items: redItems };
+}
+
+async function trySendDashboardAlert(env, status, redItems) {
+  try {
+    const result = await sendDashboardAlert(env, status, redItems);
+    return { ok: true, result };
+  } catch (error) {
+    return { ok: false, error: clean(error.message || String(error), 300) };
+  }
 }
 
 function collectAlertItems(backups, deployments, probes) {
