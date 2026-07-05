@@ -8,14 +8,54 @@ routes = [
 ]
 
 [triggers]
-crons = ["18 20 * * *"]
+crons = ["18 * * * *"]
 
 [[d1_databases]]
 binding = "DB"
 database_name = "nice_analytics"
 database_id = "fbcc9bc2-3556-4ac4-8168-8611940114d3"
 
+[[r2_buckets]]
+binding = "BJT_BACKUPS"
+bucket_name = "bjt-kv-backups"
+
+[[r2_buckets]]
+binding = "PROGRESS_BACKUP"
+bucket_name = "progress-backup"
+
+[[services]]
+binding = "BJT_API"
+service = "bjt-worker"
+
 [vars]
 ALLOWED_ORIGIN = "https://translation.nice.okinawa"
 DASHBOARD_ORIGIN = "https://db.nice.okinawa"
-GSC_SITE_URLS = "https://translation.nice.okinawa/,https://nice.okinawa/,https://activity.nice.okinawa/,https://golf.nice.okinawa/,https://fishing.nice.okinawa/,https://rental.nice.okinawa/,https://snorkel.nice.okinawa/,https://japanusedcars.nice.okinawa/,https://bjt.nice.okinawa/"
+GSC_SITE_URLS = "https://translation.nice.okinawa/,https://nice.okinawa/,https://activity.nice.okinawa/,https://golf.nice.okinawa/,https://fishing.nice.okinawa/,https://rental.nice.okinawa/,https://snorkel.nice.okinawa/,https://japanusedcars.nice.okinawa/,https://bjt.nice.okinawa/,https://progress.nice.okinawa/,https://kiso.nice.okinawa/"
+
+[env.preview]
+name = "nice-analytics-t0705-12"
+workers_dev = true
+preview_urls = true
+routes = []
+
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "nice_analytics"
+database_id = "fbcc9bc2-3556-4ac4-8168-8611940114d3"
+
+[[env.preview.r2_buckets]]
+binding = "BJT_BACKUPS"
+bucket_name = "bjt-kv-backups"
+
+[[env.preview.r2_buckets]]
+binding = "PROGRESS_BACKUP"
+bucket_name = "progress-backup"
+
+[[env.preview.services]]
+binding = "BJT_API"
+service = "bjt-worker"
+
+[env.preview.vars]
+ALLOWED_ORIGIN = "https://db-t0705-12.nice.okinawa"
+DASHBOARD_ORIGIN = "https://db-t0705-12.nice.okinawa"
+GSC_SITE_URLS = "https://translation.nice.okinawa/,https://nice.okinawa/,https://activity.nice.okinawa/,https://golf.nice.okinawa/,https://fishing.nice.okinawa/,https://rental.nice.okinawa/,https://snorkel.nice.okinawa/,https://japanusedcars.nice.okinawa/,https://bjt.nice.okinawa/,https://progress.nice.okinawa/,https://kiso.nice.okinawa/"

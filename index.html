@@ -170,6 +170,38 @@ td.num, th.num { text-align: right; }
   border-radius: 50%;
   background: var(--green);
 }
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.status-dot.ok { background: var(--green); }
+.status-dot.manual { background: var(--gold); }
+.spark {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+  min-width: 78px;
+}
+.spark span {
+  width: 5px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--red);
+}
+.spark span.ok { background: var(--green); }
+.control-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.control-card {
+  max-height: none;
+}
 .muted { color: var(--muted); }
 .error {
   display: none;
@@ -265,6 +297,7 @@ td.num, th.num { text-align: right; }
   }
   main { grid-template-columns: 1fr; }
   .card { max-height: none; }
+  .control-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 680px) {
   header {
@@ -379,6 +412,32 @@ td.num, th.num { text-align: right; }
     </div>
   </section>
 
+  <div class="control-grid">
+    <section class="card control-card">
+      <h2>系统健康 <span class="sub" id="controlUpdated"></span></h2>
+      <table>
+        <thead><tr><th>项目</th><th>状态</th><th>最近时间</th><th>来源</th></tr></thead>
+        <tbody id="backupTable"><tr><td colspan="4" class="empty">等待备份状态</td></tr></tbody>
+      </table>
+      <table style="margin-top:8px">
+        <thead><tr><th>部署</th><th>状态</th><th>更新时间</th><th>工作流</th></tr></thead>
+        <tbody id="deployTable"><tr><td colspan="4" class="empty">等待部署状态</td></tr></tbody>
+      </table>
+      <table style="margin-top:8px">
+        <thead><tr><th>探针</th><th>24h</th><th class="num">成功率</th><th>最近</th></tr></thead>
+        <tbody id="probeTable"><tr><td colspan="4" class="empty">等待探针结果</td></tr></tbody>
+      </table>
+    </section>
+
+    <section class="card control-card">
+      <h2>营收 / 会员</h2>
+      <table>
+        <thead><tr><th>站点</th><th class="num">今日</th><th class="num">本月</th><th class="num">会员/用户</th><th>状态</th></tr></thead>
+        <tbody id="revenueTable"><tr><td colspan="5" class="empty">等待营收会员数据</td></tr></tbody>
+      </table>
+    </section>
+  </div>
+
   <section class="card">
     <h2>站点总表</h2>
     <table>
@@ -456,6 +515,28 @@ function row(cells) {
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (s) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[s]));
+}
+
+function statusDot(ok, manual) {
+  return '<span class="status-dot ' + (ok ? 'ok' : (manual ? 'manual' : '')) + '"></span>';
+}
+
+function timeText(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return escapeHtml(value);
+  return date.toLocaleString();
+}
+
+function yen(value) {
+  if (value == null || value === '') return '-';
+  return '¥' + n(value);
+}
+
+function spark(points) {
+  const rows = (points || []).slice(-24);
+  if (!rows.length) return '<span class="muted">无数据</span>';
+  return '<span class="spark">' + rows.map((p) => '<span class="' + (p.ok ? 'ok' : '') + '" title="' + escapeHtml(timeText(p.checked_at) + ' ' + (p.status || '') + ' ' + (p.error || '')) + '"></span>').join('') + '</span>';
 }
 
 async function readJsonResponse(res) {
@@ -609,7 +690,9 @@ async function loadSnsMetrics() {
     $('snsFbComments').textContent = n(totals.facebookComments);
     const dm = data.dmSummary || {};
     $('snsDm').textContent = dm.available ? (n(dm.conversations) + ' conversations') : '无权限';
-    $('snsUpdated').textContent = data.generatedAt ? new Date(data.generatedAt).toLocaleString() : '-';
+    $('snsUpdated').textContent = data.updateMode === 'manual'
+      ? '手动 ' + (data.lastManualUpdate ? new Date(data.lastManualUpdate).toLocaleString() : '-')
+      : (data.generatedAt ? new Date(data.generatedAt).toLocaleString() : '-');
     renderRows('snsTable', (data.topPosts || []).slice(0, 10), (r) => row([
       { html: n(r.rank), num: true },
       escapeHtml(r.theme || '-'),
@@ -624,6 +707,60 @@ async function loadSnsMetrics() {
     ]));
   } catch (e) {
     $('snsTable').innerHTML = '<tr><td colspan="7" class="empty">SNS统计读取失败：' + escapeHtml(e.message) + '</td></tr>';
+  }
+}
+
+async function loadControl() {
+  const key = localStorage.getItem('nice_dashboard_key') || '';
+  try {
+    const res = await fetch(API_ROOT + '/control', {
+      credentials: 'include',
+      headers: {
+        accept: 'application/json',
+        ...(key ? { 'x-dashboard-key': key } : {})
+      }
+    });
+    const data = await readJsonResponse(res);
+    if (!res.ok || !data.ok) throw new Error(data.error || 'control API 请求失败');
+
+    $('controlUpdated').textContent = data.generated_at ? '更新 ' + new Date(data.generated_at).toLocaleTimeString() : '';
+    const backups = ((data.backups || {}).items || []);
+    renderRows('backupTable', backups, (r) => row([
+      escapeHtml(r.label || r.key || '-'),
+      { html: statusDot(r.ok, r.status === 'manual') + escapeHtml(r.ok ? '当日有' : (r.status === 'manual' ? '手动' : '异常')) },
+      escapeHtml(timeText(r.latest_at)),
+      escapeHtml(r.source || r.object_key || r.error || '-')
+    ]));
+
+    const deployments = ((data.deployments || {}).items || []);
+    renderRows('deployTable', deployments, (r) => row([
+      escapeHtml(r.repo || '-'),
+      { html: statusDot(r.ok, r.manual) + escapeHtml(r.ok ? '成功' : (r.manual ? '需 token' : (r.conclusion || r.status || '异常'))) },
+      escapeHtml(timeText(r.updated_at)),
+      r.url ? '<a href="' + escapeHtml(r.url) + '" target="_blank">' + escapeHtml(r.workflow || 'workflow') + '</a>' : escapeHtml(r.error || r.workflow || '-')
+    ]));
+
+    const probes = ((data.probes || {}).targets || []);
+    renderRows('probeTable', probes, (r) => row([
+      escapeHtml(r.label || r.target || '-'),
+      { html: spark(r.hourly) },
+      { html: r.total ? Math.round((r.ok_rate || 0) * 100) + '%' : '-', num: true },
+      { html: statusDot(r.ok, false) + escapeHtml(r.latest ? ((r.latest.status || '-') + ' / ' + (r.latest.duration_ms || 0) + 'ms') : '无数据') }
+    ]));
+
+    const revenue = ((data.revenue || {}).items || []);
+    renderRows('revenueTable', revenue, (r) => row([
+      escapeHtml((r.site || '-').toUpperCase()),
+      { html: yen(r.today_amount), num: true },
+      { html: yen(r.month_amount), num: true },
+      { html: r.users_total == null ? '-' : n(r.users_total), num: true },
+      { html: statusDot(r.ok, r.manual) + escapeHtml(r.manual ? (r.note || '手动') : (r.note || '自动')) }
+    ]));
+  } catch (e) {
+    $('backupTable').innerHTML = '<tr><td colspan="4" class="empty">系统健康读取失败：' + escapeHtml(e.message) + '</td></tr>';
+    $('deployTable').innerHTML = '<tr><td colspan="4" class="empty">部署状态读取失败</td></tr>';
+    $('probeTable').innerHTML = '<tr><td colspan="4" class="empty">探针状态读取失败</td></tr>';
+    $('revenueTable').innerHTML = '<tr><td colspan="5" class="empty">营收会员读取失败：' + escapeHtml(e.message) + '</td></tr>';
   }
 }
 
@@ -694,8 +831,9 @@ async function load() {
 $('saveKey').addEventListener('click', () => {
   localStorage.setItem('nice_dashboard_key', $('key').value);
   load();
+  loadControl();
 });
-$('refresh').addEventListener('click', load);
+$('refresh').addEventListener('click', () => { load(); loadControl(); loadSnsMetrics(); loadContentStats(); });
 $('syncGsc').addEventListener('click', async () => {
   $('error').style.display = 'none';
   $('status').textContent = '同步搜索词中';
@@ -745,9 +883,10 @@ $('pageTable').addEventListener('click', (event) => {
 });
 $('key').value = localStorage.getItem('nice_dashboard_key') || '';
 load();
+loadControl();
 loadSnsMetrics();
 loadContentStats();
-setInterval(() => { load(); loadSnsMetrics(); loadContentStats(); }, 30000);
+setInterval(() => { load(); loadControl(); loadSnsMetrics(); loadContentStats(); }, 30000);
 </script>
 </body>
 </html>

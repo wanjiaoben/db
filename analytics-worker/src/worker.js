@@ -28,6 +28,18 @@ export default {
       return summary(request, env);
     }
 
+    if (url.pathname === '/control' && request.method === 'GET') {
+      return controlDashboard(request, env);
+    }
+
+    if (url.pathname === '/probes/run' && request.method === 'POST') {
+      if (!requireDashboard(request, env)) {
+        return json({ ok: false, error: 'unauthorized' }, request, 401);
+      }
+      const result = await runProbes(env, 'manual');
+      return json({ ok: true, ...result }, request);
+    }
+
     if (url.pathname === '/search-console/sync' && request.method === 'POST') {
       return syncSearchConsole(request, env);
     }
@@ -44,7 +56,7 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(syncSearchConsoleRange(env));
+    ctx.waitUntil(runScheduledTasks(event, env));
   }
 };
 
@@ -181,6 +193,25 @@ function requireDashboard(request, env) {
   const expected = env.DASHBOARD_KEY;
   if (!expected) return true;
   return request.headers.get('x-dashboard-key') === expected;
+}
+
+async function runScheduledTasks(event, env) {
+  const errors = [];
+  try {
+    await runProbes(env, event?.cron || 'cron');
+  } catch (e) {
+    errors.push(`probes:${e.message}`);
+  }
+
+  const scheduledAt = new Date(Number(event?.scheduledTime || Date.now()));
+  if (scheduledAt.getUTCHours() === 20) {
+    try {
+      await syncSearchConsoleRange(env);
+    } catch (e) {
+      errors.push(`gsc:${e.message}`);
+    }
+  }
+  return { ok: errors.length === 0, errors };
 }
 
 async function all(db, sql, params = []) {
@@ -651,4 +682,440 @@ function parsePage(siteUrl, page) {
       return { site: '', path: '/' };
     }
   }
+}
+
+const PROBE_TARGETS = [
+  {
+    key: 'bjt-member',
+    label: 'BJT /api/member',
+    url: 'https://bjt-worker.gerheidicn.workers.dev/api/member',
+    okStatuses: [200, 401, 403],
+    authHeader: 'Bearer probe',
+    serviceBinding: 'BJT_API'
+  },
+  {
+    key: 'progress-session',
+    label: 'Progress /api/session',
+    url: 'https://api.progress.nice.okinawa/api/session',
+    okStatuses: [200, 401, 403]
+  },
+  {
+    key: 'analytics-health',
+    label: 'Analytics /health',
+    url: 'https://analytics.nice.okinawa/health',
+    okStatuses: [200]
+  }
+];
+
+const DEPLOYMENT_REPOS = ['db', 'bjt', 'progress', 'kiso'];
+
+async function controlDashboard(request, env) {
+  if (!requireDashboard(request, env)) {
+    return json({ ok: false, error: 'unauthorized' }, request, 401);
+  }
+
+  const [backups, deployments, probes, revenue] = await Promise.all([
+    getBackupStatus(env),
+    getDeploymentStatus(env),
+    getProbeSummary(env),
+    getRevenueSummary(env)
+  ]);
+
+  return json({
+    ok: true,
+    generated_at: new Date().toISOString(),
+    backups,
+    deployments,
+    probes,
+    revenue
+  }, request);
+}
+
+async function ensureProbeTable(env) {
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS probe_results (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      checked_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      target TEXT NOT NULL,
+      label TEXT NOT NULL,
+      url TEXT NOT NULL,
+      ok INTEGER NOT NULL DEFAULT 0,
+      status INTEGER,
+      duration_ms INTEGER,
+      error TEXT,
+      reason TEXT
+    )
+  `).run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_probe_results_checked_at ON probe_results(checked_at)').run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_probe_results_target_checked ON probe_results(target, checked_at)').run();
+}
+
+async function runProbes(env, reason = 'cron') {
+  await ensureProbeTable(env);
+  const checkedAt = new Date().toISOString();
+  const results = await Promise.all(PROBE_TARGETS.map((target) => probeTarget(target, env)));
+  if (results.length) {
+    await env.DB.batch(results.map((result) => env.DB.prepare(`
+      INSERT INTO probe_results (checked_at, target, label, url, ok, status, duration_ms, error, reason)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      checkedAt,
+      result.target,
+      result.label,
+      result.url,
+      result.ok ? 1 : 0,
+      result.status,
+      result.duration_ms,
+      result.error || '',
+      reason
+    )));
+  }
+  return { checked_at: checkedAt, results };
+}
+
+async function probeTarget(target, env) {
+  const started = Date.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort('timeout'), 12000);
+  try {
+    const fetcher = target.serviceBinding ? env[target.serviceBinding] : null;
+    const probeRequest = new Request(target.url, {
+      method: 'GET',
+      headers: {
+        accept: 'application/json,text/plain,*/*',
+        'user-agent': 'nice-analytics-probe/1.0',
+        ...(target.authHeader ? { authorization: target.authHeader } : {})
+      },
+      signal: controller.signal,
+      cf: { cacheTtl: 0, cacheEverything: false }
+    });
+    const res = fetcher ? await fetcher.fetch(probeRequest) : await fetch(probeRequest);
+    const status = res.status;
+    await res.body?.cancel?.();
+    return {
+      target: target.key,
+      label: target.label,
+      url: target.url,
+      ok: target.okStatuses.includes(status),
+      status,
+      duration_ms: Date.now() - started,
+      error: ''
+    };
+  } catch (e) {
+    return {
+      target: target.key,
+      label: target.label,
+      url: target.url,
+      ok: false,
+      status: 0,
+      duration_ms: Date.now() - started,
+      error: clean(e.message || String(e), 300)
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function getProbeSummary(env) {
+  await ensureProbeTable(env);
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const rows = await all(env.DB, `
+    SELECT target, label, url, ok, status, duration_ms, error, checked_at
+    FROM probe_results
+    WHERE checked_at >= ?
+    ORDER BY checked_at DESC
+  `, [since]);
+  const byTarget = new Map(PROBE_TARGETS.map((target) => [target.key, {
+    target: target.key,
+    label: target.label,
+    url: target.url,
+    total: 0,
+    ok_count: 0,
+    latest: null,
+    hourly: []
+  }]));
+  for (const row of rows) {
+    if (!byTarget.has(row.target)) {
+      byTarget.set(row.target, {
+        target: row.target,
+        label: row.label,
+        url: row.url,
+        total: 0,
+        ok_count: 0,
+        latest: null,
+        hourly: []
+      });
+    }
+    const item = byTarget.get(row.target);
+    item.total += 1;
+    if (Number(row.ok)) item.ok_count += 1;
+    const point = {
+      checked_at: row.checked_at,
+      ok: Boolean(row.ok),
+      status: row.status,
+      duration_ms: row.duration_ms,
+      error: row.error || ''
+    };
+    if (!item.latest) item.latest = point;
+    item.hourly.push(point);
+  }
+  return {
+    generated_at: new Date().toISOString(),
+    window_hours: 24,
+    targets: Array.from(byTarget.values()).map((item) => ({
+      ...item,
+      ok: item.latest ? item.latest.ok : false,
+      ok_rate: item.total ? item.ok_count / item.total : 0,
+      hourly: item.hourly.slice(0, 24).reverse()
+    }))
+  };
+}
+
+async function getBackupStatus(env) {
+  const [bjt, progress] = await Promise.all([
+    readR2Json(env.BJT_BACKUPS, 'kv-snapshots/latest/manifest.json'),
+    readR2Json(env.PROGRESS_BACKUP, 'd1/progress/latest.json')
+  ]);
+  return {
+    generated_at: new Date().toISOString(),
+    items: [
+      backupItem('bjt', 'BJT R2 latest manifest', bjt, ['generatedAt', 'generated_at', 'created_at', 'date']),
+      backupItem('progress', 'Progress R2 latest D1 export', progress, ['generated_at', 'generatedAt', 'created_at', 'date'])
+    ]
+  };
+}
+
+async function readR2Json(bucket, key) {
+  if (!bucket) return { ok: false, status: 'manual', key, error: 'missing_r2_binding' };
+  try {
+    const object = await bucket.get(key);
+    if (!object) return { ok: false, status: 'missing', key, error: 'not_found' };
+    const text = await object.text();
+    return {
+      ok: true,
+      status: 'ok',
+      key,
+      updated_at: object.uploaded ? object.uploaded.toISOString() : '',
+      data: JSON.parse(text)
+    };
+  } catch (e) {
+    return { ok: false, status: 'error', key, error: clean(e.message || String(e), 300) };
+  }
+}
+
+function backupItem(key, label, result, dateFields) {
+  const data = result.data || {};
+  const dateValue = firstDateValue(data, dateFields) || result.updated_at || '';
+  return {
+    key,
+    label,
+    object_key: result.key,
+    status: result.status,
+    ok: result.ok && isTodayJst(dateValue),
+    latest_at: dateValue,
+    error: result.error || '',
+    source: 'R2'
+  };
+}
+
+function firstDateValue(data, fields) {
+  for (const field of fields) {
+    if (data[field]) return String(data[field]);
+  }
+  if (data.manifest && typeof data.manifest === 'object') {
+    return firstDateValue(data.manifest, fields);
+  }
+  return '';
+}
+
+async function getDeploymentStatus(env) {
+  const items = await Promise.all(DEPLOYMENT_REPOS.map((repo) => getRepoDeploymentStatus(env, repo)));
+  return {
+    generated_at: new Date().toISOString(),
+    source: 'GitHub Actions latest main workflow run',
+    items
+  };
+}
+
+async function getRepoDeploymentStatus(env, repo) {
+  const token = env.GITHUB_TOKEN || '';
+  const url = `https://api.github.com/repos/wanjiaoben/${repo}/actions/runs?branch=main&per_page=10`;
+  const headers = {
+    accept: 'application/vnd.github+json',
+    'user-agent': 'nice-analytics-dashboard',
+    'x-github-api-version': '2022-11-28'
+  };
+  if (token) headers.authorization = `Bearer ${token}`;
+  try {
+    const res = await fetch(url, { headers });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return {
+        repo,
+        ok: false,
+        status: 'unknown',
+        conclusion: '',
+        updated_at: '',
+        url: '',
+        error: data.message || `github_http_${res.status}`,
+        manual: !token
+      };
+    }
+    const run = (data.workflow_runs || []).find((item) => item.head_branch === 'main') || (data.workflow_runs || [])[0];
+    if (!run) {
+      return { repo, ok: false, status: 'unknown', conclusion: '', updated_at: '', url: '', error: 'no_main_runs', manual: false };
+    }
+    const conclusion = run.conclusion || run.status || '';
+    return {
+      repo,
+      ok: run.status === 'completed' && run.conclusion === 'success',
+      status: run.status || '',
+      conclusion,
+      workflow: run.name || '',
+      updated_at: run.updated_at || run.created_at || '',
+      url: run.html_url || '',
+      error: ''
+    };
+  } catch (e) {
+    return {
+      repo,
+      ok: false,
+      status: 'error',
+      conclusion: '',
+      updated_at: '',
+      url: '',
+      error: clean(e.message || String(e), 300),
+      manual: false
+    };
+  }
+}
+
+async function getRevenueSummary(env) {
+  const [progress, bjt] = await Promise.all([
+    getProgressRevenue(env),
+    getBjtRevenue(env)
+  ]);
+  return {
+    generated_at: new Date().toISOString(),
+    currency: 'JPY',
+    items: [progress, bjt]
+  };
+}
+
+async function getProgressRevenue(env) {
+  const token = env.PROGRESS_ADMIN_TOKEN || '';
+  if (!token) return manualRevenueItem('progress', 'missing_PROGRESS_ADMIN_TOKEN', 'https://api.progress.nice.okinawa/api/admin/stats');
+  const data = await fetchJsonWithBearer('https://api.progress.nice.okinawa/api/admin/stats', token);
+  if (!data.ok) return { ...manualRevenueItem('progress', data.error, data.url), ok: false };
+  const stats = data.data || {};
+  const orders = Array.isArray(stats.orders) ? stats.orders : Array.isArray(stats.recentOrders) ? stats.recentOrders : [];
+  const totals = aggregateOrders(orders);
+  return {
+    site: 'progress',
+    ok: true,
+    source: '/api/admin/stats',
+    today_amount: numberFrom(stats.today_amount ?? stats.todayRevenue ?? stats.ordersTodayAmount ?? totals.today_amount),
+    month_amount: numberFrom(stats.month_amount ?? stats.monthRevenue ?? stats.ordersMonthAmount ?? totals.month_amount),
+    users_total: numberFrom(stats.users_total ?? stats.totalUsers ?? stats.users?.total ?? stats.accounts?.length),
+    manual: orders.length === 0 && stats.today_amount == null && stats.month_amount == null,
+    note: orders.length === 0 && stats.today_amount == null && stats.month_amount == null
+      ? 'admin stats returned no order revenue fields'
+      : ''
+  };
+}
+
+async function getBjtRevenue(env) {
+  const token = env.BJT_ADMIN_TOKEN || '';
+  if (!token) return manualRevenueItem('bjt', 'missing_BJT_ADMIN_TOKEN', 'https://bjt-worker.gerheidicn.workers.dev/api/admin/service-orders');
+  const data = await fetchJsonWithBearer('https://bjt-worker.gerheidicn.workers.dev/api/admin/service-orders', token);
+  if (!data.ok) return { ...manualRevenueItem('bjt', data.error, data.url), ok: false };
+  const orders = Array.isArray(data.data?.orders) ? data.data.orders : [];
+  const totals = aggregateOrders(orders);
+  return {
+    site: 'bjt',
+    ok: true,
+    source: '/api/admin/service-orders',
+    today_amount: totals.today_amount,
+    month_amount: totals.month_amount,
+    users_total: null,
+    orders_total: orders.length,
+    manual: false,
+    note: ''
+  };
+}
+
+function manualRevenueItem(site, note, source) {
+  return {
+    site,
+    ok: false,
+    source,
+    today_amount: null,
+    month_amount: null,
+    users_total: null,
+    orders_total: null,
+    manual: true,
+    note
+  };
+}
+
+async function fetchJsonWithBearer(url, token) {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        accept: 'application/json',
+        authorization: `Bearer ${token}`,
+        'user-agent': 'nice-analytics-dashboard'
+      }
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false, url, error: data.error || `http_${res.status}` };
+    return { ok: true, url, data };
+  } catch (e) {
+    return { ok: false, url, error: clean(e.message || String(e), 300) };
+  }
+}
+
+function aggregateOrders(orders) {
+  const now = new Date();
+  const todayKey = jstDateKey(now);
+  const monthKey = todayKey.slice(0, 7);
+  let todayAmount = 0;
+  let monthAmount = 0;
+  for (const order of orders || []) {
+    if (!order || order.source === 'cctest' || order.email === 'cctest@nice.okinawa') continue;
+    const paidAt = order.paid_at || order.paidAt || order.created_at || order.createdAt || order.sort_at || '';
+    const day = jstDateKey(parseDateSafe(paidAt));
+    if (!day) continue;
+    const amount = numberFrom(order.amount);
+    if (day === todayKey) todayAmount += amount;
+    if (day.slice(0, 7) === monthKey) monthAmount += amount;
+  }
+  return { today_amount: todayAmount, month_amount: monthAmount };
+}
+
+function numberFrom(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function parseDateSafe(value) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isTodayJst(value) {
+  const date = parseDateSafe(value);
+  if (!date) return false;
+  return jstDateKey(date) === jstDateKey(new Date());
+}
+
+function jstDateKey(date) {
+  if (!date) return '';
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(date);
 }

@@ -56,3 +56,19 @@ CREATE INDEX IF NOT EXISTS idx_search_console_daily_date ON search_console_daily
 CREATE INDEX IF NOT EXISTS idx_search_console_daily_site_date ON search_console_daily(site, date);
 CREATE INDEX IF NOT EXISTS idx_search_console_daily_path_date ON search_console_daily(path, date);
 CREATE INDEX IF NOT EXISTS idx_search_console_daily_query_date ON search_console_daily(query, date);
+
+CREATE TABLE IF NOT EXISTS probe_results (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  checked_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  target TEXT NOT NULL,
+  label TEXT NOT NULL,
+  url TEXT NOT NULL,
+  ok INTEGER NOT NULL DEFAULT 0,
+  status INTEGER,
+  duration_ms INTEGER,
+  error TEXT,
+  reason TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_probe_results_checked_at ON probe_results(checked_at);
+CREATE INDEX IF NOT EXISTS idx_probe_results_target_checked ON probe_results(target, checked_at);
