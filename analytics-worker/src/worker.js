@@ -927,7 +927,7 @@ function backupItem(key, label, result, dateFields) {
     status: fresh ? result.status : (result.ok ? 'stale' : result.status),
     ok: fresh,
     latest_at: dateValue,
-    error: result.error || (result.ok && dateValue ? `latest manifest is not from today JST: ${dateValue}` : ''),
+    error: result.error || (!fresh && result.ok && dateValue ? `latest manifest is not from today JST: ${dateValue}` : ''),
     source: 'R2'
   };
 }
