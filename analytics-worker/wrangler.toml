@@ -32,9 +32,11 @@ ALLOWED_ORIGIN = "https://translation.nice.okinawa"
 DASHBOARD_ORIGIN = "https://db.nice.okinawa"
 GSC_SITE_URLS = "https://translation.nice.okinawa/,https://nice.okinawa/,https://activity.nice.okinawa/,https://golf.nice.okinawa/,https://fishing.nice.okinawa/,https://rental.nice.okinawa/,https://snorkel.nice.okinawa/,https://japanusedcars.nice.okinawa/,https://bjt.nice.okinawa/,https://progress.nice.okinawa/,https://kiso.nice.okinawa/"
 # Alert mail is sent via Resend only on red/green state changes.
-# Secrets required: RESEND_API_KEY and WAN_ALERT_EMAIL. WAN_ALERT_EMAIL must be Wan's own authorized mailbox.
-# Configure ALERT_EMAIL_ALLOWLIST with only the same Wan mailbox; do not add group aliases or other recipients.
-# Configure ALERT_FROM_EMAIL with a Resend-verified sender, for example "Nice Dashboard <alerts@nice.okinawa>".
+# Secret required: RESEND_API_KEY. Wan has authorized alerts only to info@nice.okinawa.
+WAN_ALERT_EMAIL = "info@nice.okinawa"
+ALERT_EMAIL_ALLOWLIST = "info@nice.okinawa"
+ALERT_FROM_EMAIL = "Nice Okinawa Inquiry <noreply@nice.okinawa>"
+ALERT_SUBJECT_PREFIX = ""
 
 [env.preview]
 name = "nice-analytics-t0705-12"
@@ -64,4 +66,8 @@ ALLOWED_ORIGIN = "https://db-t0705-12.nice.okinawa"
 DASHBOARD_ORIGIN = "https://db-t0705-12.nice.okinawa"
 GSC_SITE_URLS = "https://translation.nice.okinawa/,https://nice.okinawa/,https://activity.nice.okinawa/,https://golf.nice.okinawa/,https://fishing.nice.okinawa/,https://rental.nice.okinawa/,https://snorkel.nice.okinawa/,https://japanusedcars.nice.okinawa/,https://bjt.nice.okinawa/,https://progress.nice.okinawa/,https://kiso.nice.okinawa/"
 # Preview uses the same Resend alert contract as production.
-# Secrets required: RESEND_API_KEY and WAN_ALERT_EMAIL. Whitelist must contain only Wan's mailbox.
+# Secret required: RESEND_API_KEY. Preview test mail subjects are prefixed with [TEST].
+WAN_ALERT_EMAIL = "info@nice.okinawa"
+ALERT_EMAIL_ALLOWLIST = "info@nice.okinawa"
+ALERT_FROM_EMAIL = "Nice Okinawa Inquiry <noreply@nice.okinawa>"
+ALERT_SUBJECT_PREFIX = "[TEST] "

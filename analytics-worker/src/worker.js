@@ -1235,9 +1235,10 @@ async function upsertAlertState(env, key, status, fingerprint, detail, notified)
 
 async function sendDashboardAlert(env, status, redItems) {
   const config = getAlertConfig(env);
+  const prefix = env.ALERT_SUBJECT_PREFIX || '';
   const subject = status === 'red'
-    ? `[Nice Dashboard] ALERT: ${redItems.length} red item(s)`
-    : '[Nice Dashboard] RECOVERY: all monitored items green';
+    ? `${prefix}[Nice Dashboard] ALERT: ${redItems.length} red item(s)`
+    : `${prefix}[Nice Dashboard] RECOVERY: all monitored items green`;
   const text = status === 'red'
     ? [
       'Nice dashboard alert: one or more monitored items are red.',
