@@ -870,10 +870,10 @@ async function getProbeSummary(env) {
   await ensureProbeTable(env);
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const rows = await all(env.DB, `
-    SELECT target, label, url, ok, status, duration_ms, error, checked_at
+    SELECT id, target, label, url, ok, status, duration_ms, error, checked_at
     FROM probe_results
     WHERE checked_at >= ?
-    ORDER BY checked_at DESC
+    ORDER BY checked_at DESC, id DESC
   `, [since]);
   const byTarget = new Map(PROBE_TARGETS.map((target) => [target.key, {
     target: target.key,
