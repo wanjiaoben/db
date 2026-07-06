@@ -81,3 +81,15 @@ CREATE TABLE IF NOT EXISTS alert_state (
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   notified_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS alert_channel_self_checks (
+  month_key TEXT PRIMARY KEY,
+  scheduled_at TEXT NOT NULL,
+  sent_at TEXT,
+  ok INTEGER NOT NULL DEFAULT 0,
+  recipient TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  error TEXT,
+  result TEXT,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);

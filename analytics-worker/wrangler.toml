@@ -8,7 +8,7 @@ routes = [
 ]
 
 [triggers]
-crons = ["18 * * * *"]
+crons = ["18 * * * *", "0 0 1 * *"]
 
 [[d1_databases]]
 binding = "DB"
@@ -37,6 +37,8 @@ WAN_ALERT_EMAIL = "aboutokinawa@gmail.com"
 ALERT_EMAIL_ALLOWLIST = "aboutokinawa@gmail.com"
 ALERT_FROM_EMAIL = "Nice Okinawa Inquiry <noreply@nice.okinawa>"
 ALERT_SUBJECT_PREFIX = ""
+# Monthly alert-channel self-check runs at 09:00 JST on the first day of each month.
+ALERT_CHANNEL_SELF_CHECK_EMAIL = "aboutokinawa@gmail.com"
 
 [env.preview]
 name = "nice-analytics-t0705-12"
@@ -71,3 +73,5 @@ WAN_ALERT_EMAIL = "aboutokinawa@gmail.com"
 ALERT_EMAIL_ALLOWLIST = "aboutokinawa@gmail.com"
 ALERT_FROM_EMAIL = "Nice Okinawa Inquiry <noreply@nice.okinawa>"
 ALERT_SUBJECT_PREFIX = "[TEST] "
+# Preview uses the same recipient with [TEST] subjects.
+ALERT_CHANNEL_SELF_CHECK_EMAIL = "aboutokinawa@gmail.com"

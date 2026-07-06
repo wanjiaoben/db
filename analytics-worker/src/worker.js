@@ -1,5 +1,6 @@
 const COLLECT_ORIGIN = 'https://translation.nice.okinawa';
 const DASHBOARD_ORIGIN = 'https://db.nice.okinawa';
+const MONTHLY_ALERT_SELF_CHECK_CRON = '0 0 1 * *';
 const TRACKING_SCRIPT = `(function(){var endpoint='https://analytics.nice.okinawa/collect';var site=location.hostname;var sessionKey='nice_analytics_session';var start=Date.now();var maxScroll=0;var sectionTimers={};var lastSection='';function uuid(){if(window.crypto&&crypto.randomUUID)return crypto.randomUUID();return String(Date.now())+'-'+Math.random().toString(16).slice(2)}function sid(){try{var e=sessionStorage.getItem(sessionKey);if(e)return e;var id=uuid();sessionStorage.setItem(sessionKey,id);return id}catch(e){return uuid()}}var sessionId=sid();var visitorId=function(){try{var k='nice_analytics_visitor';var e=localStorage.getItem(k);if(e)return e;var id=uuid();localStorage.setItem(k,id);return id}catch(e){return''}}();function lang(){return document.documentElement.dataset.staticLang||document.body.dataset.lang||document.documentElement.lang||navigator.language||''}function depth(){var d=document.documentElement,b=document.body,t=window.scrollY||d.scrollTop||b.scrollTop||0,h=Math.max(b.scrollHeight,d.scrollHeight)-window.innerHeight;if(h<=0)return 100;return Math.max(0,Math.min(100,Math.round(t/h*100)))}function data(type,extra){var out={type:type,site:site,session_id:sessionId,visitor_id:visitorId,path:location.pathname,title:document.title,url:location.href,referrer:document.referrer,lang:lang(),browser_lang:navigator.language||'',screen:(screen&&screen.width?screen.width+'x'+screen.height:''),viewport:window.innerWidth+'x'+window.innerHeight,ts:new Date().toISOString()};if(extra)Object.keys(extra).forEach(function(k){out[k]=extra[k]});return out}function send(type,extra,keepalive){var body=JSON.stringify(data(type,extra));if(navigator.sendBeacon&&keepalive){try{navigator.sendBeacon(endpoint,new Blob([body],{type:'application/json'}));return}catch(e){}}try{fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:body,keepalive:!!keepalive,mode:'cors'}).catch(function(){})}catch(e){}}function contactType(el){var href=el.getAttribute('href')||'',text=(el.textContent||'').toLowerCase();if(href.indexOf('wa.me')>=0||text.indexOf('whatsapp')>=0)return'whatsapp';if(href.indexOf('mailto:')===0||text.indexOf('email')>=0)return'email';if(text.indexOf('wechat')>=0||text.indexOf('okinawaonline')>=0)return'wechat';if(href.indexOf('line')>=0||text.indexOf('line')>=0)return'line';if(href.indexOf('tel:')===0)return'phone';if(href.indexOf('#contact')>=0)return'contact';return''}document.addEventListener('click',function(event){var link=event.target.closest&&event.target.closest('a,button,summary,select');if(!link)return;var label=(link.textContent||link.getAttribute('aria-label')||'').trim().replace(/\\s+/g,' ').slice(0,120);var href=link.getAttribute&&link.getAttribute('href');var contact=link.matches('a')?contactType(link):'';var kind=contact?'contact_'+contact:(link.closest('nav')?'nav':(link.tagName||'').toLowerCase());send('click',{event_name:kind,label:label,href:href||'',section:lastSection})},true);window.addEventListener('scroll',function(){maxScroll=Math.max(maxScroll,depth())},{passive:true});if('IntersectionObserver'in window){var observer=new IntersectionObserver(function(entries){entries.forEach(function(entry){var id=entry.target.id||entry.target.tagName.toLowerCase();if(entry.isIntersecting){lastSection=id;sectionTimers[id]=Date.now();send('section_view',{section:id})}else if(sectionTimers[id]){var ms=Date.now()-sectionTimers[id];sectionTimers[id]=0;if(ms>800)send('section_time',{section:id,duration_ms:ms})}})},{threshold:.55});document.querySelectorAll('header[id],main[id],section[id]').forEach(function(s){observer.observe(s)})}var qs=new URLSearchParams(location.search);send('page_view',{utm_source:qs.get('utm_source')||'',utm_medium:qs.get('utm_medium')||'',utm_campaign:qs.get('utm_campaign')||''});window.addEventListener('pagehide',function(){send('page_leave',{duration_ms:Date.now()-start,max_scroll:Math.max(maxScroll,depth()),section:lastSection},true)})})();`;
 
 export default {
@@ -54,6 +55,20 @@ export default {
       }
       try {
         const result = await sendManualTestAlert(env);
+        return json({ ok: true, ...result }, request);
+      } catch (error) {
+        return json({ ok: false, error: clean(error.message || String(error), 300) }, request, 502);
+      }
+    }
+
+    if (url.pathname === '/alerts/self-check' && request.method === 'POST') {
+      if (!requireDashboard(request, env)) {
+        return json({ ok: false, error: 'unauthorized' }, request, 401);
+      }
+      try {
+        const result = await sendMonthlyAlertChannelSelfCheck(env, new Date(), 'manual', {
+          force: url.searchParams.get('force') === '1'
+        });
         return json({ ok: true, ...result }, request);
       } catch (error) {
         return json({ ok: false, error: clean(error.message || String(error), 300) }, request, 502);
@@ -217,13 +232,23 @@ function requireDashboard(request, env) {
 
 async function runScheduledTasks(event, env) {
   const errors = [];
+  const cron = event?.cron || 'cron';
+  const scheduledAt = new Date(Number(event?.scheduledTime || Date.now()));
+
+  if (cron === MONTHLY_ALERT_SELF_CHECK_CRON) {
+    try {
+      await sendMonthlyAlertChannelSelfCheck(env, scheduledAt, cron);
+    } catch (e) {
+      errors.push(`alert-self-check:${e.message}`);
+    }
+  }
+
   try {
-    await runProbes(env, event?.cron || 'cron');
+    await runProbes(env, cron);
   } catch (e) {
     errors.push(`probes:${e.message}`);
   }
 
-  const scheduledAt = new Date(Number(event?.scheduledTime || Date.now()));
   if (scheduledAt.getUTCHours() === 20) {
     try {
       await syncSearchConsoleRange(env);
@@ -232,7 +257,7 @@ async function runScheduledTasks(event, env) {
     }
   }
   try {
-    await evaluateDashboardAlerts(env, event?.cron || 'cron');
+    await evaluateDashboardAlerts(env, cron);
   } catch (e) {
     errors.push(`alerts:${e.message}`);
   }
@@ -1159,6 +1184,22 @@ async function ensureAlertTable(env) {
   `).run();
 }
 
+async function ensureAlertSelfCheckTable(env) {
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS alert_channel_self_checks (
+      month_key TEXT PRIMARY KEY,
+      scheduled_at TEXT NOT NULL,
+      sent_at TEXT,
+      ok INTEGER NOT NULL DEFAULT 0,
+      recipient TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      error TEXT,
+      result TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    )
+  `).run();
+}
+
 async function evaluateDashboardAlerts(env, reason = 'cron') {
   await ensureAlertTable(env);
   const [backups, deployments, probes] = await Promise.all([
@@ -1217,6 +1258,68 @@ async function sendManualTestAlert(env) {
   const result = await sendDashboardAlert(env, 'red', [item]);
   const to = normalizeEmailForAlert(env.WAN_ALERT_EMAIL || '');
   return { sent: true, to, result };
+}
+
+async function sendMonthlyAlertChannelSelfCheck(env, scheduledAt, reason = MONTHLY_ALERT_SELF_CHECK_CRON, options = {}) {
+  await ensureAlertSelfCheckTable(env);
+  const monthKey = jstMonthKey(scheduledAt);
+  const previous = await first(env.DB, 'SELECT ok, sent_at FROM alert_channel_self_checks WHERE month_key = ?', [monthKey]);
+  if (Number(previous?.ok || 0) === 1 && !options.force) {
+    return { skipped: true, month_key: monthKey, sent_at: previous.sent_at };
+  }
+
+  const recipient = normalizeEmailForAlert(env.ALERT_CHANNEL_SELF_CHECK_EMAIL || env.WAN_ALERT_EMAIL || '');
+  const prefix = env.ALERT_SUBJECT_PREFIX || '';
+  const subject = `${prefix}[Nice Dashboard] 通道自检 ${monthKey}`;
+  const scheduledIso = scheduledAt.toISOString();
+  const text = [
+    'Nice dashboard alert-channel monthly self-check.',
+    '',
+    '收到这封邮件 = 报警通道正常。',
+    '若某月 1 号 09:00 JST 没收到这封邮件，请排查报警系统本身。',
+    '',
+    `Month: ${monthKey}`,
+    `Scheduled at: ${scheduledIso}`,
+    `Cron: ${reason}`,
+    `Recipient: ${recipient}`
+  ].join('\n');
+
+  try {
+    const config = getAlertConfig(env, recipient);
+    const result = await sendAlertEmail(config, subject, text);
+    await env.DB.prepare(`
+      INSERT INTO alert_channel_self_checks (
+        month_key, scheduled_at, sent_at, ok, recipient, subject, error, result, updated_at
+      )
+      VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 1, ?, ?, '', ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      ON CONFLICT(month_key) DO UPDATE SET
+        scheduled_at = excluded.scheduled_at,
+        sent_at = excluded.sent_at,
+        ok = excluded.ok,
+        recipient = excluded.recipient,
+        subject = excluded.subject,
+        error = excluded.error,
+        result = excluded.result,
+        updated_at = excluded.updated_at
+    `).bind(monthKey, scheduledIso, config.to, subject, JSON.stringify(result)).run();
+    return { sent: true, month_key: monthKey, to: config.to, result };
+  } catch (error) {
+    const message = clean(error.message || String(error), 300);
+    await env.DB.prepare(`
+      INSERT INTO alert_channel_self_checks (
+        month_key, scheduled_at, sent_at, ok, recipient, subject, error, result, updated_at
+      )
+      VALUES (?, ?, NULL, 0, ?, ?, ?, '', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      ON CONFLICT(month_key) DO UPDATE SET
+        scheduled_at = excluded.scheduled_at,
+        ok = excluded.ok,
+        recipient = excluded.recipient,
+        subject = excluded.subject,
+        error = excluded.error,
+        updated_at = excluded.updated_at
+    `).bind(monthKey, scheduledIso, recipient, subject, message).run();
+    throw error;
+  }
 }
 
 function collectAlertItems(backups, deployments, probes) {
@@ -1298,6 +1401,10 @@ async function sendDashboardAlert(env, status, redItems) {
       `Time: ${new Date().toISOString()}`
     ].join('\n');
 
+  return sendAlertEmail(config, subject, text);
+}
+
+async function sendAlertEmail(config, subject, text) {
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -1318,15 +1425,15 @@ async function sendDashboardAlert(env, status, redItems) {
   return data;
 }
 
-function getAlertConfig(env) {
+function getAlertConfig(env, recipient) {
   const apiKey = env.RESEND_API_KEY || '';
-  const to = normalizeEmailForAlert(env.WAN_ALERT_EMAIL || '');
+  const to = normalizeEmailForAlert(recipient || env.WAN_ALERT_EMAIL || '');
   const from = env.ALERT_FROM_EMAIL || '';
   const allowlist = parseAlertAllowlist(env.ALERT_EMAIL_ALLOWLIST || '');
   if (!apiKey) throw new Error('missing_RESEND_API_KEY');
   if (!to) throw new Error('missing_WAN_ALERT_EMAIL');
   if (!from) throw new Error('missing_ALERT_FROM_EMAIL');
-  if (allowlist.length !== 1 || allowlist[0] !== to) {
+  if (!allowlist.includes(to)) {
     throw new Error('invalid_alert_email_allowlist');
   }
   return { apiKey, to, from };
@@ -1341,4 +1448,16 @@ function parseAlertAllowlist(value) {
 
 function normalizeEmailForAlert(value) {
   return String(value || '').trim().toLowerCase();
+}
+
+function jstMonthKey(date) {
+  if (!date) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric',
+    month: '2-digit'
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === 'year')?.value || '0000';
+  const month = parts.find((part) => part.type === 'month')?.value || '00';
+  return `${year}-${month}`;
 }

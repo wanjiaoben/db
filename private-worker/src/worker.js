@@ -53,6 +53,7 @@ function isAnalyticsProxyPath(pathname) {
     || pathname === '/probes/run'
     || pathname === '/alerts/check'
     || pathname === '/alerts/test'
+    || pathname === '/alerts/self-check'
     || pathname === '/search-console/status'
     || pathname === '/search-console/sync';
 }
