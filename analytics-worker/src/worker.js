@@ -52,8 +52,12 @@ export default {
       if (!requireDashboard(request, env)) {
         return json({ ok: false, error: 'unauthorized' }, request, 401);
       }
-      const result = await sendManualTestAlert(env);
-      return json({ ok: true, ...result }, request);
+      try {
+        const result = await sendManualTestAlert(env);
+        return json({ ok: true, ...result }, request);
+      } catch (error) {
+        return json({ ok: false, error: clean(error.message || String(error), 300) }, request, 502);
+      }
     }
 
     if (url.pathname === '/search-console/sync' && request.method === 'POST') {
