@@ -1,43 +1,43 @@
 {
-  "generatedAt": "2026-06-20T14:27:11+09:00",
+  "generatedAt": "2026-07-05T09:49:27+09:00",
   "bjtPro": {
     "studyWords": {
-      "value": 922,
-      "change": 13
+      "value": 1010,
+      "change": 88
     },
     "mogiQuestions": {
-      "value": 240,
-      "change": 0
+      "value": 320,
+      "change": 80
     },
     "totalQuestions": {
-      "value": 1162,
-      "change": 13
+      "value": 1330,
+      "change": 168
     },
     "mogiSets": {
-      "value": 3,
-      "change": 0
+      "value": 4,
+      "change": 1
     },
     "activeMembers": {
-      "value": 18,
-      "change": 1
+      "value": 0,
+      "change": -18
     }
   },
   "patto": {
     "j1": {
-      "value": 119,
-      "change": 0
+      "value": 105,
+      "change": -14
     },
     "j2": {
-      "value": 920,
-      "change": 0
+      "value": 849,
+      "change": -71
     },
     "j3": {
-      "value": 429,
-      "change": 0
+      "value": 419,
+      "change": -10
     },
     "total": {
-      "value": 1468,
-      "change": 0
+      "value": 1373,
+      "change": -95
     }
   },
   "progress": {

@@ -23,9 +23,9 @@ from typing import Any
 
 JST = timezone(timedelta(hours=9))
 DB_REPO = Path(os.environ.get("DB_REPO", Path(__file__).resolve().parents[1])).resolve()
-GITHUB_ROOT = DB_REPO.parent
-BJT_REPO = GITHUB_ROOT / "bjt"
-PROGRESS_REPO = GITHUB_ROOT / "progress"
+GITHUB_ROOT = Path(os.environ.get("GITHUB_ROOT", DB_REPO.parent)).resolve()
+BJT_REPO = Path(os.environ.get("BJT_REPO", GITHUB_ROOT / "bjt")).resolve()
+PROGRESS_REPO = Path(os.environ.get("PROGRESS_REPO", GITHUB_ROOT / "progress")).resolve()
 OUTPUT_FILE = DB_REPO / "data" / "content-stats.json"
 HISTORY_FILE = DB_REPO / "data" / "content-stats-history.json"
 BJT_ADMIN_API = os.environ.get("BJT_ADMIN_API", "https://bjt-worker.gerheidicn.workers.dev")
@@ -68,7 +68,22 @@ def count_unique_nums(paths: list[Path]) -> int:
     return len(values)
 
 
+def read_json(path: Path) -> Any:
+    return json.loads(read_text(path))
+
+
+def count_bank_questions(value: Any) -> int:
+    if isinstance(value, list):
+        return sum(1 for item in value if isinstance(item, dict))
+    if isinstance(value, dict):
+        return sum(count_bank_questions(v) for v in value.values())
+    return 0
+
+
 def count_bjt_study_words() -> int:
+    current = BJT_REPO / "worker/data/questions/study.json"
+    if current.exists():
+        return count_bank_questions(read_json(current))
     return count_unique_nums([
         BJT_REPO / "pro/data/study_part12.js",
         BJT_REPO / "pro/data/study_part3.js",
@@ -76,6 +91,11 @@ def count_bjt_study_words() -> int:
 
 
 def count_mogi_sets() -> int:
+    current = BJT_REPO / "worker/data/questions/mogi.json"
+    if current.exists():
+        data = read_json(current)
+        if isinstance(data, dict):
+            return len(data)
     paths = sorted((BJT_REPO / "pro/data").glob("mogi_set*.js"))
     count = 0
     for path in paths:
@@ -85,6 +105,9 @@ def count_mogi_sets() -> int:
 
 
 def count_mogi_questions() -> int:
+    current = BJT_REPO / "worker/data/questions/mogi.json"
+    if current.exists():
+        return count_bank_questions(read_json(current))
     return count_unique_nums(sorted((BJT_REPO / "pro/data").glob("mogi_set*.js")))
 
 

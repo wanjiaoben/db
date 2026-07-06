@@ -49,6 +49,11 @@ export default {
 
 function isAnalyticsProxyPath(pathname) {
   return pathname === '/summary'
+    || pathname === '/control'
+    || pathname === '/probes/run'
+    || pathname === '/alerts/check'
+    || pathname === '/alerts/test'
+    || pathname === '/alerts/self-check'
     || pathname === '/search-console/status'
     || pathname === '/search-console/sync';
 }

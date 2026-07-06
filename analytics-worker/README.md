@@ -9,7 +9,7 @@ stores them in Cloudflare D1, and serves dashboard summaries to `db.nice.okinawa
 2. Run `schema.sql` in the D1 console.
 3. Deploy this worker as `nice-analytics`.
 4. Bind the D1 database to the worker with binding name `DB`.
-5. Add a worker secret named `DASHBOARD_KEY`.
+5. Add worker secrets named `DASHBOARD_KEY` and `RESEND_API_KEY`.
 6. Add a custom domain or route:
    `analytics.nice.okinawa/*`
 
@@ -19,6 +19,18 @@ stores them in Cloudflare D1, and serves dashboard summaries to `db.nice.okinawa
 - `GET https://analytics.nice.okinawa/summary?days=7`
 - `POST https://analytics.nice.okinawa/search-console/sync?days=7`
 - `GET https://analytics.nice.okinawa/health`
+- `POST https://analytics.nice.okinawa/alerts/test`
+- `POST https://analytics.nice.okinawa/alerts/self-check`
+
+## Alert Channel Self-Check
+
+The Worker sends a monthly alert-channel self-check email via Resend on the
+first day of each month at 09:00 JST (`0 0 1 * *` UTC). The email is sent to
+`ALERT_CHANNEL_SELF_CHECK_EMAIL`, currently `aboutokinawa@gmail.com`, with a
+`[Nice Dashboard] 通道自检 YYYY-MM` subject. If the message is missing on the
+first day of a month, investigate the alerting system itself.
+
+Admins can force a channel self-check with `POST /alerts/self-check?force=1`.
 
 ## Dashboard
 

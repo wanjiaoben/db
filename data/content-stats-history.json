@@ -39,5 +39,20 @@
     "progress.jp": 1000,
     "progress.cn": 1000,
     "progress.total": 3000
+  },
+  "2026-07-05": {
+    "bjtPro.studyWords": 1010,
+    "bjtPro.mogiQuestions": 320,
+    "bjtPro.totalQuestions": 1330,
+    "bjtPro.mogiSets": 4,
+    "bjtPro.activeMembers": 0,
+    "patto.j1": 105,
+    "patto.j2": 849,
+    "patto.j3": 419,
+    "patto.total": 1373,
+    "progress.en": 1000,
+    "progress.jp": 1000,
+    "progress.cn": 1000,
+    "progress.total": 3000
   }
 }

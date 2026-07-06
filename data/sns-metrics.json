@@ -503,5 +503,10 @@
         "url": "https://www.instagram.com/reel/DZgOwrLDPQb/"
       }
     }
-  ]
+  ],
+  "updateMode": "manual",
+  "status": "manual_required",
+  "refreshAttemptedAt": "2026-07-05T09:48:30+09:00",
+  "lastManualUpdate": "2026-06-13T21:52:14",
+  "manualReason": "Meta/Instagram metrics require page and messaging permissions; last measured values are retained until a token-based fetcher is configured."
 }

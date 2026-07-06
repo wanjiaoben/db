@@ -13,3 +13,17 @@ DASHBOARD_ORIGIN = "https://raw.githubusercontent.com/wanjiaoben/db/main"
 [[services]]
 binding = "ANALYTICS"
 service = "nice-analytics"
+
+[env.preview]
+name = "db-private-t0705-12"
+workers_dev = true
+preview_urls = true
+routes = []
+
+[env.preview.vars]
+DASHBOARD_ORIGIN = "https://raw.githubusercontent.com/wanjiaoben/db/t0705-12-dashboard-control"
+ANALYTICS_ORIGIN = "https://nice-analytics-t0705-12.gerheidicn.workers.dev"
+
+[[env.preview.services]]
+binding = "ANALYTICS"
+service = "nice-analytics-t0705-12"

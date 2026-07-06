@@ -56,3 +56,40 @@ CREATE INDEX IF NOT EXISTS idx_search_console_daily_date ON search_console_daily
 CREATE INDEX IF NOT EXISTS idx_search_console_daily_site_date ON search_console_daily(site, date);
 CREATE INDEX IF NOT EXISTS idx_search_console_daily_path_date ON search_console_daily(path, date);
 CREATE INDEX IF NOT EXISTS idx_search_console_daily_query_date ON search_console_daily(query, date);
+
+CREATE TABLE IF NOT EXISTS probe_results (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  checked_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  target TEXT NOT NULL,
+  label TEXT NOT NULL,
+  url TEXT NOT NULL,
+  ok INTEGER NOT NULL DEFAULT 0,
+  status INTEGER,
+  duration_ms INTEGER,
+  error TEXT,
+  reason TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_probe_results_checked_at ON probe_results(checked_at);
+CREATE INDEX IF NOT EXISTS idx_probe_results_target_checked ON probe_results(target, checked_at);
+
+CREATE TABLE IF NOT EXISTS alert_state (
+  key TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  fingerprint TEXT NOT NULL DEFAULT '',
+  detail TEXT,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  notified_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS alert_channel_self_checks (
+  month_key TEXT PRIMARY KEY,
+  scheduled_at TEXT NOT NULL,
+  sent_at TEXT,
+  ok INTEGER NOT NULL DEFAULT 0,
+  recipient TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  error TEXT,
+  result TEXT,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
