@@ -48,6 +48,14 @@ export default {
       return json({ ok: true, ...result }, request);
     }
 
+    if (url.pathname === '/alerts/test' && request.method === 'POST') {
+      if (!requireDashboard(request, env)) {
+        return json({ ok: false, error: 'unauthorized' }, request, 401);
+      }
+      const result = await sendManualTestAlert(env);
+      return json({ ok: true, ...result }, request);
+    }
+
     if (url.pathname === '/search-console/sync' && request.method === 'POST') {
       return syncSearchConsole(request, env);
     }
@@ -1191,6 +1199,20 @@ async function trySendDashboardAlert(env, status, redItems) {
   } catch (error) {
     return { ok: false, error: clean(error.message || String(error), 300) };
   }
+}
+
+async function sendManualTestAlert(env) {
+  const item = {
+    type: 'manual',
+    key: 'health_alert_channel_test',
+    label: 'Health alert channel test',
+    status: 'test',
+    detail: 'Manual test alert from db dashboard admin endpoint.',
+    latest_at: new Date().toISOString()
+  };
+  const result = await sendDashboardAlert(env, 'red', [item]);
+  const to = normalizeEmailForAlert(env.WAN_ALERT_EMAIL || '');
+  return { sent: true, to, result };
 }
 
 function collectAlertItems(backups, deployments, probes) {
