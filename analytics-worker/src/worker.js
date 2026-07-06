@@ -752,8 +752,9 @@ const PROBE_TARGETS = [
   {
     key: 'analytics-health',
     label: 'Analytics /health',
-    url: 'https://analytics.nice.okinawa/health',
-    okStatuses: [200]
+    url: 'https://nice-analytics.gerheidicn.workers.dev/health',
+    okStatuses: [200],
+    serviceBinding: 'ANALYTICS_API'
   }
 ];
 
@@ -1184,6 +1185,33 @@ async function ensureAlertTable(env) {
   `).run();
 }
 
+async function ensureAlertSendLogTable(env) {
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS alert_send_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      key TEXT NOT NULL,
+      status TEXT NOT NULL,
+      fingerprint TEXT NOT NULL,
+      window_start TEXT NOT NULL,
+      reason TEXT,
+      detail TEXT,
+      claimed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      sent_at TEXT,
+      ok INTEGER NOT NULL DEFAULT 0,
+      error TEXT,
+      result TEXT
+    )
+  `).run();
+  await env.DB.prepare(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_alert_send_log_unique_window
+    ON alert_send_log(key, status, fingerprint, window_start)
+  `).run();
+  await env.DB.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_alert_send_log_key_claimed
+    ON alert_send_log(key, claimed_at)
+  `).run();
+}
+
 async function ensureAlertSelfCheckTable(env) {
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS alert_channel_self_checks (
@@ -1202,6 +1230,7 @@ async function ensureAlertSelfCheckTable(env) {
 
 async function evaluateDashboardAlerts(env, reason = 'cron') {
   await ensureAlertTable(env);
+  await ensureAlertSendLogTable(env);
   const [backups, deployments, probes] = await Promise.all([
     getBackupStatus(env),
     getDeploymentStatus(env),
@@ -1210,20 +1239,44 @@ async function evaluateDashboardAlerts(env, reason = 'cron') {
   const redItems = collectAlertItems(backups, deployments, probes);
   const status = redItems.length ? 'red' : 'green';
   const fingerprint = redItems.map((item) => `${item.type}:${item.key}`).sort().join('|');
-  const detail = JSON.stringify({
-    reason,
-    generated_at: new Date().toISOString(),
-    red_items: redItems
-  });
   const key = 'dashboard-control';
-  const claim = await claimAlertStateChange(env, key, status, fingerprint, detail);
+  const previous = await first(env.DB, 'SELECT key, status, fingerprint FROM alert_state WHERE key = ?', [key]);
+  const shouldNotify = !previous ? status === 'red' : previous.status !== status;
+  const generatedAt = new Date().toISOString();
+  let sendLock = null;
+  let alert = null;
 
-  if (claim.should_notify) {
-    const alert = await trySendDashboardAlert(env, status, redItems);
-    return { status, previous_status: claim.previous_status, sent: !!alert.ok, alert, red_items: redItems };
+  if (shouldNotify) {
+    sendLock = await claimAlertSend(env, {
+      key,
+      status,
+      fingerprint,
+      reason,
+      detail: JSON.stringify({ reason, generated_at: generatedAt, red_items: redItems })
+    });
+    if (sendLock.acquired) {
+      alert = await trySendDashboardAlert(env, status, redItems);
+      await finishAlertSend(env, sendLock.id, alert);
+    }
   }
 
-  return { status, previous_status: claim.previous_status, sent: false, red_items: redItems };
+  const sendHistory = await alertSendHistory(env, key);
+  const detail = buildAlertDetail({
+    reason,
+    generatedAt,
+    redItems,
+    sendLock,
+    sendHistory
+  });
+  await upsertAlertState(env, key, status, fingerprint, detail, !!sendLock?.acquired);
+  return {
+    status,
+    previous_status: previous?.status || null,
+    sent: !!alert?.ok,
+    alert,
+    red_items: redItems,
+    send_lock: sendLock
+  };
 }
 
 async function trySendDashboardAlert(env, status, redItems) {
@@ -1365,51 +1418,85 @@ async function upsertAlertState(env, key, status, fingerprint, detail, notified)
   `).bind(key, status, fingerprint, detail).run();
 }
 
-async function claimAlertStateChange(env, key, status, fingerprint, detail) {
-  const previous = await first(env.DB, 'SELECT key, status, fingerprint FROM alert_state WHERE key = ?', [key]);
-  if (!previous) {
-    const inserted = await env.DB.prepare(`
-      INSERT INTO alert_state (key, status, fingerprint, detail, updated_at, notified_at)
-      VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?)
-      ON CONFLICT(key) DO NOTHING
-    `).bind(
-      key,
-      status,
-      fingerprint,
-      detail,
-      status === 'red' ? new Date().toISOString() : null
-    ).run();
-    return {
-      previous_status: null,
-      should_notify: status === 'red' && d1ChangedRows(inserted) > 0
-    };
-  }
+function d1ChangedRows(result) {
+  return Number(result?.meta?.changes || result?.changes || 0);
+}
 
-  if (previous.status !== status) {
-    const claimed = await env.DB.prepare(`
-      UPDATE alert_state
-      SET status = ?,
-          fingerprint = ?,
-          detail = ?,
-          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
-          notified_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-      WHERE key = ? AND status <> ?
-    `).bind(status, fingerprint, detail, key, status).run();
-    return {
-      previous_status: previous.status,
-      should_notify: d1ChangedRows(claimed) > 0
-    };
-  }
-
-  await upsertAlertState(env, key, status, fingerprint, detail, false);
+async function claimAlertSend(env, { key, status, fingerprint, reason, detail }) {
+  const windowStart = alertSendWindowStart(new Date());
+  const claimed = await env.DB.prepare(`
+    INSERT INTO alert_send_log (key, status, fingerprint, window_start, reason, detail)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(key, status, fingerprint, window_start) DO NOTHING
+  `).bind(key, status, fingerprint, windowStart, reason, detail).run();
+  const acquired = d1ChangedRows(claimed) > 0;
   return {
-    previous_status: previous.status,
-    should_notify: false
+    acquired,
+    id: acquired ? Number(claimed?.meta?.last_row_id || claimed?.lastRowId || 0) : null,
+    status,
+    fingerprint,
+    window_start: windowStart,
+    reason
   };
 }
 
-function d1ChangedRows(result) {
-  return Number(result?.meta?.changes || result?.changes || 0);
+async function finishAlertSend(env, id, alert) {
+  if (!id) return;
+  await env.DB.prepare(`
+    UPDATE alert_send_log
+    SET sent_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+        ok = ?,
+        error = ?,
+        result = ?
+    WHERE id = ?
+  `).bind(
+    alert?.ok ? 1 : 0,
+    alert?.error || '',
+    JSON.stringify(alert?.result || null),
+    id
+  ).run();
+}
+
+function alertSendWindowStart(date) {
+  const windowMs = 5 * 60 * 1000;
+  return new Date(Math.floor(date.getTime() / windowMs) * windowMs).toISOString();
+}
+
+async function alertSendHistory(env, key) {
+  return await all(env.DB, `
+    SELECT id, status, fingerprint, window_start, reason, claimed_at, sent_at, ok, error
+    FROM alert_send_log
+    WHERE key = ?
+    ORDER BY claimed_at DESC, id DESC
+    LIMIT 5
+  `, [key]);
+}
+
+function buildAlertDetail({ reason, generatedAt, redItems, sendLock, sendHistory }) {
+  return JSON.stringify({
+    reason,
+    generated_at: generatedAt,
+    red_items: redItems,
+    send_lock: sendLock ? {
+      acquired: !!sendLock.acquired,
+      id: sendLock.id || null,
+      status: sendLock.status,
+      fingerprint: sendLock.fingerprint,
+      window_start: sendLock.window_start,
+      reason: sendLock.reason
+    } : null,
+    send_history: (sendHistory || []).map((item) => ({
+      id: item.id,
+      status: item.status,
+      fingerprint: item.fingerprint,
+      window_start: item.window_start,
+      reason: item.reason || '',
+      claimed_at: item.claimed_at,
+      sent_at: item.sent_at || '',
+      ok: Boolean(item.ok),
+      error: item.error || ''
+    }))
+  });
 }
 
 async function sendDashboardAlert(env, status, redItems) {
