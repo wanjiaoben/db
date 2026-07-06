@@ -1,7 +1,7 @@
 name = "nice-analytics"
 main = "src/worker.js"
 compatibility_date = "2026-06-12"
-workers_dev = false
+workers_dev = true
 preview_urls = false
 routes = [
   { pattern = "analytics.nice.okinawa/*", zone_name = "nice.okinawa" }
@@ -27,6 +27,10 @@ bucket_name = "progress-backup"
 binding = "BJT_API"
 service = "bjt-worker"
 
+[[services]]
+binding = "ANALYTICS_API"
+service = "nice-analytics"
+
 [vars]
 ALLOWED_ORIGIN = "https://translation.nice.okinawa"
 DASHBOARD_ORIGIN = "https://db.nice.okinawa"
@@ -46,6 +50,9 @@ workers_dev = true
 preview_urls = true
 routes = []
 
+[env.preview.triggers]
+crons = []
+
 [[env.preview.d1_databases]]
 binding = "DB"
 database_name = "nice_analytics"
@@ -62,6 +69,10 @@ bucket_name = "progress-backup"
 [[env.preview.services]]
 binding = "BJT_API"
 service = "bjt-worker"
+
+[[env.preview.services]]
+binding = "ANALYTICS_API"
+service = "nice-analytics"
 
 [env.preview.vars]
 ALLOWED_ORIGIN = "https://db-t0705-12.nice.okinawa"
