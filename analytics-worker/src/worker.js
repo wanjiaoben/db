@@ -1216,25 +1216,14 @@ async function evaluateDashboardAlerts(env, reason = 'cron') {
     red_items: redItems
   });
   const key = 'dashboard-control';
-  const previous = await first(env.DB, 'SELECT key, status, fingerprint FROM alert_state WHERE key = ?', [key]);
+  const claim = await claimAlertStateChange(env, key, status, fingerprint, detail);
 
-  if (!previous) {
-    let alert = null;
-    if (status === 'red') {
-      alert = await trySendDashboardAlert(env, status, redItems);
-    }
-    await upsertAlertState(env, key, status, fingerprint, detail, status === 'red');
-    return { status, previous_status: null, sent: !!alert?.ok, alert, red_items: redItems };
-  }
-
-  if (previous.status !== status) {
+  if (claim.should_notify) {
     const alert = await trySendDashboardAlert(env, status, redItems);
-    await upsertAlertState(env, key, status, fingerprint, detail, true);
-    return { status, previous_status: previous.status, sent: !!alert.ok, alert, red_items: redItems };
+    return { status, previous_status: claim.previous_status, sent: !!alert.ok, alert, red_items: redItems };
   }
 
-  await upsertAlertState(env, key, status, fingerprint, detail, false);
-  return { status, previous_status: previous.status, sent: false, red_items: redItems };
+  return { status, previous_status: claim.previous_status, sent: false, red_items: redItems };
 }
 
 async function trySendDashboardAlert(env, status, redItems) {
@@ -1374,6 +1363,53 @@ async function upsertAlertState(env, key, status, fingerprint, detail, notified)
       updated_at = excluded.updated_at,
       notified_at = COALESCE(excluded.notified_at, alert_state.notified_at)
   `).bind(key, status, fingerprint, detail).run();
+}
+
+async function claimAlertStateChange(env, key, status, fingerprint, detail) {
+  const previous = await first(env.DB, 'SELECT key, status, fingerprint FROM alert_state WHERE key = ?', [key]);
+  if (!previous) {
+    const inserted = await env.DB.prepare(`
+      INSERT INTO alert_state (key, status, fingerprint, detail, updated_at, notified_at)
+      VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?)
+      ON CONFLICT(key) DO NOTHING
+    `).bind(
+      key,
+      status,
+      fingerprint,
+      detail,
+      status === 'red' ? new Date().toISOString() : null
+    ).run();
+    return {
+      previous_status: null,
+      should_notify: status === 'red' && d1ChangedRows(inserted) > 0
+    };
+  }
+
+  if (previous.status !== status) {
+    const claimed = await env.DB.prepare(`
+      UPDATE alert_state
+      SET status = ?,
+          fingerprint = ?,
+          detail = ?,
+          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          notified_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      WHERE key = ? AND status <> ?
+    `).bind(status, fingerprint, detail, key, status).run();
+    return {
+      previous_status: previous.status,
+      should_notify: d1ChangedRows(claimed) > 0
+    };
+  }
+
+  await upsertAlertState(env, key, status, fingerprint, detail, false);
+  return {
+    previous_status: previous.status,
+    should_notify: false
+  };
+}
+
+function d1ChangedRows(result) {
+  return Number(result?.meta?.changes || result?.changes || 0);
 }
 
 async function sendDashboardAlert(env, status, redItems) {
