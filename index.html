@@ -727,7 +727,7 @@ async function loadControl() {
     const backups = ((data.backups || {}).items || []);
     renderRows('backupTable', backups, (r) => row([
       escapeHtml(r.label || r.key || '-'),
-      { html: statusDot(r.ok, r.status === 'manual') + escapeHtml(r.ok ? '当日有' : (r.status === 'manual' ? '手动' : '异常')) },
+      { html: statusDot(r.ok, r.status === 'manual') + escapeHtml(r.ok ? (r.max_age_hours ? r.max_age_hours + 'h内' : '当日有') : (r.status === 'manual' ? '手动' : '异常')) },
       escapeHtml(timeText(r.latest_at)),
       escapeHtml(r.source || r.object_key || r.error || '-')
     ]));

@@ -1,5 +1,7 @@
 # db.nice.okinawa Progress
 
+M0718-19 splits Progress backup health into production/preview manifests, validates environment/database/object prefixes, and alerts independently when either is missing, crossed, or older than 27 hours.
+
 ## 2026-06-16 Content Inventory
 
 - Script: `/Users/jiajia/Documents/GitHub/db/scripts/content_stats.py`

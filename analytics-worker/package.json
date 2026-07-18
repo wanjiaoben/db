@@ -1,4 +1,7 @@
 {
   "type": "module",
-  "private": true
+  "private": true,
+  "scripts": {
+    "test:backup-health": "node --test test/progress-backup-health.test.mjs"
+  }
 }
