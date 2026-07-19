@@ -923,15 +923,17 @@ async function getProbeSummary(env) {
 }
 
 async function getBackupStatus(env) {
-  const [bjt, progress] = await Promise.all([
+  const [bjt, progressProduction, progressPreview] = await Promise.all([
     readR2Json(env.BJT_BACKUPS, 'kv-snapshots/latest/manifest.json'),
-    readR2Json(env.PROGRESS_BACKUP, 'd1/progress/latest.json')
+    readR2Json(env.PROGRESS_BACKUP, 'd1/progress/production/latest.json'),
+    readR2Json(env.PROGRESS_BACKUP, 'd1/progress/preview/latest.json')
   ]);
   return {
     generated_at: new Date().toISOString(),
     items: [
       backupItem('bjt', 'BJT R2 latest manifest', bjt, ['generatedAt', 'generated_at', 'created_at', 'date']),
-      backupItem('progress', 'Progress R2 latest D1 export', progress, ['generated_at', 'generatedAt', 'created_at', 'date'])
+      progressBackupItem('progress-production', 'Progress production D1 export', progressProduction, 'production', 'progress'),
+      progressBackupItem('progress-preview', 'Progress preview D1 export', progressPreview, 'preview', 'progress-otp-preview')
     ]
   };
 }
@@ -966,6 +968,41 @@ function backupItem(key, label, result, dateFields) {
     ok: fresh,
     latest_at: dateValue,
     error: result.error || (!fresh && result.ok && dateValue ? `latest manifest is not from today JST: ${dateValue}` : ''),
+    source: 'R2'
+  };
+}
+
+const PROGRESS_BACKUP_MAX_AGE_MS = 27 * 60 * 60 * 1000;
+
+export function progressBackupItem(key, label, result, expectedEnvironment, expectedDatabase, now = new Date()) {
+  const data = result.data || {};
+  const dateValue = firstDateValue(data, ['generated_at', 'generatedAt', 'created_at', 'date']) || result.updated_at || '';
+  const parsed = parseDateSafe(dateValue);
+  const ageMs = parsed ? now.getTime() - parsed.getTime() : Number.POSITIVE_INFINITY;
+  const expectedPrefix = `d1/progress/${expectedEnvironment}/`;
+  let validationError = '';
+  if (result.ok && data.environment !== expectedEnvironment) {
+    validationError = `manifest environment mismatch: expected ${expectedEnvironment}, got ${data.environment || '<missing>'}`;
+  } else if (result.ok && data.database !== expectedDatabase) {
+    validationError = `manifest database mismatch: expected ${expectedDatabase}, got ${data.database || '<missing>'}`;
+  } else if (result.ok && !String(data.object_key || '').startsWith(expectedPrefix)) {
+    validationError = `manifest object key crosses environment boundary: ${data.object_key || '<missing>'}`;
+  }
+  const fresh = result.ok && ageMs >= 0 && ageMs < PROGRESS_BACKUP_MAX_AGE_MS;
+  const ok = fresh && !validationError;
+  return {
+    key,
+    label,
+    environment: expectedEnvironment,
+    database: expectedDatabase,
+    object_key: result.key,
+    backup_object_key: data.object_key || '',
+    status: ok ? 'ok' : (validationError ? 'environment_mismatch' : (result.ok ? 'stale' : result.status)),
+    ok,
+    latest_at: dateValue,
+    max_age_hours: 27,
+    age_hours: Number.isFinite(ageMs) ? Math.round(ageMs / 36000) / 100 : null,
+    error: result.error || validationError || (!fresh && result.ok ? `latest manifest is older than 27h: ${dateValue || '<missing>'}` : ''),
     source: 'R2'
   };
 }
