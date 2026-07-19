@@ -956,10 +956,21 @@ async function readR2Json(bucket, key) {
   }
 }
 
-function backupItem(key, label, result, dateFields) {
+const BACKUP_MAX_AGE_HOURS = 27;
+const BACKUP_MAX_AGE_MS = BACKUP_MAX_AGE_HOURS * 60 * 60 * 1000;
+
+function backupAge(dateValue, now) {
+  const parsed = parseDateSafe(dateValue);
+  if (!parsed) return { ageMs: Number.POSITIVE_INFINITY, fresh: false };
+  const ageMs = now.getTime() - parsed.getTime();
+  return { ageMs, fresh: ageMs >= 0 && ageMs <= BACKUP_MAX_AGE_MS };
+}
+
+export function backupItem(key, label, result, dateFields, now = new Date()) {
   const data = result.data || {};
   const dateValue = firstDateValue(data, dateFields) || result.updated_at || '';
-  const fresh = result.ok && isTodayJst(dateValue);
+  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now);
+  const fresh = result.ok && ageFresh;
   return {
     key,
     label,
@@ -967,18 +978,17 @@ function backupItem(key, label, result, dateFields) {
     status: fresh ? result.status : (result.ok ? 'stale' : result.status),
     ok: fresh,
     latest_at: dateValue,
-    error: result.error || (!fresh && result.ok && dateValue ? `latest manifest is not from today JST: ${dateValue}` : ''),
+    max_age_hours: BACKUP_MAX_AGE_HOURS,
+    age_hours: Number.isFinite(ageMs) ? Math.round(ageMs / 36000) / 100 : null,
+    error: result.error || (!fresh && result.ok ? `latest manifest is outside 27h freshness window: ${dateValue || '<missing>'}` : ''),
     source: 'R2'
   };
 }
 
-const PROGRESS_BACKUP_MAX_AGE_MS = 27 * 60 * 60 * 1000;
-
 export function progressBackupItem(key, label, result, expectedEnvironment, expectedDatabase, now = new Date()) {
   const data = result.data || {};
   const dateValue = firstDateValue(data, ['generated_at', 'generatedAt', 'created_at', 'date']) || result.updated_at || '';
-  const parsed = parseDateSafe(dateValue);
-  const ageMs = parsed ? now.getTime() - parsed.getTime() : Number.POSITIVE_INFINITY;
+  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now);
   const expectedPrefix = `d1/progress/${expectedEnvironment}/`;
   let validationError = '';
   if (result.ok && data.environment !== expectedEnvironment) {
@@ -988,7 +998,7 @@ export function progressBackupItem(key, label, result, expectedEnvironment, expe
   } else if (result.ok && !String(data.object_key || '').startsWith(expectedPrefix)) {
     validationError = `manifest object key crosses environment boundary: ${data.object_key || '<missing>'}`;
   }
-  const fresh = result.ok && ageMs >= 0 && ageMs < PROGRESS_BACKUP_MAX_AGE_MS;
+  const fresh = result.ok && ageFresh;
   const ok = fresh && !validationError;
   return {
     key,
@@ -1000,7 +1010,7 @@ export function progressBackupItem(key, label, result, expectedEnvironment, expe
     status: ok ? 'ok' : (validationError ? 'environment_mismatch' : (result.ok ? 'stale' : result.status)),
     ok,
     latest_at: dateValue,
-    max_age_hours: 27,
+    max_age_hours: BACKUP_MAX_AGE_HOURS,
     age_hours: Number.isFinite(ageMs) ? Math.round(ageMs / 36000) / 100 : null,
     error: result.error || validationError || (!fresh && result.ok ? `latest manifest is older than 27h: ${dateValue || '<missing>'}` : ''),
     source: 'R2'
@@ -1191,12 +1201,6 @@ function parseDateSafe(value) {
   if (!value) return null;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function isTodayJst(value) {
-  const date = parseDateSafe(value);
-  if (!date) return false;
-  return jstDateKey(date) === jstDateKey(new Date());
 }
 
 function jstDateKey(date) {
@@ -1401,7 +1405,7 @@ async function sendMonthlyAlertChannelSelfCheck(env, scheduledAt, reason = MONTH
   }
 }
 
-function collectAlertItems(backups, deployments, probes) {
+export function collectAlertItems(backups, deployments, probes) {
   const items = [];
   for (const item of backups?.items || []) {
     if (!item.ok && !item.manual) {

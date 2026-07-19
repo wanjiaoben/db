@@ -1,5 +1,7 @@
 # db.nice.okinawa Progress
 
+T0719-01 changes BJT and Progress dashboard backup freshness from "today JST" to an inclusive rolling 27-hour window, adds 26h-green/28h-red alert counterexamples, and documents the 48-hour observation and alert ownership split.
+
 M0718-19 splits Progress backup health into production/preview manifests, validates environment/database/object prefixes, and alerts independently when either is missing, crossed, or older than 27 hours.
 
 ## 2026-06-16 Content Inventory
