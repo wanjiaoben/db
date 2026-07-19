@@ -32,6 +32,35 @@ first day of a month, investigate the alerting system itself.
 
 Admins can force a channel self-check with `POST /alerts/self-check?force=1`.
 
+## Backup Freshness and Alert Ownership
+
+Nice Dashboard treats the latest BJT manifest and both Progress manifests as
+fresh while their age is between 0 and 27 hours, inclusive. Freshness is a
+rolling duration and does not reset at midnight JST. A date change by itself
+must not turn a backup red or send a recovery email later that morning.
+
+The two alert layers have separate responsibilities:
+
+- The Progress Worker owns environment-specific execution details. It sends an
+  immediate `Progress Monitor` alert only when a production or preview backup
+  run itself fails.
+- Nice Dashboard owns the summary view. It reads the BJT manifest and the
+  Progress production/preview restore pointers, validates their age and the
+  Progress environment/database/object prefix, then sends one dashboard email
+  only when the overall red/green state changes.
+
+An immediate Progress execution failure and a later Dashboard stale state are
+different stages, not duplicate notifications for the same check. Persistent
+failure does not cause repeated Dashboard mail. When investigating a Progress
+backup, use the environment-specific details introduced by db PR #3 as the
+source of truth; use Nice Dashboard for the cross-system summary.
+
+After a freshness-rule release, observe two complete JST midnight crossings
+(48 hours). Expected behavior: no red or recovery email caused only by the date
+change. Mail is expected only when a manifest is actually older than 27 hours,
+has an invalid/future timestamp, crosses a Progress environment boundary, or
+another monitored deployment/probe is red.
+
 ## Dashboard
 
 Open `https://db.nice.okinawa/`, enter the same `DASHBOARD_KEY`, and save it.
