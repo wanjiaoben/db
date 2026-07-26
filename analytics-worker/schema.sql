@@ -34,6 +34,35 @@ CREATE INDEX IF NOT EXISTS idx_events_session_created ON events(session_id, crea
 CREATE INDEX IF NOT EXISTS idx_events_path_created ON events(path, created_at);
 CREATE INDEX IF NOT EXISTS idx_events_section_created ON events(section, created_at);
 
+CREATE TABLE IF NOT EXISTS visitor_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  site_id TEXT NOT NULL,
+  event_type TEXT NOT NULL CHECK (event_type IN ('pageview', 'dwell', 'contact_click', 'section_view')),
+  visitor_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  ts TEXT NOT NULL,
+  referrer_host TEXT,
+  country TEXT,
+  city TEXT,
+  timezone TEXT,
+  ui_lang TEXT,
+  browser_lang TEXT,
+  landing_path TEXT,
+  utm_source TEXT,
+  utm_medium TEXT,
+  utm_campaign TEXT,
+  dwell_ms INTEGER,
+  section_id TEXT,
+  contact_channel TEXT,
+  device_type TEXT,
+  viewport_width INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_visitor_events_site_ts ON visitor_events(site_id, ts);
+CREATE INDEX IF NOT EXISTS idx_visitor_events_site_type_ts ON visitor_events(site_id, event_type, ts);
+CREATE INDEX IF NOT EXISTS idx_visitor_events_site_visitor_created ON visitor_events(site_id, visitor_id, created_at);
+
 CREATE TABLE IF NOT EXISTS search_console_daily (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   imported_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),

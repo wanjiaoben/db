@@ -55,8 +55,8 @@ crons = []
 
 [[env.preview.d1_databases]]
 binding = "DB"
-database_name = "nice_analytics"
-database_id = "fbcc9bc2-3556-4ac4-8168-8611940114d3"
+database_name = "nice_analytics_m0727_09_preview"
+database_id = "827e8987-4ce8-4a44-ae1c-938a5c052ae8"
 
 [[env.preview.r2_buckets]]
 binding = "BJT_BACKUPS"

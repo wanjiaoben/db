@@ -1,6 +1,24 @@
 const COLLECT_ORIGIN = 'https://translation.nice.okinawa';
 const DASHBOARD_ORIGIN = 'https://db.nice.okinawa';
 const MONTHLY_ALERT_SELF_CHECK_CRON = '0 0 1 * *';
+const VISITOR_EVENT_PATH = '/events';
+const VISITOR_EVENT_RATE_LIMIT_PER_MINUTE = 30;
+const VISITOR_EVENT_TYPES = new Set(['pageview', 'dwell', 'contact_click', 'section_view']);
+const CONTACT_CHANNELS = new Set(['wechat', 'email', 'whatsapp', 'line', 'phone', 'form']);
+const VISITOR_EVENT_SITES = Object.freeze({
+  snorkel: 'snorkel.nice.okinawa',
+  fishing: 'fishing.nice.okinawa',
+  rental: 'rental.nice.okinawa',
+  japanusedcars: 'japanusedcars.nice.okinawa',
+  golf: 'golf.nice.okinawa',
+  activity: 'activity.nice.okinawa',
+  translation: 'translation.nice.okinawa',
+  ev: 'ev.nice.okinawa',
+  'nice-okinawa': 'nice.okinawa',
+  bjt: 'bjt.nice.okinawa',
+  progress: 'progress.nice.okinawa',
+  kiso: 'kiso.nice.okinawa'
+});
 const TRACKING_SCRIPT = `(function(){var endpoint='https://analytics.nice.okinawa/collect';var site=location.hostname;var sessionKey='nice_analytics_session';var start=Date.now();var maxScroll=0;var sectionTimers={};var lastSection='';function uuid(){if(window.crypto&&crypto.randomUUID)return crypto.randomUUID();return String(Date.now())+'-'+Math.random().toString(16).slice(2)}function sid(){try{var e=sessionStorage.getItem(sessionKey);if(e)return e;var id=uuid();sessionStorage.setItem(sessionKey,id);return id}catch(e){return uuid()}}var sessionId=sid();var visitorId=function(){try{var k='nice_analytics_visitor';var e=localStorage.getItem(k);if(e)return e;var id=uuid();localStorage.setItem(k,id);return id}catch(e){return''}}();function lang(){return document.documentElement.dataset.staticLang||document.body.dataset.lang||document.documentElement.lang||navigator.language||''}function depth(){var d=document.documentElement,b=document.body,t=window.scrollY||d.scrollTop||b.scrollTop||0,h=Math.max(b.scrollHeight,d.scrollHeight)-window.innerHeight;if(h<=0)return 100;return Math.max(0,Math.min(100,Math.round(t/h*100)))}function data(type,extra){var out={type:type,site:site,session_id:sessionId,visitor_id:visitorId,path:location.pathname,title:document.title,url:location.href,referrer:document.referrer,lang:lang(),browser_lang:navigator.language||'',screen:(screen&&screen.width?screen.width+'x'+screen.height:''),viewport:window.innerWidth+'x'+window.innerHeight,ts:new Date().toISOString()};if(extra)Object.keys(extra).forEach(function(k){out[k]=extra[k]});return out}function send(type,extra,keepalive){var body=JSON.stringify(data(type,extra));if(navigator.sendBeacon&&keepalive){try{navigator.sendBeacon(endpoint,new Blob([body],{type:'application/json'}));return}catch(e){}}try{fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:body,keepalive:!!keepalive,mode:'cors'}).catch(function(){})}catch(e){}}function contactType(el){var href=el.getAttribute('href')||'',text=(el.textContent||'').toLowerCase();if(href.indexOf('wa.me')>=0||text.indexOf('whatsapp')>=0)return'whatsapp';if(href.indexOf('mailto:')===0||text.indexOf('email')>=0)return'email';if(text.indexOf('wechat')>=0||text.indexOf('okinawaonline')>=0)return'wechat';if(href.indexOf('line')>=0||text.indexOf('line')>=0)return'line';if(href.indexOf('tel:')===0)return'phone';if(href.indexOf('#contact')>=0)return'contact';return''}document.addEventListener('click',function(event){var link=event.target.closest&&event.target.closest('a,button,summary,select');if(!link)return;var label=(link.textContent||link.getAttribute('aria-label')||'').trim().replace(/\\s+/g,' ').slice(0,120);var href=link.getAttribute&&link.getAttribute('href');var contact=link.matches('a')?contactType(link):'';var kind=contact?'contact_'+contact:(link.closest('nav')?'nav':(link.tagName||'').toLowerCase());send('click',{event_name:kind,label:label,href:href||'',section:lastSection})},true);window.addEventListener('scroll',function(){maxScroll=Math.max(maxScroll,depth())},{passive:true});if('IntersectionObserver'in window){var observer=new IntersectionObserver(function(entries){entries.forEach(function(entry){var id=entry.target.id||entry.target.tagName.toLowerCase();if(entry.isIntersecting){lastSection=id;sectionTimers[id]=Date.now();send('section_view',{section:id})}else if(sectionTimers[id]){var ms=Date.now()-sectionTimers[id];sectionTimers[id]=0;if(ms>800)send('section_time',{section:id,duration_ms:ms})}})},{threshold:.55});document.querySelectorAll('header[id],main[id],section[id]').forEach(function(s){observer.observe(s)})}var qs=new URLSearchParams(location.search);send('page_view',{utm_source:qs.get('utm_source')||'',utm_medium:qs.get('utm_medium')||'',utm_campaign:qs.get('utm_campaign')||''});window.addEventListener('pagehide',function(){send('page_leave',{duration_ms:Date.now()-start,max_scroll:Math.max(maxScroll,depth()),section:lastSection},true)})})();`;
 
 export default {
@@ -8,7 +26,17 @@ export default {
     const url = new URL(request.url);
 
     if (request.method === 'OPTIONS') {
+      if (url.pathname === VISITOR_EVENT_PATH) {
+        return new Response(null, {
+          status: 204,
+          headers: visitorEventCorsHeaders(request)
+        });
+      }
       return new Response(null, { headers: corsHeaders(request) });
+    }
+
+    if (url.pathname === VISITOR_EVENT_PATH && request.method === 'POST') {
+      return collectVisitorEvent(request, env, ctx);
     }
 
     if (url.pathname === '/collect' && request.method === 'POST') {
@@ -222,6 +250,201 @@ async function collect(request, env, ctx) {
   ).run());
 
   return json({ ok: true }, request);
+}
+
+function visitorEventCorsHeaders(request) {
+  const origin = request.headers.get('origin') || '';
+  const decision = visitorEventOriginDecision(origin);
+  const headers = {
+    'access-control-allow-methods': 'POST,OPTIONS',
+    'access-control-allow-headers': 'content-type',
+    'access-control-max-age': '86400',
+    'vary': 'Origin'
+  };
+  if (decision.allow || decision.discard) {
+    headers['access-control-allow-origin'] = origin;
+  }
+  return headers;
+}
+
+function visitorEventOriginDecision(origin) {
+  if (!origin) return { allow: false, discard: false, host: '' };
+  let host = '';
+  try {
+    host = new URL(origin).hostname.toLowerCase();
+  } catch (e) {
+    return { allow: false, discard: false, host: '' };
+  }
+  if (host.endsWith('.pages.dev')) return { allow: false, discard: true, host };
+  const allowed = Object.values(VISITOR_EVENT_SITES).includes(host);
+  return { allow: allowed, discard: false, host };
+}
+
+function siteIdForHost(host) {
+  for (const [siteId, siteHost] of Object.entries(VISITOR_EVENT_SITES)) {
+    if (siteHost === host) return siteId;
+  }
+  return '';
+}
+
+function emptyVisitorEventResponse(request, status = 204) {
+  return new Response(null, {
+    status,
+    headers: visitorEventCorsHeaders(request)
+  });
+}
+
+function positiveInteger(value, fallback = null) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.round(n));
+}
+
+function cappedDwellMs(value) {
+  const n = positiveInteger(value, null);
+  if (n === null) return null;
+  return Math.min(n, 30 * 60 * 1000);
+}
+
+function safeTimestamp(value) {
+  const d = value ? new Date(value) : new Date();
+  if (Number.isNaN(d.getTime())) return new Date().toISOString();
+  return d.toISOString();
+}
+
+function referrerHostOnly(value) {
+  if (!value) return '';
+  try {
+    return new URL(String(value)).hostname.replace(/^www\./, '').slice(0, 120);
+  } catch (e) {
+    return clean(value, 120).split('/')[0].split('?')[0];
+  }
+}
+
+function landingPathOnly(value) {
+  const raw = clean(value, 300) || '/';
+  try {
+    return new URL(raw, 'https://example.invalid').pathname.slice(0, 300) || '/';
+  } catch (e) {
+    return raw.split('?')[0].slice(0, 300) || '/';
+  }
+}
+
+function landingUrlParts(value) {
+  const raw = clean(value, 1000) || '/';
+  try {
+    const url = new URL(raw, 'https://example.invalid');
+    return {
+      path: url.pathname.slice(0, 300) || '/',
+      utm_source: clean(url.searchParams.get('utm_source'), 120),
+      utm_medium: clean(url.searchParams.get('utm_medium'), 120),
+      utm_campaign: clean(url.searchParams.get('utm_campaign'), 160)
+    };
+  } catch (e) {
+    return {
+      path: landingPathOnly(raw),
+      utm_source: '',
+      utm_medium: '',
+      utm_campaign: ''
+    };
+  }
+}
+
+function contactChannel(value) {
+  const channel = clean(value, 40).toLowerCase();
+  return CONTACT_CHANNELS.has(channel) ? channel : '';
+}
+
+function deviceType(value) {
+  const device = clean(value, 40).toLowerCase();
+  if (['mobile', 'tablet', 'desktop'].includes(device)) return device;
+  return '';
+}
+
+async function collectVisitorEvent(request, env, ctx) {
+  const originDecision = visitorEventOriginDecision(request.headers.get('origin') || '');
+  if (originDecision.discard) {
+    return emptyVisitorEventResponse(request);
+  }
+  if (!originDecision.allow) {
+    return emptyVisitorEventResponse(request, 403);
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return emptyVisitorEventResponse(request, 400);
+  }
+
+  const siteId = clean(body.site_id, 60).toLowerCase();
+  const expectedSiteId = siteIdForHost(originDecision.host);
+  if (!siteId || !VISITOR_EVENT_SITES[siteId] || siteId !== expectedSiteId) {
+    return emptyVisitorEventResponse(request, 403);
+  }
+
+  const eventType = clean(body.event_type, 40).toLowerCase();
+  if (!VISITOR_EVENT_TYPES.has(eventType)) {
+    return emptyVisitorEventResponse(request, 400);
+  }
+
+  const visitorId = clean(body.visitor_id, 120);
+  const sessionId = clean(body.session_id, 120);
+  if (!visitorId || !sessionId) {
+    return emptyVisitorEventResponse(request, 400);
+  }
+
+  const recent = await env.DB.prepare(`
+    SELECT COUNT(*) AS count
+    FROM visitor_events
+    WHERE site_id = ?
+      AND visitor_id = ?
+      AND created_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-60 seconds')
+  `).bind(siteId, visitorId).first();
+
+  if (Number(recent?.count || 0) >= VISITOR_EVENT_RATE_LIMIT_PER_MINUTE) {
+    return emptyVisitorEventResponse(request);
+  }
+
+  const cf = request.cf || {};
+  const landing = landingUrlParts(body.landing_url || body.landing_path || body.path);
+  const row = {
+    site_id: siteId,
+    event_type: eventType,
+    visitor_id: visitorId,
+    session_id: sessionId,
+    ts: safeTimestamp(body.ts),
+    referrer_host: referrerHostOnly(body.referrer || body.referrer_host),
+    country: clean(cf.country, 10),
+    city: clean(cf.city, 120),
+    timezone: clean(cf.timezone, 80),
+    ui_lang: clean(body.ui_lang, 40),
+    browser_lang: clean(body.browser_lang, 80),
+    landing_path: landing.path,
+    utm_source: landing.utm_source,
+    utm_medium: landing.utm_medium,
+    utm_campaign: landing.utm_campaign,
+    dwell_ms: eventType === 'dwell' ? cappedDwellMs(body.dwell_ms) : null,
+    section_id: eventType === 'section_view' ? clean(body.section_id, 120) : '',
+    contact_channel: eventType === 'contact_click' ? contactChannel(body.contact_channel) : '',
+    device_type: deviceType(body.device_type),
+    viewport_width: positiveInteger(body.viewport_width, null)
+  };
+
+  ctx.waitUntil(env.DB.prepare(`
+    INSERT INTO visitor_events (
+      site_id, event_type, visitor_id, session_id, ts, referrer_host, country, city, timezone,
+      ui_lang, browser_lang, landing_path, utm_source, utm_medium, utm_campaign,
+      dwell_ms, section_id, contact_channel, device_type, viewport_width
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    row.site_id, row.event_type, row.visitor_id, row.session_id, row.ts, row.referrer_host,
+    row.country, row.city, row.timezone, row.ui_lang, row.browser_lang, row.landing_path,
+    row.utm_source, row.utm_medium, row.utm_campaign, row.dwell_ms, row.section_id,
+    row.contact_channel, row.device_type, row.viewport_width
+  ).run());
+
+  return emptyVisitorEventResponse(request);
 }
 
 function requireDashboard(request, env) {
