@@ -92,6 +92,14 @@ Nice Okinawa host allowlist, silently discards `*.pages.dev` traffic with
 `204`, rate-limits by `site_id + visitor_id`, and stores Cloudflare geo fields
 from `request.cf` without storing IP addresses.
 
+UTM persistence is deliberately narrow: only `utm_source`, `utm_medium`, and
+`utm_campaign` are extracted from the landing URL query string. `landing_path`
+stores only the path portion and never stores query strings.
+
+Cross-site jumps such as `nice.okinawa` → `snorkel.nice.okinawa` are identified
+only through `referrer_host`. Sessions are not merged across hostnames because
+the visitor ID is stored in `localStorage`, which is origin-scoped.
+
 The current tracking script records:
 
 - `page_view`

@@ -330,6 +330,26 @@ function landingPathOnly(value) {
   }
 }
 
+function landingUrlParts(value) {
+  const raw = clean(value, 1000) || '/';
+  try {
+    const url = new URL(raw, 'https://example.invalid');
+    return {
+      path: url.pathname.slice(0, 300) || '/',
+      utm_source: clean(url.searchParams.get('utm_source'), 120),
+      utm_medium: clean(url.searchParams.get('utm_medium'), 120),
+      utm_campaign: clean(url.searchParams.get('utm_campaign'), 160)
+    };
+  } catch (e) {
+    return {
+      path: landingPathOnly(raw),
+      utm_source: '',
+      utm_medium: '',
+      utm_campaign: ''
+    };
+  }
+}
+
 function contactChannel(value) {
   const channel = clean(value, 40).toLowerCase();
   return CONTACT_CHANNELS.has(channel) ? channel : '';
@@ -387,6 +407,7 @@ async function collectVisitorEvent(request, env, ctx) {
   }
 
   const cf = request.cf || {};
+  const landing = landingUrlParts(body.landing_url || body.landing_path || body.path);
   const row = {
     site_id: siteId,
     event_type: eventType,
@@ -399,7 +420,10 @@ async function collectVisitorEvent(request, env, ctx) {
     timezone: clean(cf.timezone, 80),
     ui_lang: clean(body.ui_lang, 40),
     browser_lang: clean(body.browser_lang, 80),
-    landing_path: landingPathOnly(body.landing_path || body.path),
+    landing_path: landing.path,
+    utm_source: landing.utm_source,
+    utm_medium: landing.utm_medium,
+    utm_campaign: landing.utm_campaign,
     dwell_ms: eventType === 'dwell' ? cappedDwellMs(body.dwell_ms) : null,
     section_id: eventType === 'section_view' ? clean(body.section_id, 120) : '',
     contact_channel: eventType === 'contact_click' ? contactChannel(body.contact_channel) : '',
@@ -410,12 +434,14 @@ async function collectVisitorEvent(request, env, ctx) {
   ctx.waitUntil(env.DB.prepare(`
     INSERT INTO visitor_events (
       site_id, event_type, visitor_id, session_id, ts, referrer_host, country, city, timezone,
-      ui_lang, browser_lang, landing_path, dwell_ms, section_id, contact_channel, device_type, viewport_width
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ui_lang, browser_lang, landing_path, utm_source, utm_medium, utm_campaign,
+      dwell_ms, section_id, contact_channel, device_type, viewport_width
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     row.site_id, row.event_type, row.visitor_id, row.session_id, row.ts, row.referrer_host,
     row.country, row.city, row.timezone, row.ui_lang, row.browser_lang, row.landing_path,
-    row.dwell_ms, row.section_id, row.contact_channel, row.device_type, row.viewport_width
+    row.utm_source, row.utm_medium, row.utm_campaign, row.dwell_ms, row.section_id,
+    row.contact_channel, row.device_type, row.viewport_width
   ).run());
 
   return emptyVisitorEventResponse(request);
