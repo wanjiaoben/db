@@ -15,6 +15,7 @@ stores them in Cloudflare D1, and serves dashboard summaries to `db.nice.okinawa
 
 ## Required Endpoints
 
+- `POST https://analytics.nice.okinawa/events`
 - `POST https://analytics.nice.okinawa/collect`
 - `GET https://analytics.nice.okinawa/summary?days=7`
 - `POST https://analytics.nice.okinawa/search-console/sync?days=7`
@@ -82,6 +83,14 @@ average position after a Google service account is connected.
    manually sync the latest 7 days.
 
 ## Events
+
+`POST /events` is the B-0154 visitor beacon endpoint. It accepts only four
+event types: `pageview`, `dwell`, `contact_click`, and `section_view`.
+
+The endpoint stores events in `visitor_events`, accepts only the production
+Nice Okinawa host allowlist, silently discards `*.pages.dev` traffic with
+`204`, rate-limits by `site_id + visitor_id`, and stores Cloudflare geo fields
+from `request.cf` without storing IP addresses.
 
 The current tracking script records:
 
