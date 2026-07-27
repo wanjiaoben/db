@@ -2,6 +2,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "test:backup-health": "node --test test/progress-backup-health.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "test:backup-health": "node --test test/progress-backup-health.test.mjs",
+    "test:beacon": "node --test test/beacon-script.test.mjs"
   }
 }
