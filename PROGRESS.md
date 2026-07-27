@@ -1,5 +1,7 @@
 # db.nice.okinawa Progress
 
+M0727-27 fixes beacon dwell delivery by switching unload sendBeacon payloads to text/plain JSON and allowing /events to parse text/plain JSON without changing origin, allowlist, or rate-limit checks.
+
 M0727-20 adds the draft central `/beacon.js` visitor beacon script, including explicit `data-site` site IDs, guarded once-per-session `section_view`, narrow UTM forwarding, and script size tests under 4KB.
 
 T0719-01 changes BJT and Progress dashboard backup freshness from "today JST" to an inclusive rolling 27-hour window, adds 26h-green/28h-red alert counterexamples, and documents the 48-hour observation and alert ownership split.
