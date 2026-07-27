@@ -9,7 +9,7 @@ stores them in Cloudflare D1, and serves dashboard summaries to `db.nice.okinawa
 2. Run `schema.sql` in the D1 console.
 3. Deploy this worker as `nice-analytics`.
 4. Bind the D1 database to the worker with binding name `DB`.
-5. Add worker secrets named `DASHBOARD_KEY` and `RESEND_API_KEY`.
+5. Add worker secrets named `ADMIN_TOKEN` and `RESEND_API_KEY`.
 6. Add a custom domain or route:
    `analytics.nice.okinawa/*`
 
@@ -19,6 +19,7 @@ stores them in Cloudflare D1, and serves dashboard summaries to `db.nice.okinawa
 - `GET https://analytics.nice.okinawa/beacon.js`
 - `POST https://analytics.nice.okinawa/collect`
 - `GET https://analytics.nice.okinawa/summary?days=7`
+- `GET https://analytics.nice.okinawa/visitors?days=28`
 - `POST https://analytics.nice.okinawa/search-console/sync?days=7`
 - `GET https://analytics.nice.okinawa/health`
 - `POST https://analytics.nice.okinawa/alerts/test`
@@ -65,8 +66,26 @@ another monitored deployment/probe is red.
 
 ## Dashboard
 
-Open `https://db.nice.okinawa/`, enter the same `DASHBOARD_KEY`, and save it.
-The key is stored only in the browser localStorage.
+Open `https://db.nice.okinawa/`, enter the same `ADMIN_TOKEN`, and save it.
+The key is stored only in the browser localStorage. Existing `DASHBOARD_KEY`
+secrets are read as a compatibility fallback, but new setup should use
+`ADMIN_TOKEN`.
+
+`GET /visitors?days=28` serves the dashboard visitor card from production D1
+`visitor_events`. It is an admin-only endpoint, accepts only `days=28` or
+`days=7`, and returns all per-site aggregates in one response. Sites with fewer
+than 20 events in the selected window return raw records instead of charts or
+ratios.
+
+Set the same `ADMIN_TOKEN` secret on both Workers:
+
+```sh
+openssl rand -base64 32
+```
+
+Then Wan sets the generated value with `wrangler secret put ADMIN_TOKEN` in
+`analytics-worker` and `private-worker`, and stores it in the GitHub Actions
+`production-worker` environment if future release preflight requires it.
 
 ## Google Search Console
 
