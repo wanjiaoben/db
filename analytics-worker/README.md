@@ -16,6 +16,7 @@ stores them in Cloudflare D1, and serves dashboard summaries to `db.nice.okinawa
 ## Required Endpoints
 
 - `POST https://analytics.nice.okinawa/events`
+- `GET https://analytics.nice.okinawa/beacon.js`
 - `POST https://analytics.nice.okinawa/collect`
 - `GET https://analytics.nice.okinawa/summary?days=7`
 - `POST https://analytics.nice.okinawa/search-console/sync?days=7`
@@ -86,6 +87,17 @@ average position after a Google service account is connected.
 
 `POST /events` is the B-0154 visitor beacon endpoint. It accepts only four
 event types: `pageview`, `dwell`, `contact_click`, and `section_view`.
+
+`GET /beacon.js` serves the central B-0155 beacon script with a short
+`Cache-Control: public, max-age=3600` cache. Site installation stays one line:
+
+```html
+<script src="https://analytics.nice.okinawa/beacon.js" data-site="snorkel" defer></script>
+```
+
+The script always reads `site_id` from `data-site` and does not infer it from
+`location.hostname`. UI language is read in this order:
+`window.NICE_UI_LANG`, `window.SITE_UI_LANG`, then `<html lang>`.
 
 The endpoint stores events in `visitor_events`, accepts only the production
 Nice Okinawa host allowlist, silently discards `*.pages.dev` traffic with
