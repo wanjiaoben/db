@@ -352,13 +352,6 @@ td.num, th.num { text-align: right; }
   text-align: left;
   font-weight: 800;
 }
-.site-overview-row.is-clickable .site-overview-cell {
-  cursor: pointer;
-}
-.site-overview-row.is-clickable:hover .site-overview-cell,
-.site-overview-row.active .site-overview-cell {
-  background: #f3fbf4;
-}
 .site-overview-row.zero .site-overview-cell {
   color: var(--muted);
   background: #f7f5ef;
@@ -403,16 +396,12 @@ td.num, th.num { text-align: right; }
   line-height: 1;
 }
 .site-detail {
-  display: none;
   margin-top: 8px;
   border-top: 1px solid #ece6da;
   padding-top: 8px;
   min-width: 0;
   max-width: 100%;
   overflow-x: hidden;
-}
-.site-detail.open {
-  display: block;
 }
 .site-detail-head {
   display: flex;
@@ -427,11 +416,6 @@ td.num, th.num { text-align: right; }
   font-size: 14px;
   min-width: 0;
   overflow-wrap: anywhere;
-}
-.site-detail-head button {
-  height: 26px;
-  padding: 0 7px;
-  flex: 0 0 auto;
 }
 .detail-stats {
   display: grid;
@@ -456,9 +440,18 @@ td.num, th.num { text-align: right; }
 }
 .detail-lists {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 7px;
   min-width: 0;
+}
+.site-detail-block {
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px 0;
+  border-bottom: 1px solid #ece6da;
+}
+.site-detail-block:last-child {
+  border-bottom: 0;
 }
 .mini-list {
   min-width: 0;
@@ -492,7 +485,7 @@ td.num, th.num { text-align: right; }
   min-width: 0;
 }
 .visitor-flow {
-  margin-top: 8px;
+  margin-top: 10px;
   min-width: 0;
   max-width: 100%;
   overflow-x: hidden;
@@ -705,7 +698,7 @@ td.num, th.num { text-align: right; }
   .card { max-height: none; }
   .control-grid { grid-template-columns: 1fr; }
   .detail-lists {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
 }
 @media (max-width: 680px) {
@@ -982,7 +975,6 @@ const fmt = new Intl.NumberFormat('ja-JP');
 let selectedSite = '';
 let selectedPage = '';
 let visitorDays = 7;
-let selectedVisitorSite = '';
 
 const hash = new URLSearchParams((location.hash || '').replace(/^#/, ''));
 if (hash.get('key')) {
@@ -1218,9 +1210,8 @@ function siteOverviewHtml(sites) {
   if (!sites || !sites.length) return '<div class="empty">当前窗口暂无访客事件</div>';
   const rows = sites.map((site) => {
     const empty = Number(site.event_count || 0) === 0;
-    const active = selectedVisitorSite === site.site_id;
-    const className = 'site-overview-row is-clickable' + (empty ? ' zero' : '') + (active ? ' active' : '');
-    return '<div class="' + className + '" data-visitor-site="' + escapeHtml(site.site_id || '') + '" role="button" tabindex="0">' +
+    const className = 'site-overview-row' + (empty ? ' zero' : '');
+    return '<div class="' + className + '" data-visitor-site="' + escapeHtml(site.site_id || '') + '">' +
       '<div class="site-overview-cell" title="' + escapeHtml(site.site_id || '-') + '">' + escapeHtml(site.site_id || '-') + '</div>' +
       '<div class="site-overview-cell">' + n(site.uv) + '</div>' +
       '<div class="site-overview-cell">' + n(site.pv) + '</div>' +
@@ -1238,22 +1229,26 @@ function siteOverviewHtml(sites) {
     '</div>' + rows + '</div>';
 }
 
-function siteDetailHtml(site, rows) {
+function listTopHtml(items) {
+  return listHtml((items || []).slice(0, 8));
+}
+
+function siteAggregateHtml(site) {
   if (!site) return '';
   const protectedSample = Boolean(site.protected);
   const subtitle = protectedSample ? '样本<' + n(site.sample_min_events) + '，显示原始记录' : n(site.event_count) + ' events';
   const aggregate = protectedSample ? rawRecordsHtml(site.raw_records) : (
     '<div class="detail-lists">' +
-      '<div class="mini-list"><h4>来源</h4>' + listHtml(site.referrers) + '</div>' +
-      '<div class="mini-list"><h4>国家 · 城市</h4>' + listHtml(site.locations) + '</div>' +
-      '<div class="mini-list"><h4>落地页</h4>' + listHtml(site.landing_pages) + '</div>' +
-      '<div class="mini-list"><h4>UI 语言</h4>' + listHtml(site.ui_langs) + '</div>' +
-      '<div class="mini-list"><h4>UTM source</h4>' + listHtml(site.utm_sources) + '</div>' +
+      '<div class="mini-list"><h4>来源</h4>' + listTopHtml(site.referrers) + '</div>' +
+      '<div class="mini-list"><h4>国家 · 城市</h4>' + listTopHtml(site.locations) + '</div>' +
+      '<div class="mini-list"><h4>落地页</h4>' + listTopHtml(site.landing_pages) + '</div>' +
+      '<div class="mini-list"><h4>UI 语言</h4>' + listTopHtml(site.ui_langs) + '</div>' +
+      '<div class="mini-list"><h4>UTM source</h4>' + listTopHtml(site.utm_sources) + '</div>' +
     '</div>'
   );
-  return '<div class="site-detail-head">' +
+  return '<section class="site-detail-block">' +
+    '<div class="site-detail-head">' +
       '<h3>' + escapeHtml(site.site_id || '-') + ' <span class="sub">' + escapeHtml(subtitle) + '</span></h3>' +
-      '<button type="button" id="closeSiteDetail">返回总览</button>' +
     '</div>' +
     '<div class="detail-stats">' +
       '<div class="detail-stat"><span class="detail-label">UV</span><strong>' + n(site.uv) + '</strong></div>' +
@@ -1261,7 +1256,13 @@ function siteDetailHtml(site, rows) {
       '<div class="detail-stat"><span class="detail-label">dwell 中位</span><strong>' + seconds(site.median_dwell_ms) + '</strong></div>' +
       '<div class="detail-stat"><span class="detail-label">联络</span><strong>' + n(site.contact_clicks) + '</strong></div>' +
     '</div>' + aggregate +
-    '<details class="visitor-flow"><summary>访客明细流水 ' + n(rows.length) + '</summary>' + visitorRowsHtml(rows) + '</details>';
+  '</section>';
+}
+
+function siteDetailsHtml(sites) {
+  const activeSites = (sites || []).filter((site) => Number(site.event_count || 0) > 0);
+  if (!activeSites.length) return '<div class="empty">当前窗口暂无站点详情</div>';
+  return activeSites.map(siteAggregateHtml).join('');
 }
 
 function visitorRowHtml(rowData) {
@@ -1461,16 +1462,12 @@ async function loadVisitors() {
     if (!res.ok || !data.ok) throw new Error(data.error || 'visitors API 请求失败');
     $('visitorUpdated').textContent = rangeLabel(data.days) + ' · 更新 ' + new Date(data.generated_at).toLocaleTimeString();
     const sites = data.sites || [];
-    if (selectedVisitorSite && !sites.some((site) => site.site_id === selectedVisitorSite)) selectedVisitorSite = '';
     $('siteOverview').innerHTML = siteOverviewHtml(sites);
-    const selectedSiteData = sites.find((site) => site.site_id === selectedVisitorSite);
-    const selectedRows = (data.visitor_rows || []).filter((row) => row.site_id === selectedVisitorSite);
-    $('siteDetail').classList.toggle('open', Boolean(selectedSiteData));
-    $('siteDetail').innerHTML = selectedSiteData ? siteDetailHtml(selectedSiteData, selectedRows) : '';
+    $('siteDetail').innerHTML = siteDetailsHtml(sites) +
+      '<details class="visitor-flow"><summary>访客明细流水 ' + n((data.visitor_rows || []).length) + '</summary>' + visitorRowsHtml(data.visitor_rows || []) + '</details>';
   } catch (e) {
     $('visitorUpdated').textContent = '';
     $('siteOverview').innerHTML = '<div class="empty">访客数据读取失败：' + escapeHtml(e.message) + '</div>';
-    $('siteDetail').classList.remove('open');
     $('siteDetail').innerHTML = '';
   }
 }
@@ -1580,25 +1577,6 @@ $('visitorRangeTabs').addEventListener('click', (event) => {
   $('days').value = button.dataset.range || '7';
   syncRangeTabs();
   load();
-  loadVisitors();
-});
-$('siteOverview').addEventListener('click', (event) => {
-  const rowEl = event.target.closest('[data-visitor-site]');
-  if (!rowEl) return;
-  selectedVisitorSite = rowEl.dataset.visitorSite || '';
-  loadVisitors();
-});
-$('siteOverview').addEventListener('keydown', (event) => {
-  if (event.key !== 'Enter' && event.key !== ' ') return;
-  const rowEl = event.target.closest('[data-visitor-site]');
-  if (!rowEl) return;
-  event.preventDefault();
-  selectedVisitorSite = rowEl.dataset.visitorSite || '';
-  loadVisitors();
-});
-$('siteDetail').addEventListener('click', (event) => {
-  if (event.target.id !== 'closeSiteDetail') return;
-  selectedVisitorSite = '';
   loadVisitors();
 });
 $('siteFilter').addEventListener('change', () => {
