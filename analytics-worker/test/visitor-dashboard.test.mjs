@@ -28,7 +28,7 @@ function fakeDb(fixtures) {
   };
 }
 
-test('visitor dashboard requires ADMIN_TOKEN and returns 403 without it', async () => {
+test('visitor dashboard requires DASHBOARD_KEY and returns 403 without it', async () => {
   const env = { DB: fakeDb({}) };
   const res = await worker.fetch(new Request('https://analytics.nice.okinawa/visitors?days=28'), env, {});
   assert.equal(res.status, 403);
@@ -65,7 +65,7 @@ test('visitor dashboard returns 28/7 day aggregate with sample protection', asyn
   });
   const res = await worker.fetch(new Request('https://analytics.nice.okinawa/visitors?days=7', {
     headers: { 'x-dashboard-key': 'test-token' }
-  }), { ADMIN_TOKEN: 'test-token', DB: db }, {});
+  }), { DASHBOARD_KEY: 'test-token', DB: db }, {});
   const data = await res.json();
 
   assert.equal(res.status, 200);

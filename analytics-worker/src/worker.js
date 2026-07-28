@@ -472,7 +472,7 @@ async function collectVisitorEvent(request, env, ctx) {
 }
 
 function requireDashboard(request, env) {
-  const expected = env.ADMIN_TOKEN || env.DASHBOARD_KEY || '';
+  const expected = env.DASHBOARD_KEY || '';
   if (!expected) return false;
   return request.headers.get('x-dashboard-key') === expected;
 }

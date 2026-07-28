@@ -64,7 +64,7 @@ async function proxyAnalytics(request, env, url) {
   const target = origin + url.pathname + url.search;
   const headers = new Headers();
   headers.set('accept', request.headers.get('accept') || 'application/json');
-  const key = env.ADMIN_TOKEN || env.DASHBOARD_KEY || request.headers.get('x-dashboard-key') || '';
+  const key = env.DASHBOARD_KEY || request.headers.get('x-dashboard-key') || '';
   if (key) headers.set('x-dashboard-key', key);
   const contentType = request.headers.get('content-type');
   if (contentType) headers.set('content-type', contentType);

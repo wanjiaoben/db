@@ -1,7 +1,7 @@
 # db.nice.okinawa Progress
 
 M0727-27 fixes beacon dwell delivery by switching unload sendBeacon payloads to text/plain JSON and allowing /events to parse text/plain JSON without changing origin, allowlist, or rate-limit checks.
-M0727-31 adds an ADMIN_TOKEN-protected visitor dashboard endpoint/card for production visitor_events and closes the missing-token anonymous admin access path with 403 responses.
+M0727-31 adds a DASHBOARD_KEY-protected visitor dashboard endpoint/card for production visitor_events and closes the missing-token anonymous admin access path with 403 responses.
 
 M0727-20 adds the draft central `/beacon.js` visitor beacon script, including explicit `data-site` site IDs, guarded once-per-session `section_view`, narrow UTM forwarding, and script size tests under 4KB.
 

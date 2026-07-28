@@ -1066,7 +1066,7 @@ async function load() {
     $('status').textContent = e.message === 'unauthorized' ? '需要 Dashboard key' : '连接失败';
     $('error').textContent = e.message === 'unauthorized'
       ? '手机浏览器还没有保存 Dashboard key，或保存的是旧 key。请在上方输入最新 key 后点保存。'
-      : e.message + '。确认 Worker 已部署，ADMIN_TOKEN 正确。';
+      : e.message + '。确认 Worker 已部署，DASHBOARD_KEY 正确。';
     $('error').style.display = 'block';
   }
 }
