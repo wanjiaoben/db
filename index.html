@@ -231,6 +231,9 @@ td.num, th.num { text-align: right; }
   gap: 8px;
   margin-bottom: 8px;
 }
+.visitor-head h2 {
+  min-width: 0;
+}
 .segmented {
   display: inline-flex;
   border: 1px solid var(--line);
@@ -249,83 +252,104 @@ td.num, th.num { text-align: right; }
   background: var(--ink);
   color: white;
 }
-.contact-hero {
+.site-overview {
   display: grid;
-  grid-template-columns: minmax(96px, 140px) 1fr;
-  gap: 8px;
-  align-items: stretch;
-  margin-bottom: 8px;
-}
-.contact-total {
-  border: 1px solid #d6c8ad;
-  border-radius: 6px;
-  padding: 8px;
-  background: #fff8e6;
-}
-.contact-total span {
-  display: block;
-  color: var(--muted);
-  font-size: 11px;
-}
-.contact-total strong {
-  display: block;
-  margin-top: 2px;
-  color: var(--ink);
-  font-size: 26px;
-  line-height: 1;
-}
-.contact-sites {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
   gap: 6px;
 }
-.contact-site,
-.visitor-site {
+.site-card {
+  display: grid;
+  grid-template-columns: 1fr repeat(4, minmax(28px, 1fr));
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+  min-height: 38px;
   border: 1px solid #ece6da;
   border-radius: 6px;
-  padding: 7px;
+  padding: 5px 6px;
   background: #fffdfa;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
 }
-.contact-site span,
-.visitor-label {
+.site-card:hover,
+.site-card.active {
+  border-color: var(--green);
+  background: #f3fbf4;
+}
+.site-card.zero {
   color: var(--muted);
-  font-size: 11px;
+  opacity: 0.58;
 }
-.contact-site strong {
+.site-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 800;
+}
+.site-metric {
+  min-width: 0;
+  text-align: right;
+}
+.site-metric span,
+.detail-label {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1;
+}
+.site-metric strong {
   display: block;
-  margin-top: 2px;
-  font-size: 17px;
+  margin-top: 1px;
+  font-size: 12px;
+  line-height: 1;
 }
-.visitor-sites {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 8px;
+.site-detail {
+  display: none;
+  margin-top: 8px;
+  border-top: 1px solid #ece6da;
+  padding-top: 8px;
 }
-.visitor-site h3 {
+.site-detail.open {
+  display: block;
+}
+.site-detail-head {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin: 0 0 7px;
-  font-size: 13px;
-}
-.visitor-stats {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
   margin-bottom: 7px;
 }
-.visitor-stat {
-  min-width: 0;
-  border-top: 1px solid #ece6da;
-  padding-top: 5px;
+.site-detail-head h3 {
+  margin: 0;
+  font-size: 14px;
 }
-.visitor-stat strong {
-  display: block;
-  font-size: 16px;
+.site-detail-head button {
+  height: 26px;
+  padding: 0 7px;
 }
-.visitor-lists {
+.detail-stats {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.detail-stat {
+  border: 1px solid #ece6da;
+  border-radius: 6px;
+  padding: 6px;
+  background: #fffdfa;
+}
+.detail-stat strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 18px;
+  line-height: 1;
+}
+.detail-lists {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 7px;
 }
 .mini-list {
@@ -354,19 +378,28 @@ td.num, th.num { text-align: right; }
 .raw-table table {
   min-width: 620px;
 }
+.visitor-flow {
+  margin-top: 8px;
+}
+.visitor-flow summary {
+  cursor: pointer;
+  color: var(--blue);
+  font-size: 12px;
+}
 .visitor-table {
   display: grid;
-  gap: 4px;
+  gap: 2px;
+  margin-top: 5px;
 }
 .visitor-row-head,
 .visitor-row summary {
   display: grid;
-  grid-template-columns: 42px 58px minmax(0, 1fr) 92px 34px;
+  grid-template-columns: 40px 48px minmax(44px, 0.7fr) minmax(118px, 1.3fr) 30px;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 .visitor-row-head {
-  padding: 0 7px 2px;
+  padding: 0 5px 1px;
   color: var(--muted);
   font-size: 10px;
 }
@@ -375,13 +408,17 @@ td.num, th.num { text-align: right; }
 }
 .visitor-row {
   border: 1px solid #ece6da;
-  border-radius: 6px;
+  border-radius: 4px;
   background: #fffdfa;
   min-width: 0;
 }
+.visitor-row.bot-like {
+  background: #f1f1ee;
+  color: var(--muted);
+}
 .visitor-row summary {
-  height: 34px;
-  padding: 0 7px;
+  height: 24px;
+  padding: 0 5px;
   cursor: pointer;
   list-style: none;
 }
@@ -393,23 +430,37 @@ td.num, th.num { text-align: right; }
   align-items: center;
   justify-content: center;
   min-width: 0;
-  height: 18px;
+  height: 16px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 0 5px;
+  padding: 0 4px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.bot-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 14px;
+  margin-left: 3px;
+  border: 1px solid #c9c5bc;
+  border-radius: 999px;
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
 }
 .visitor-cell {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1;
 }
 .visitor-time {
   font-variant-numeric: tabular-nums;
@@ -423,7 +474,7 @@ td.num, th.num { text-align: right; }
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
-  padding: 7px;
+  padding: 6px;
   border-top: 1px solid #ece6da;
   color: var(--muted);
   font-size: 11px;
@@ -530,7 +581,7 @@ td.num, th.num { text-align: right; }
   .inventory-card h2 .sub { display: inline; }
   .controls {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(4, 1fr);
     gap: 6px;
   }
   .controls > * { min-width: 0; }
@@ -550,45 +601,61 @@ td.num, th.num { text-align: right; }
     flex-direction: column;
     gap: 2px;
   }
-  .visitor-head,
-  .contact-hero {
-    grid-template-columns: 1fr;
+  .visitor-head {
     flex-direction: column;
     align-items: stretch;
   }
-  .segmented { width: 100%; }
-  .segmented button { flex: 1; }
-  .visitor-sites,
-  .visitor-lists {
+  .site-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .site-card {
+    grid-template-columns: 1fr repeat(4, 28px);
+    min-height: 34px;
+    padding: 4px;
+  }
+  .site-name {
+    font-size: 11px;
+  }
+  .site-metric strong {
+    font-size: 11px;
+  }
+  .detail-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .detail-stat {
+    padding: 5px 4px;
+  }
+  .detail-stat strong {
+    font-size: 14px;
+  }
+  .detail-lists {
     grid-template-columns: 1fr;
   }
   .visitor-row-head,
   .visitor-row summary {
-    grid-template-columns: 34px 54px minmax(0, 1fr) 82px 28px;
-    gap: 5px;
+    grid-template-columns: 32px 42px minmax(36px, 0.55fr) minmax(118px, 1.45fr) 26px;
+    gap: 3px;
   }
   .visitor-row-head {
-    padding-left: 5px;
-    padding-right: 5px;
+    padding-left: 3px;
+    padding-right: 3px;
   }
   .visitor-row summary {
-    height: 32px;
-    padding-left: 5px;
-    padding-right: 5px;
+    height: 24px;
+    padding-left: 3px;
+    padding-right: 3px;
   }
   .visitor-cell {
-    font-size: 11px;
+    font-size: 10px;
   }
   .site-badge {
-    height: 17px;
-    padding: 0 4px;
+    height: 15px;
+    padding: 0 3px;
     font-size: 9px;
   }
   .visitor-detail {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .visitor-stats {
-    grid-template-columns: repeat(2, 1fr);
   }
   .inventory-row {
     grid-template-columns: repeat(4, minmax(76px, 1fr));
@@ -619,8 +686,8 @@ td.num, th.num { text-align: right; }
     <select id="days">
       <option value="today">今天</option>
       <option value="7" selected>7天</option>
-      <option value="30">1个月</option>
-      <option value="365">1年</option>
+      <option value="30">30天</option>
+      <option value="180">180天</option>
     </select>
     <select id="siteFilter">
       <option value="">全部站点</option>
@@ -649,17 +716,11 @@ td.num, th.num { text-align: right; }
 
   <section class="card visitor-card">
     <div class="visitor-head">
-      <h2 style="position:static;margin:0;padding:0;border:0">访客 <span class="sub" id="visitorUpdated"></span></h2>
-      <div class="segmented" aria-label="访客时间窗">
-        <button type="button" id="visitor28" class="active" data-visitor-days="28">28天</button>
-        <button type="button" id="visitor7" data-visitor-days="7">7天</button>
-      </div>
+      <h2 style="position:static;margin:0;padding:0;border:0">站点总览 <span class="sub" id="visitorUpdated"></span></h2>
+      <span class="pill">今天 / 7天 / 30天 / 180天</span>
     </div>
-    <div class="contact-hero">
-      <div class="contact-total"><span>contact_click</span><strong id="visitorContactTotal">-</strong></div>
-      <div class="contact-sites" id="visitorContactSites"><div class="empty">等待访客数据</div></div>
-    </div>
-    <div class="visitor-sites" id="visitorSites"><div class="empty">等待访客数据</div></div>
+    <div class="site-overview" id="siteOverview"><div class="empty">等待访客数据</div></div>
+    <div class="site-detail" id="siteDetail"></div>
   </section>
 
   <section class="card inventory-card">
@@ -756,7 +817,8 @@ const $ = (id) => document.getElementById(id);
 const fmt = new Intl.NumberFormat('ja-JP');
 let selectedSite = '';
 let selectedPage = '';
-let visitorDays = 28;
+let visitorDays = 7;
+let selectedVisitorSite = '';
 
 const hash = new URLSearchParams((location.hash || '').replace(/^#/, ''));
 if (hash.get('key')) {
@@ -904,6 +966,20 @@ function listHtml(items) {
   return '<ol>' + items.map((item) => '<li><span>' + escapeHtml(item.value || '-') + '</span><b>' + n(item.count) + '</b></li>').join('') + '</ol>';
 }
 
+function rawRecordsHtml(records) {
+  if (!records || !records.length) return '<div class="empty">样本不足，暂无原始记录</div>';
+  return '<div class="raw-table"><table><thead><tr><th>时间</th><th>站</th><th>事件</th><th>来源</th><th>国家城市</th><th>落地页</th></tr></thead><tbody>' +
+    records.map((r) => row([
+      escapeHtml(timeText(r.created_at)),
+      escapeHtml(r.site_id || '-'),
+      escapeHtml(r.event_type || '-'),
+      escapeHtml(sourceLabel(r.referrer_host)),
+      escapeHtml([r.country, r.city].filter(Boolean).join(' · ') || '-'),
+      escapeHtml(r.landing_path || '/')
+    ])).join('') +
+    '</tbody></table></div>';
+}
+
 function relativeTime(value) {
   const ts = Date.parse(value || '');
   if (!Number.isFinite(ts)) return '-';
@@ -920,7 +996,7 @@ function relativeTime(value) {
 
 function sourceLabel(host) {
   const h = String(host || '').toLowerCase().replace(/^www\./, '');
-  if (!h || h === 'direct') return '直接访问';
+  if (!h || h === 'direct') return '直接';
   if (h.includes('google.')) return 'google';
   if (h.includes('bing.')) return 'bing';
   if (h.includes('yahoo.')) return 'yahoo';
@@ -955,6 +1031,59 @@ function shortVisitor(id) {
   return value ? value.slice(0, 8) : '-';
 }
 
+function visitorDaysFromControl() {
+  const value = $('days').value;
+  if (value === 'today') return 1;
+  const days = Number(value || 7);
+  return [1, 7, 30, 180].includes(days) ? days : 7;
+}
+
+function rangeLabel(days) {
+  if (days === 1) return '今天';
+  return days + '天';
+}
+
+function siteOverviewHtml(sites) {
+  if (!sites || !sites.length) return '<div class="empty">当前窗口暂无访客事件</div>';
+  return sites.map((site) => {
+    const empty = Number(site.event_count || 0) === 0;
+    const active = selectedVisitorSite === site.site_id;
+    return '<button type="button" class="site-card' + (empty ? ' zero' : '') + (active ? ' active' : '') + '" data-visitor-site="' + escapeHtml(site.site_id || '') + '">' +
+      '<span class="site-name" title="' + escapeHtml(site.site_id || '-') + '">' + escapeHtml(site.site_id || '-') + '</span>' +
+      '<span class="site-metric"><span>UV</span><strong>' + n(site.uv) + '</strong></span>' +
+      '<span class="site-metric"><span>PV</span><strong>' + n(site.pv) + '</strong></span>' +
+      '<span class="site-metric"><span>dwell</span><strong>' + escapeHtml(seconds(site.median_dwell_ms)) + '</strong></span>' +
+      '<span class="site-metric"><span>联络</span><strong>' + n(site.contact_clicks) + '</strong></span>' +
+    '</button>';
+  }).join('');
+}
+
+function siteDetailHtml(site, rows) {
+  if (!site) return '';
+  const protectedSample = Boolean(site.protected);
+  const subtitle = protectedSample ? '样本<' + n(site.sample_min_events) + '，显示原始记录' : n(site.event_count) + ' events';
+  const aggregate = protectedSample ? rawRecordsHtml(site.raw_records) : (
+    '<div class="detail-lists">' +
+      '<div class="mini-list"><h4>来源</h4>' + listHtml(site.referrers) + '</div>' +
+      '<div class="mini-list"><h4>国家 · 城市</h4>' + listHtml(site.locations) + '</div>' +
+      '<div class="mini-list"><h4>落地页</h4>' + listHtml(site.landing_pages) + '</div>' +
+      '<div class="mini-list"><h4>UI 语言</h4>' + listHtml(site.ui_langs) + '</div>' +
+      '<div class="mini-list"><h4>UTM source</h4>' + listHtml(site.utm_sources) + '</div>' +
+    '</div>'
+  );
+  return '<div class="site-detail-head">' +
+      '<h3>' + escapeHtml(site.site_id || '-') + ' <span class="sub">' + escapeHtml(subtitle) + '</span></h3>' +
+      '<button type="button" id="closeSiteDetail">返回总览</button>' +
+    '</div>' +
+    '<div class="detail-stats">' +
+      '<div class="detail-stat"><span class="detail-label">UV</span><strong>' + n(site.uv) + '</strong></div>' +
+      '<div class="detail-stat"><span class="detail-label">PV</span><strong>' + n(site.pv) + '</strong></div>' +
+      '<div class="detail-stat"><span class="detail-label">dwell 中位</span><strong>' + seconds(site.median_dwell_ms) + '</strong></div>' +
+      '<div class="detail-stat"><span class="detail-label">联络</span><strong>' + n(site.contact_clicks) + '</strong></div>' +
+    '</div>' + aggregate +
+    '<details class="visitor-flow"><summary>访客明细流水 ' + n(rows.length) + '</summary>' + visitorRowsHtml(rows) + '</details>';
+}
+
 function visitorRowHtml(rowData) {
   const fullTime = timeText(rowData.last_seen_at);
   const source = sourceLabel(rowData.referrer_host);
@@ -962,12 +1091,14 @@ function visitorRowHtml(rowData) {
   const contact = Number(rowData.contact_clicks || 0);
   const sections = (rowData.section_ids || []).slice(0, 5).join(', ') || '-';
   const channels = (rowData.contact_channels || []).join(', ') || '-';
-  return '<details class="visitor-row">' +
+  const bot = Boolean(rowData.is_bot_like);
+  const botTitle = (rowData.bot_reasons || []).join(', ');
+  return '<details class="visitor-row' + (bot ? ' bot-like' : '') + '">' +
     '<summary title="' + escapeHtml(fullTime) + '">' +
       '<span class="site-badge" title="' + escapeHtml(rowData.landing_site || rowData.site_id || '-') + '">' + escapeHtml(rowData.landing_site || rowData.site_id || '-') + '</span>' +
       '<span class="visitor-cell visitor-time">' + escapeHtml(relativeTime(rowData.last_seen_at)) + '</span>' +
       '<span class="visitor-cell" title="' + escapeHtml(rowData.referrer_host || '直接访问') + '">' + escapeHtml(source) + '</span>' +
-      '<span class="visitor-cell" title="' + escapeHtml(geo) + '">' + escapeHtml(geo) + '</span>' +
+      '<span class="visitor-cell" title="' + escapeHtml(geo + (botTitle ? ' / ' + botTitle : '')) + '">' + escapeHtml(geo) + (bot ? '<span class="bot-badge">bot?</span>' : '') + '</span>' +
       '<span class="visitor-cell visitor-contact">' + (contact ? '●' + (contact > 1 ? n(contact) : '') : '') + '</span>' +
     '</summary>' +
     '<div class="visitor-detail">' +
@@ -989,12 +1120,6 @@ function visitorRowsHtml(rows) {
     '<div class="visitor-row-head"><span>站</span><span>时间</span><span>来源</span><span>国家·城市</span><span>联络</span></div>' +
     rows.map(visitorRowHtml).join('') +
   '</div>';
-}
-
-function setVisitorWindow(days) {
-  visitorDays = days === 7 ? 7 : 28;
-  $('visitor28').classList.toggle('active', visitorDays === 28);
-  $('visitor7').classList.toggle('active', visitorDays === 7);
 }
 
 function delta(change) {
@@ -1143,6 +1268,7 @@ async function loadControl() {
 
 async function loadVisitors() {
   const key = localStorage.getItem('nice_dashboard_key') || '';
+  visitorDays = visitorDaysFromControl();
   try {
     const res = await fetch(VISITOR_API + '?days=' + encodeURIComponent(visitorDays), {
       credentials: 'include',
@@ -1153,19 +1279,19 @@ async function loadVisitors() {
     });
     const data = await readJsonResponse(res);
     if (!res.ok || !data.ok) throw new Error(data.error || 'visitors API 请求失败');
-    $('visitorUpdated').textContent = data.days + '天 · 更新 ' + new Date(data.generated_at).toLocaleTimeString();
-    const contact = data.contact_clicks || {};
-    $('visitorContactTotal').textContent = n(contact.total);
-    const bySite = contact.by_site || [];
-    $('visitorContactSites').innerHTML = bySite.length
-      ? bySite.map((r) => '<div class="contact-site"><span>' + escapeHtml(r.site_id || '-') + '</span><strong>' + n(r.count) + '</strong></div>').join('')
-      : '<div class="empty">暂无 contact_click</div>';
-    $('visitorSites').innerHTML = visitorRowsHtml(data.visitor_rows || []);
+    $('visitorUpdated').textContent = rangeLabel(data.days) + ' · 更新 ' + new Date(data.generated_at).toLocaleTimeString();
+    const sites = data.sites || [];
+    if (selectedVisitorSite && !sites.some((site) => site.site_id === selectedVisitorSite)) selectedVisitorSite = '';
+    $('siteOverview').innerHTML = siteOverviewHtml(sites);
+    const selectedSiteData = sites.find((site) => site.site_id === selectedVisitorSite);
+    const selectedRows = (data.visitor_rows || []).filter((row) => row.site_id === selectedVisitorSite);
+    $('siteDetail').classList.toggle('open', Boolean(selectedSiteData));
+    $('siteDetail').innerHTML = selectedSiteData ? siteDetailHtml(selectedSiteData, selectedRows) : '';
   } catch (e) {
     $('visitorUpdated').textContent = '';
-    $('visitorContactTotal').textContent = '-';
-    $('visitorContactSites').innerHTML = '<div class="empty">访客数据读取失败：' + escapeHtml(e.message) + '</div>';
-    $('visitorSites').innerHTML = '<div class="empty">访客数据读取失败</div>';
+    $('siteOverview').innerHTML = '<div class="empty">访客数据读取失败：' + escapeHtml(e.message) + '</div>';
+    $('siteDetail').classList.remove('open');
+    $('siteDetail').innerHTML = '';
   }
 }
 
@@ -1240,8 +1366,6 @@ $('saveKey').addEventListener('click', () => {
   loadVisitors();
 });
 $('refresh').addEventListener('click', () => { load(); loadControl(); loadVisitors(); loadSnsMetrics(); loadContentStats(); });
-$('visitor28').addEventListener('click', () => { setVisitorWindow(28); loadVisitors(); });
-$('visitor7').addEventListener('click', () => { setVisitorWindow(7); loadVisitors(); });
 $('syncGsc').addEventListener('click', async () => {
   $('error').style.display = 'none';
   $('status').textContent = '同步搜索词中';
@@ -1269,7 +1393,18 @@ $('syncGsc').addEventListener('click', async () => {
     $('error').style.display = 'block';
   }
 });
-$('days').addEventListener('change', load);
+$('days').addEventListener('change', () => { load(); loadVisitors(); });
+$('siteOverview').addEventListener('click', (event) => {
+  const card = event.target.closest('[data-visitor-site]');
+  if (!card) return;
+  selectedVisitorSite = card.dataset.visitorSite || '';
+  loadVisitors();
+});
+$('siteDetail').addEventListener('click', (event) => {
+  if (event.target.id !== 'closeSiteDetail') return;
+  selectedVisitorSite = '';
+  loadVisitors();
+});
 $('siteFilter').addEventListener('change', () => {
   selectedSite = $('siteFilter').value;
   $('pageFilter').value = '';
