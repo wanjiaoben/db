@@ -2,7 +2,9 @@ const COLLECT_ORIGIN = 'https://translation.nice.okinawa';
 const DASHBOARD_ORIGIN = 'https://db.nice.okinawa';
 const MONTHLY_ALERT_SELF_CHECK_CRON = '0 0 1 * *';
 const VISITOR_EVENT_PATH = '/events';
+const VISITOR_DASHBOARD_PATH = '/visitors';
 const VISITOR_EVENT_RATE_LIMIT_PER_MINUTE = 30;
+const VISITOR_SAMPLE_MIN_EVENTS = 20;
 const VISITOR_EVENT_TYPES = new Set(['pageview', 'dwell', 'contact_click', 'section_view']);
 const CONTACT_CHANNELS = new Set(['wechat', 'email', 'whatsapp', 'line', 'phone', 'form']);
 const VISITOR_EVENT_SITES = Object.freeze({
@@ -72,9 +74,13 @@ export default {
       return controlDashboard(request, env);
     }
 
+    if (url.pathname === VISITOR_DASHBOARD_PATH && request.method === 'GET') {
+      return visitorDashboard(request, env);
+    }
+
     if (url.pathname === '/probes/run' && request.method === 'POST') {
       if (!requireDashboard(request, env)) {
-        return json({ ok: false, error: 'unauthorized' }, request, 401);
+        return json({ ok: false, error: 'unauthorized' }, request, 403);
       }
       const result = await runProbes(env, 'manual');
       return json({ ok: true, ...result }, request);
@@ -82,7 +88,7 @@ export default {
 
     if (url.pathname === '/alerts/check' && request.method === 'POST') {
       if (!requireDashboard(request, env)) {
-        return json({ ok: false, error: 'unauthorized' }, request, 401);
+        return json({ ok: false, error: 'unauthorized' }, request, 403);
       }
       const result = await evaluateDashboardAlerts(env, 'manual');
       return json({ ok: true, ...result }, request);
@@ -90,7 +96,7 @@ export default {
 
     if (url.pathname === '/alerts/test' && request.method === 'POST') {
       if (!requireDashboard(request, env)) {
-        return json({ ok: false, error: 'unauthorized' }, request, 401);
+        return json({ ok: false, error: 'unauthorized' }, request, 403);
       }
       try {
         const result = await sendManualTestAlert(env);
@@ -102,7 +108,7 @@ export default {
 
     if (url.pathname === '/alerts/self-check' && request.method === 'POST') {
       if (!requireDashboard(request, env)) {
-        return json({ ok: false, error: 'unauthorized' }, request, 401);
+        return json({ ok: false, error: 'unauthorized' }, request, 403);
       }
       try {
         const result = await sendMonthlyAlertChannelSelfCheck(env, new Date(), 'manual', {
@@ -466,9 +472,177 @@ async function collectVisitorEvent(request, env, ctx) {
 }
 
 function requireDashboard(request, env) {
-  const expected = env.DASHBOARD_KEY;
-  if (!expected) return true;
+  const expected = env.DASHBOARD_KEY || '';
+  if (!expected) return false;
   return request.headers.get('x-dashboard-key') === expected;
+}
+
+async function visitorDashboard(request, env) {
+  if (!requireDashboard(request, env)) {
+    return json({ ok: false, error: 'unauthorized' }, request, 403);
+  }
+
+  const url = new URL(request.url);
+  const requestedDays = Number(url.searchParams.get('days') || 28);
+  const days = requestedDays === 7 ? 7 : 28;
+  const since = new Date(Date.now() - days * 86400000).toISOString();
+
+  const [
+    totals,
+    contactTotal,
+    contactBySite,
+    medianDwell,
+    referrers,
+    locations,
+    landingPages,
+    uiLangs,
+    utmSources,
+    rawRecords
+  ] = await Promise.all([
+    all(env.DB, `
+      SELECT
+        site_id,
+        COUNT(*) AS event_count,
+        COUNT(CASE WHEN event_type='pageview' THEN 1 END) AS pv,
+        COUNT(DISTINCT visitor_id) AS uv,
+        COUNT(CASE WHEN event_type='contact_click' THEN 1 END) AS contact_clicks
+      FROM visitor_events
+      WHERE created_at >= ?
+      GROUP BY site_id
+      ORDER BY contact_clicks DESC, pv DESC, event_count DESC
+    `, [since]),
+    first(env.DB, `
+      SELECT COUNT(*) AS count
+      FROM visitor_events
+      WHERE created_at >= ? AND event_type='contact_click'
+    `, [since]),
+    all(env.DB, `
+      SELECT site_id, COUNT(*) AS count
+      FROM visitor_events
+      WHERE created_at >= ? AND event_type='contact_click'
+      GROUP BY site_id
+      ORDER BY count DESC, site_id
+    `, [since]),
+    all(env.DB, `
+      WITH ranked AS (
+        SELECT
+          site_id,
+          dwell_ms,
+          ROW_NUMBER() OVER (PARTITION BY site_id ORDER BY dwell_ms) AS rn,
+          COUNT(*) OVER (PARTITION BY site_id) AS cnt
+        FROM visitor_events
+        WHERE created_at >= ? AND event_type='dwell' AND dwell_ms IS NOT NULL
+      )
+      SELECT site_id, ROUND(AVG(dwell_ms)) AS median_dwell_ms
+      FROM ranked
+      WHERE rn IN ((cnt + 1) / 2, (cnt + 2) / 2)
+      GROUP BY site_id
+    `, [since]),
+    visitorRank(env.DB, since, 'referrer_host', "COALESCE(NULLIF(referrer_host, ''), 'direct')"),
+    visitorRank(env.DB, since, 'location', "TRIM(COALESCE(NULLIF(country, ''), '-') || ' · ' || COALESCE(NULLIF(city, ''), '-'))"),
+    visitorRank(env.DB, since, 'landing_path', "COALESCE(NULLIF(landing_path, ''), '/')"),
+    visitorRank(env.DB, since, 'ui_lang', "COALESCE(NULLIF(ui_lang, ''), '-')"),
+    visitorRank(env.DB, since, 'utm_source', "COALESCE(NULLIF(utm_source, ''), '(none)')"),
+    all(env.DB, `
+      WITH ranked AS (
+        SELECT
+          created_at, site_id, event_type, referrer_host, country, city, landing_path,
+          ROW_NUMBER() OVER (PARTITION BY site_id ORDER BY created_at DESC, id DESC) AS rn
+        FROM visitor_events
+        WHERE created_at >= ?
+      )
+      SELECT created_at, site_id, event_type, referrer_host, country, city, landing_path
+      FROM ranked
+      WHERE rn <= 80
+      ORDER BY site_id, created_at DESC
+    `, [since])
+  ]);
+
+  const medianBySite = mapBySite(medianDwell, 'median_dwell_ms');
+  const rawBySite = groupBySite(rawRecords);
+  const ranks = {
+    referrers: groupBySite(referrers),
+    locations: groupBySite(locations),
+    landing_pages: groupBySite(landingPages),
+    ui_langs: groupBySite(uiLangs),
+    utm_sources: groupBySite(utmSources)
+  };
+
+  const sites = totals.map((row) => {
+    const siteId = row.site_id || '';
+    const eventCount = Number(row.event_count || 0);
+    const protectedSample = eventCount < VISITOR_SAMPLE_MIN_EVENTS;
+    return {
+      site_id: siteId,
+      event_count: eventCount,
+      uv: Number(row.uv || 0),
+      pv: Number(row.pv || 0),
+      contact_clicks: Number(row.contact_clicks || 0),
+      median_dwell_ms: Number(medianBySite.get(siteId) || 0),
+      protected: protectedSample,
+      sample_min_events: VISITOR_SAMPLE_MIN_EVENTS,
+      raw_records: protectedSample ? (rawBySite.get(siteId) || []) : [],
+      referrers: protectedSample ? [] : (ranks.referrers.get(siteId) || []),
+      locations: protectedSample ? [] : (ranks.locations.get(siteId) || []),
+      landing_pages: protectedSample ? [] : (ranks.landing_pages.get(siteId) || []),
+      ui_langs: protectedSample ? [] : (ranks.ui_langs.get(siteId) || []),
+      utm_sources: protectedSample ? [] : (ranks.utm_sources.get(siteId) || [])
+    };
+  });
+
+  return json({
+    ok: true,
+    days,
+    generated_at: new Date().toISOString(),
+    sample_min_events: VISITOR_SAMPLE_MIN_EVENTS,
+    contact_clicks: {
+      total: Number(contactTotal?.count || 0),
+      by_site: contactBySite.map((row) => ({
+        site_id: row.site_id || '',
+        count: Number(row.count || 0)
+      }))
+    },
+    sites
+  }, request);
+}
+
+async function visitorRank(db, since, field, valueExpr) {
+  return all(db, `
+    WITH grouped AS (
+      SELECT site_id, ${valueExpr} AS value, COUNT(*) AS count
+      FROM visitor_events
+      WHERE created_at >= ?
+      GROUP BY site_id, value
+    ),
+    ranked AS (
+      SELECT
+        site_id,
+        value,
+        count,
+        ROW_NUMBER() OVER (PARTITION BY site_id ORDER BY count DESC, value) AS rn
+      FROM grouped
+    )
+    SELECT site_id, ? AS field, value, count
+    FROM ranked
+    WHERE rn <= 8
+    ORDER BY site_id, count DESC, value
+  `, [since, field]);
+}
+
+function mapBySite(rows, valueKey) {
+  const map = new Map();
+  for (const row of rows || []) map.set(row.site_id || '', row[valueKey]);
+  return map;
+}
+
+function groupBySite(rows) {
+  const map = new Map();
+  for (const row of rows || []) {
+    const siteId = row.site_id || '';
+    if (!map.has(siteId)) map.set(siteId, []);
+    map.get(siteId).push(row);
+  }
+  return map;
 }
 
 async function runScheduledTasks(event, env) {
@@ -515,7 +689,7 @@ async function first(db, sql, params = []) {
 
 async function summary(request, env) {
   if (!requireDashboard(request, env)) {
-    return json({ ok: false, error: 'unauthorized' }, request, 401);
+    return json({ ok: false, error: 'unauthorized' }, request, 403);
   }
 
   const url = new URL(request.url);
@@ -773,7 +947,7 @@ async function searchConsoleSummary(db, filters) {
 
 async function searchConsoleStatus(request, env) {
   if (!requireDashboard(request, env)) {
-    return json({ ok: false, error: 'unauthorized' }, request, 401);
+    return json({ ok: false, error: 'unauthorized' }, request, 403);
   }
   const data = await searchConsoleSummary(env.DB, {
     since: new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
@@ -790,7 +964,7 @@ async function searchConsoleStatus(request, env) {
 
 async function syncSearchConsole(request, env) {
   if (!requireDashboard(request, env)) {
-    return json({ ok: false, error: 'unauthorized' }, request, 401);
+    return json({ ok: false, error: 'unauthorized' }, request, 403);
   }
   const url = new URL(request.url);
   const days = Math.min(Math.max(Number(url.searchParams.get('days') || 7), 1), 365);
@@ -1003,7 +1177,7 @@ const DEPLOYMENT_REPOS = ['db', 'bjt', 'progress', 'kiso'];
 
 async function controlDashboard(request, env) {
   if (!requireDashboard(request, env)) {
-    return json({ ok: false, error: 'unauthorized' }, request, 401);
+    return json({ ok: false, error: 'unauthorized' }, request, 403);
   }
 
   const [backups, deployments, probes, revenue] = await Promise.all([

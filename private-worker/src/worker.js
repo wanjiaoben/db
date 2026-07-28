@@ -50,6 +50,7 @@ export default {
 function isAnalyticsProxyPath(pathname) {
   return pathname === '/summary'
     || pathname === '/control'
+    || pathname === '/visitors'
     || pathname === '/probes/run'
     || pathname === '/alerts/check'
     || pathname === '/alerts/test'
