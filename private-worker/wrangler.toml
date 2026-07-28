@@ -21,7 +21,7 @@ preview_urls = true
 routes = []
 
 [env.preview.vars]
-DASHBOARD_ORIGIN = "https://raw.githubusercontent.com/wanjiaoben/db/codex/m0728-17r2-visitor-layers"
+DASHBOARD_ORIGIN = "https://raw.githubusercontent.com/wanjiaoben/db/agent/m0728-20-no-horizontal-scroll"
 ANALYTICS_ORIGIN = "https://nice-analytics-t0705-12.gerheidicn.workers.dev"
 
 [[env.preview.services]]
