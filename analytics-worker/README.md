@@ -19,7 +19,7 @@ stores them in Cloudflare D1, and serves dashboard summaries to `db.nice.okinawa
 - `GET https://analytics.nice.okinawa/beacon.js`
 - `POST https://analytics.nice.okinawa/collect`
 - `GET https://analytics.nice.okinawa/summary?days=7`
-- `GET https://analytics.nice.okinawa/visitors?days=28`
+- `GET https://analytics.nice.okinawa/visitors?days=7`
 - `POST https://analytics.nice.okinawa/search-console/sync?days=7`
 - `GET https://analytics.nice.okinawa/health`
 - `POST https://analytics.nice.okinawa/alerts/test`
@@ -69,11 +69,12 @@ another monitored deployment/probe is red.
 Open `https://db.nice.okinawa/`, enter the same `DASHBOARD_KEY`, and save it.
 The key is stored only in the browser localStorage.
 
-`GET /visitors?days=28` serves the dashboard visitor card from production D1
-`visitor_events`. It is an admin-only endpoint, accepts only `days=28` or
-`days=7`, and returns all per-site aggregates in one response. Sites with fewer
-than 20 events in the selected window return raw records instead of charts or
-ratios.
+`GET /visitors?days=7` serves the dashboard visitor card from production D1
+`visitor_events`. It is an admin-only endpoint, keeps its legacy default when no
+valid `days` is supplied, and accepts `days=1`, `days=7`, `days=30`, or
+`days=180` for the dashboard range switcher. It returns all per-site aggregates
+and visitor rows in one response. Sites with fewer than 20 events in the
+selected window return raw records instead of charts or ratios.
 
 Set the same `DASHBOARD_KEY` secret on both Workers:
 

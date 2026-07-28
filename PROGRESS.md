@@ -1,5 +1,7 @@
 # db.nice.okinawa Progress
 
+M0728-17r2 changes the visitor dashboard into a three-layer view: 12-site overview, per-site aggregates, and collapsed compact visitor rows with global 1/7/30/180-day ranges.
+
 M0728-12 changes the visitor dashboard card to render one collapsed row per site_id plus visitor_id, with four mobile-first columns and detailed metrics moved into row expansion.
 
 M0727-27 fixes beacon dwell delivery by switching unload sendBeacon payloads to text/plain JSON and allowing /events to parse text/plain JSON without changing origin, allowlist, or rate-limit checks.

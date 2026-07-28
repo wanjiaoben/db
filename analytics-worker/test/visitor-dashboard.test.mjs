@@ -36,7 +36,7 @@ test('visitor dashboard requires DASHBOARD_KEY and returns 403 without it', asyn
   assert.deepEqual(await res.json(), { ok: false, error: 'unauthorized' });
 });
 
-test('visitor dashboard returns 28/7 day aggregate with sample protection', async () => {
+test('visitor dashboard returns ranged aggregate with sample protection', async () => {
   const db = fakeDb({
     'COUNT(CASE WHEN event_type': [
       { site_id: 'snorkel', event_count: 25, pv: 10, uv: 4, contact_clicks: 3 },
@@ -63,6 +63,10 @@ test('visitor dashboard returns 28/7 day aggregate with sample protection', asyn
         landing_path: '/'
       }
     ],
+    'visitor_sources': [
+      { site_id: 'snorkel', field: 'referrer_host', value: 'google.com', count: 2 },
+      { site_id: 'snorkel', field: 'referrer_host', value: 'direct', count: 1 }
+    ],
     'GROUP_CONCAT(DISTINCT CASE WHEN event_type': [
       {
         site_id: 'snorkel',
@@ -81,7 +85,7 @@ test('visitor dashboard returns 28/7 day aggregate with sample protection', asyn
         section_ids: 'hero,price',
         referrer_host: 'google.com',
         country: 'JP',
-        city: 'Okinawa',
+        city: 'Council Bluffs',
         timezone: 'Asia/Tokyo',
         ui_lang: 'zh-Hant',
         browser_lang: 'zh-CN',
@@ -103,16 +107,38 @@ test('visitor dashboard returns 28/7 day aggregate with sample protection', asyn
   assert.equal(data.sample_min_events, 20);
   assert.equal(data.contact_clicks.total, 3);
   assert.equal(data.contact_clicks.by_site[0].site_id, 'snorkel');
+  assert.equal(data.sites.length, 12);
   assert.equal(data.sites[0].site_id, 'snorkel');
   assert.equal(data.sites[0].protected, false);
   assert.equal(data.sites[0].median_dwell_ms, 12000);
-  assert.equal(data.sites[1].site_id, 'fishing');
-  assert.equal(data.sites[1].protected, true);
-  assert.equal(data.sites[1].raw_records.length, 1);
+  assert.deepEqual(data.sites[0].referrers.map((row) => row.value), ['google.com', 'direct']);
+  const fishing = data.sites.find((site) => site.site_id === 'fishing');
+  assert.equal(fishing.protected, true);
+  assert.equal(fishing.raw_records.length, 1);
   assert.equal(data.visitor_rows[0].site_id, 'snorkel');
   assert.equal(data.visitor_rows[0].visitor_id, 'visitor-123');
   assert.equal(data.visitor_rows[0].referrer_host, 'google.com');
+  assert.equal(data.visitor_rows[0].is_bot_like, true);
+  assert.deepEqual(data.visitor_rows[0].bot_reasons, ['city:Council Bluffs']);
   assert.deepEqual(data.visitor_rows[0].contact_channels, ['email']);
   assert.deepEqual(data.visitor_rows[0].section_ids, ['hero', 'price']);
   assert.match(db.calls[0].params[0], /^\d{4}-\d{2}-\d{2}T/);
+});
+
+test('visitor dashboard accepts 1/7/30/180 day ranges and keeps legacy fallback', async () => {
+  const emptyFixtures = {
+    'COUNT(CASE WHEN event_type': [],
+    'GROUP BY site_id\n      ORDER BY count DESC': [],
+    "event_type='contact_click'": { count: 0 }
+  };
+  for (const days of [1, 7, 30, 180]) {
+    const res = await worker.fetch(new Request(`https://analytics.nice.okinawa/visitors?days=${days}`, {
+      headers: { 'x-dashboard-key': 'test-token' }
+    }), { DASHBOARD_KEY: 'test-token', DB: fakeDb(emptyFixtures) }, {});
+    assert.equal((await res.json()).days, days);
+  }
+  const fallback = await worker.fetch(new Request('https://analytics.nice.okinawa/visitors?days=99', {
+    headers: { 'x-dashboard-key': 'test-token' }
+  }), { DASHBOARD_KEY: 'test-token', DB: fakeDb(emptyFixtures) }, {});
+  assert.equal((await fallback.json()).days, 28);
 });

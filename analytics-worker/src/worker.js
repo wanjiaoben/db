@@ -5,6 +5,7 @@ const VISITOR_EVENT_PATH = '/events';
 const VISITOR_DASHBOARD_PATH = '/visitors';
 const VISITOR_EVENT_RATE_LIMIT_PER_MINUTE = 30;
 const VISITOR_SAMPLE_MIN_EVENTS = 20;
+const VISITOR_DASHBOARD_DAY_OPTIONS = new Set([1, 7, 30, 180]);
 const VISITOR_EVENT_TYPES = new Set(['pageview', 'dwell', 'contact_click', 'section_view']);
 const CONTACT_CHANNELS = new Set(['wechat', 'email', 'whatsapp', 'line', 'phone', 'form']);
 const VISITOR_EVENT_SITES = Object.freeze({
@@ -21,6 +22,23 @@ const VISITOR_EVENT_SITES = Object.freeze({
   progress: 'progress.nice.okinawa',
   kiso: 'kiso.nice.okinawa'
 });
+const BOT_LIKE_CITIES = new Set([
+  'the dalles',
+  'boardman',
+  'council bluffs',
+  'ashburn',
+  'columbus',
+  'dublin',
+  'reston',
+  'herndon',
+  'quincy',
+  'prineville',
+  'loudoun',
+  'sterling',
+  'san jose',
+  'santa clara',
+  'mountain view'
+]);
 const BEACON_SCRIPT = `(function(){try{var d=document,w=window,s=d.currentScript||d.querySelector('script[data-site][src*="beacon.js"]'),site=((s&&s.dataset&&s.dataset.site)||'').toLowerCase();if(!site)return;var ep='https://analytics.nice.okinawa/events',vk='nice_analytics_visitor_id',sk='nice_analytics_session_id',st=Date.now(),last=st,done=0,timer=0,seen=new Set;function rid(){try{return crypto.randomUUID()}catch(e){return Date.now().toString(36)+Math.random().toString(36).slice(2)}}function id(store,key){try{var v=store.getItem(key);if(v)return v;v=rid();store.setItem(key,v);return v}catch(e){return rid()}}var vid=id(localStorage,vk),sid=id(sessionStorage,sk);function ui(){try{return w.NICE_UI_LANG||w.SITE_UI_LANG||d.documentElement.lang||''}catch(e){return''}}function dev(){var ua=(navigator.userAgent||'').toLowerCase();return /ipad|tablet/.test(ua)?'tablet':(/mobile|iphone|android/.test(ua)?'mobile':'desktop')}function land(){try{var q=new URLSearchParams(location.search),o=new URLSearchParams;['utm_source','utm_medium','utm_campaign'].forEach(function(k){var v=q.get(k);if(v)o.set(k,v)});var x=o.toString();return location.pathname+(x?'?'+x:'')}catch(e){return location.pathname||'/'}}function base(type){return{site_id:site,event_type:type,visitor_id:vid,session_id:sid,ts:new Date().toISOString(),landing_url:land(),referrer:d.referrer||'',ui_lang:ui(),browser_lang:navigator.language||''}}function send(type,extra,beacon){try{var p=base(type);if(extra)for(var k in extra)p[k]=extra[k];var body=JSON.stringify(p);if(beacon&&navigator.sendBeacon){try{if(navigator.sendBeacon(ep,new Blob([body],{type:'text/plain'})))return}catch(e){}}fetch(ep,{method:'POST',headers:{'content-type':beacon?'text/plain':'application/json'},body:body,keepalive:!!beacon,mode:'cors'}).catch(function(){})}catch(e){}}function touch(){last=Date.now();arm()}function arm(){try{clearTimeout(timer);timer=setTimeout(dwell,1800000)}catch(e){}}function dwell(){try{if(done)return;done=1;send('dwell',{dwell_ms:Math.min(Date.now()-st,1800000)},1)}catch(e){}}function chan(el){try{var c=(el.getAttribute('data-contact')||'').toLowerCase();if(c)return c.replace(/[^a-z_]/g,'').slice(0,40);var h=(el.getAttribute('href')||'').toLowerCase();if(h.indexOf('mailto:')===0)return'email';if(h.indexOf('tel:')===0)return'phone';if(h.indexOf('wa.me/')>-1||h.indexOf('whatsapp')>-1)return'whatsapp';if(h.indexOf('line.me')>-1)return'line';if(h.indexOf('weixin')>-1||h.indexOf('wechat')>-1)return'wechat'}catch(e){}return''}send('pageview',{device_type:dev(),viewport_width:w.innerWidth||0});arm();['pointerdown','keydown','scroll','touchstart'].forEach(function(e){try{addEventListener(e,touch,{passive:true})}catch(x){}});d.addEventListener('click',function(ev){try{var el=ev.target.closest&&ev.target.closest('[data-contact],a[href]');if(!el)return;var c=chan(el);if(c)send('contact_click',{contact_channel:c},0)}catch(e){}},true);try{if('IntersectionObserver'in w){var ob=new IntersectionObserver(function(es){es.forEach(function(en){try{var id=en.target.id;if(en.isIntersecting&&id&&!seen.has(id)){seen.add(id);send('section_view',{section_id:id},0)}}catch(e){}})},{threshold:.55});d.querySelectorAll('section[id],header[id],main[id]').forEach(function(el){ob.observe(el)})}}catch(e){}d.addEventListener('visibilitychange',function(){if(d.visibilityState==='hidden')dwell()});addEventListener('pagehide',dwell)}catch(e){}})();`;
 const TRACKING_SCRIPT = `(function(){var endpoint='https://analytics.nice.okinawa/collect';var site=location.hostname;var sessionKey='nice_analytics_session';var start=Date.now();var maxScroll=0;var sectionTimers={};var lastSection='';function uuid(){if(window.crypto&&crypto.randomUUID)return crypto.randomUUID();return String(Date.now())+'-'+Math.random().toString(16).slice(2)}function sid(){try{var e=sessionStorage.getItem(sessionKey);if(e)return e;var id=uuid();sessionStorage.setItem(sessionKey,id);return id}catch(e){return uuid()}}var sessionId=sid();var visitorId=function(){try{var k='nice_analytics_visitor';var e=localStorage.getItem(k);if(e)return e;var id=uuid();localStorage.setItem(k,id);return id}catch(e){return''}}();function lang(){return document.documentElement.dataset.staticLang||document.body.dataset.lang||document.documentElement.lang||navigator.language||''}function depth(){var d=document.documentElement,b=document.body,t=window.scrollY||d.scrollTop||b.scrollTop||0,h=Math.max(b.scrollHeight,d.scrollHeight)-window.innerHeight;if(h<=0)return 100;return Math.max(0,Math.min(100,Math.round(t/h*100)))}function data(type,extra){var out={type:type,site:site,session_id:sessionId,visitor_id:visitorId,path:location.pathname,title:document.title,url:location.href,referrer:document.referrer,lang:lang(),browser_lang:navigator.language||'',screen:(screen&&screen.width?screen.width+'x'+screen.height:''),viewport:window.innerWidth+'x'+window.innerHeight,ts:new Date().toISOString()};if(extra)Object.keys(extra).forEach(function(k){out[k]=extra[k]});return out}function send(type,extra,keepalive){var body=JSON.stringify(data(type,extra));if(navigator.sendBeacon&&keepalive){try{navigator.sendBeacon(endpoint,new Blob([body],{type:'application/json'}));return}catch(e){}}try{fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:body,keepalive:!!keepalive,mode:'cors'}).catch(function(){})}catch(e){}}function contactType(el){var href=el.getAttribute('href')||'',text=(el.textContent||'').toLowerCase();if(href.indexOf('wa.me')>=0||text.indexOf('whatsapp')>=0)return'whatsapp';if(href.indexOf('mailto:')===0||text.indexOf('email')>=0)return'email';if(text.indexOf('wechat')>=0||text.indexOf('okinawaonline')>=0)return'wechat';if(href.indexOf('line')>=0||text.indexOf('line')>=0)return'line';if(href.indexOf('tel:')===0)return'phone';if(href.indexOf('#contact')>=0)return'contact';return''}document.addEventListener('click',function(event){var link=event.target.closest&&event.target.closest('a,button,summary,select');if(!link)return;var label=(link.textContent||link.getAttribute('aria-label')||'').trim().replace(/\\s+/g,' ').slice(0,120);var href=link.getAttribute&&link.getAttribute('href');var contact=link.matches('a')?contactType(link):'';var kind=contact?'contact_'+contact:(link.closest('nav')?'nav':(link.tagName||'').toLowerCase());send('click',{event_name:kind,label:label,href:href||'',section:lastSection})},true);window.addEventListener('scroll',function(){maxScroll=Math.max(maxScroll,depth())},{passive:true});if('IntersectionObserver'in window){var observer=new IntersectionObserver(function(entries){entries.forEach(function(entry){var id=entry.target.id||entry.target.tagName.toLowerCase();if(entry.isIntersecting){lastSection=id;sectionTimers[id]=Date.now();send('section_view',{section:id})}else if(sectionTimers[id]){var ms=Date.now()-sectionTimers[id];sectionTimers[id]=0;if(ms>800)send('section_time',{section:id,duration_ms:ms})}})},{threshold:.55});document.querySelectorAll('header[id],main[id],section[id]').forEach(function(s){observer.observe(s)})}var qs=new URLSearchParams(location.search);send('page_view',{utm_source:qs.get('utm_source')||'',utm_medium:qs.get('utm_medium')||'',utm_campaign:qs.get('utm_campaign')||''});window.addEventListener('pagehide',function(){send('page_leave',{duration_ms:Date.now()-start,max_scroll:Math.max(maxScroll,depth()),section:lastSection},true)})})();`;
 
@@ -484,7 +502,7 @@ async function visitorDashboard(request, env) {
 
   const url = new URL(request.url);
   const requestedDays = Number(url.searchParams.get('days') || 28);
-  const days = requestedDays === 7 ? 7 : 28;
+  const days = VISITOR_DASHBOARD_DAY_OPTIONS.has(requestedDays) ? requestedDays : 28;
   const since = new Date(Date.now() - days * 86400000).toISOString();
 
   const [
@@ -539,7 +557,7 @@ async function visitorDashboard(request, env) {
       WHERE rn IN ((cnt + 1) / 2, (cnt + 2) / 2)
       GROUP BY site_id
     `, [since]),
-    visitorRank(env.DB, since, 'referrer_host', "COALESCE(NULLIF(referrer_host, ''), 'direct')"),
+    visitorSourceRank(env.DB, since),
     visitorRank(env.DB, since, 'location', "TRIM(COALESCE(NULLIF(country, ''), '-') || ' · ' || COALESCE(NULLIF(city, ''), '-'))"),
     visitorRank(env.DB, since, 'landing_path', "COALESCE(NULLIF(landing_path, ''), '/')"),
     visitorRank(env.DB, since, 'ui_lang', "COALESCE(NULLIF(ui_lang, ''), '-')"),
@@ -603,13 +621,25 @@ async function visitorDashboard(request, env) {
         SELECT
           site_id,
           visitor_id,
-          referrer_host,
           landing_path,
           utm_source,
           utm_medium,
           utm_campaign,
           ROW_NUMBER() OVER (PARTITION BY site_id, visitor_id ORDER BY created_at ASC, id ASC) AS rn
         FROM base
+      ),
+      external_touch AS (
+        SELECT
+          site_id,
+          visitor_id,
+          LOWER(REPLACE(referrer_host, 'www.', '')) AS referrer_host,
+          ROW_NUMBER() OVER (PARTITION BY site_id, visitor_id ORDER BY created_at ASC, id ASC) AS rn
+        FROM base
+        WHERE referrer_host IS NOT NULL
+          AND referrer_host <> ''
+          AND LOWER(REPLACE(referrer_host, 'www.', '')) <> 'direct'
+          AND LOWER(REPLACE(referrer_host, 'www.', '')) <> 'nice.okinawa'
+          AND LOWER(REPLACE(referrer_host, 'www.', '')) NOT LIKE '%.nice.okinawa'
       )
       SELECT
         g.site_id,
@@ -626,7 +656,7 @@ async function visitorDashboard(request, env) {
         g.contact_clicks,
         COALESCE(g.contact_channels, '') AS contact_channels,
         COALESCE(g.section_ids, '') AS section_ids,
-        COALESCE(NULLIF(f.referrer_host, ''), COALESCE(l.referrer_host, '')) AS referrer_host,
+        COALESCE(e.referrer_host, 'direct') AS referrer_host,
         COALESCE(l.country, '') AS country,
         COALESCE(l.city, '') AS city,
         COALESCE(l.timezone, '') AS timezone,
@@ -639,6 +669,7 @@ async function visitorDashboard(request, env) {
       FROM grouped g
       LEFT JOIN latest l ON l.site_id = g.site_id AND l.visitor_id = g.visitor_id AND l.rn = 1
       LEFT JOIN first_touch f ON f.site_id = g.site_id AND f.visitor_id = g.visitor_id AND f.rn = 1
+      LEFT JOIN external_touch e ON e.site_id = g.site_id AND e.visitor_id = g.visitor_id AND e.rn = 1
       ORDER BY g.last_seen_at DESC
       LIMIT 160
     `, [since])
@@ -654,26 +685,33 @@ async function visitorDashboard(request, env) {
     utm_sources: groupBySite(utmSources)
   };
 
-  const sites = totals.map((row) => {
-    const siteId = row.site_id || '';
+  const totalsBySite = new Map((totals || []).map((row) => [row.site_id || '', row]));
+  const sites = Object.keys(VISITOR_EVENT_SITES).map((siteId) => {
+    const row = totalsBySite.get(siteId) || {};
+    const resolvedSiteId = row.site_id || siteId;
     const eventCount = Number(row.event_count || 0);
     const protectedSample = eventCount < VISITOR_SAMPLE_MIN_EVENTS;
     return {
-      site_id: siteId,
+      site_id: resolvedSiteId,
       event_count: eventCount,
       uv: Number(row.uv || 0),
       pv: Number(row.pv || 0),
       contact_clicks: Number(row.contact_clicks || 0),
-      median_dwell_ms: Number(medianBySite.get(siteId) || 0),
+      median_dwell_ms: Number(medianBySite.get(resolvedSiteId) || 0),
       protected: protectedSample,
       sample_min_events: VISITOR_SAMPLE_MIN_EVENTS,
-      raw_records: protectedSample ? (rawBySite.get(siteId) || []) : [],
-      referrers: protectedSample ? [] : (ranks.referrers.get(siteId) || []),
-      locations: protectedSample ? [] : (ranks.locations.get(siteId) || []),
-      landing_pages: protectedSample ? [] : (ranks.landing_pages.get(siteId) || []),
-      ui_langs: protectedSample ? [] : (ranks.ui_langs.get(siteId) || []),
-      utm_sources: protectedSample ? [] : (ranks.utm_sources.get(siteId) || [])
+      raw_records: protectedSample ? (rawBySite.get(resolvedSiteId) || []) : [],
+      referrers: protectedSample ? [] : (ranks.referrers.get(resolvedSiteId) || []),
+      locations: protectedSample ? [] : (ranks.locations.get(resolvedSiteId) || []),
+      landing_pages: protectedSample ? [] : (ranks.landing_pages.get(resolvedSiteId) || []),
+      ui_langs: protectedSample ? [] : (ranks.ui_langs.get(resolvedSiteId) || []),
+      utm_sources: protectedSample ? [] : (ranks.utm_sources.get(resolvedSiteId) || [])
     };
+  }).sort((a, b) => {
+    const az = a.event_count > 0 ? 0 : 1;
+    const bz = b.event_count > 0 ? 0 : 1;
+    if (az !== bz) return az - bz;
+    return b.uv - a.uv || b.pv - a.pv || b.contact_clicks - a.contact_clicks || a.site_id.localeCompare(b.site_id);
   });
 
   return json({
@@ -704,7 +742,7 @@ async function visitorDashboard(request, env) {
       contact_clicks: Number(row.contact_clicks || 0),
       contact_channels: splitCsv(row.contact_channels),
       section_ids: splitCsv(row.section_ids),
-      referrer_host: row.referrer_host || '',
+      referrer_host: row.referrer_host || 'direct',
       country: row.country || '',
       city: row.city || '',
       timezone: row.timezone || '',
@@ -713,7 +751,9 @@ async function visitorDashboard(request, env) {
       landing_path: row.landing_path || '/',
       utm_source: row.utm_source || '',
       utm_medium: row.utm_medium || '',
-      utm_campaign: row.utm_campaign || ''
+      utm_campaign: row.utm_campaign || '',
+      is_bot_like: isBotLikeVisitor(row),
+      bot_reasons: botLikeReasons(row)
     }))
   }, request);
 }
@@ -724,6 +764,62 @@ function splitCsv(value) {
     .map((item) => item.trim())
     .filter(Boolean)
     .slice(0, 20);
+}
+
+async function visitorSourceRank(db, since) {
+  return all(db, `
+    WITH base AS (
+      SELECT
+        site_id,
+        visitor_id,
+        LOWER(REPLACE(COALESCE(referrer_host, ''), 'www.', '')) AS referrer_host,
+        created_at,
+        id
+      FROM visitor_events
+      WHERE created_at >= ?
+    ),
+    external_touch AS (
+      SELECT
+        site_id,
+        visitor_id,
+        referrer_host,
+        ROW_NUMBER() OVER (PARTITION BY site_id, visitor_id ORDER BY created_at ASC, id ASC) AS rn
+      FROM base
+      WHERE referrer_host <> ''
+        AND referrer_host <> 'direct'
+        AND referrer_host <> 'nice.okinawa'
+        AND referrer_host NOT LIKE '%.nice.okinawa'
+    ),
+    visitor_sources AS (
+      SELECT
+        site_id,
+        visitor_id,
+        COALESCE(MAX(CASE WHEN rn = 1 THEN referrer_host END), 'direct') AS value
+      FROM (
+        SELECT DISTINCT site_id, visitor_id, NULL AS referrer_host, NULL AS rn FROM base
+        UNION ALL
+        SELECT site_id, visitor_id, referrer_host, rn FROM external_touch
+      )
+      GROUP BY site_id, visitor_id
+    ),
+    grouped AS (
+      SELECT site_id, value, COUNT(*) AS count
+      FROM visitor_sources
+      GROUP BY site_id, value
+    ),
+    ranked AS (
+      SELECT
+        site_id,
+        value,
+        count,
+        ROW_NUMBER() OVER (PARTITION BY site_id ORDER BY count DESC, value) AS rn
+      FROM grouped
+    )
+    SELECT site_id, 'referrer_host' AS field, value, count
+    FROM ranked
+    WHERE rn <= 8
+    ORDER BY site_id, count DESC, value
+  `, [since]);
 }
 
 async function visitorRank(db, since, field, valueExpr) {
@@ -747,6 +843,17 @@ async function visitorRank(db, since, field, valueExpr) {
     WHERE rn <= 8
     ORDER BY site_id, count DESC, value
   `, [since, field]);
+}
+
+function botLikeReasons(row) {
+  const reasons = [];
+  const city = String(row?.city || '').trim().toLowerCase();
+  if (city && BOT_LIKE_CITIES.has(city)) reasons.push('city:' + String(row.city).trim());
+  return reasons;
+}
+
+function isBotLikeVisitor(row) {
+  return botLikeReasons(row).length > 0;
 }
 
 function mapBySite(rows, valueKey) {
