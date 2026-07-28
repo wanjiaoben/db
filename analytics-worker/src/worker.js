@@ -497,7 +497,8 @@ async function visitorDashboard(request, env) {
     landingPages,
     uiLangs,
     utmSources,
-    rawRecords
+    rawRecords,
+    visitorRows
   ] = await Promise.all([
     all(env.DB, `
       SELECT
@@ -555,6 +556,91 @@ async function visitorDashboard(request, env) {
       FROM ranked
       WHERE rn <= 80
       ORDER BY site_id, created_at DESC
+    `, [since]),
+    all(env.DB, `
+      WITH base AS (
+        SELECT *
+        FROM visitor_events
+        WHERE created_at >= ?
+      ),
+      grouped AS (
+        SELECT
+          site_id,
+          visitor_id,
+          MIN(created_at) AS first_seen_at,
+          MAX(created_at) AS last_seen_at,
+          COUNT(*) AS event_count,
+          COUNT(CASE WHEN event_type='pageview' THEN 1 END) AS pageviews,
+          COUNT(CASE WHEN event_type='section_view' THEN 1 END) AS section_views,
+          COUNT(CASE WHEN event_type='dwell' THEN 1 END) AS dwell_count,
+          ROUND(AVG(CASE WHEN event_type='dwell' AND dwell_ms IS NOT NULL THEN dwell_ms END)) AS avg_dwell_ms,
+          MAX(CASE WHEN event_type='dwell' THEN dwell_ms END) AS max_dwell_ms,
+          COUNT(CASE WHEN event_type='contact_click' THEN 1 END) AS contact_clicks,
+          GROUP_CONCAT(DISTINCT CASE WHEN event_type='contact_click' AND contact_channel <> '' THEN contact_channel END) AS contact_channels,
+          GROUP_CONCAT(DISTINCT CASE WHEN event_type='section_view' AND section_id <> '' THEN section_id END) AS section_ids
+        FROM base
+        GROUP BY site_id, visitor_id
+      ),
+      latest AS (
+        SELECT
+          site_id,
+          visitor_id,
+          created_at,
+          referrer_host,
+          country,
+          city,
+          timezone,
+          ui_lang,
+          browser_lang,
+          landing_path,
+          utm_source,
+          utm_medium,
+          utm_campaign,
+          ROW_NUMBER() OVER (PARTITION BY site_id, visitor_id ORDER BY created_at DESC, id DESC) AS rn
+        FROM base
+      ),
+      first_touch AS (
+        SELECT
+          site_id,
+          visitor_id,
+          referrer_host,
+          landing_path,
+          utm_source,
+          utm_medium,
+          utm_campaign,
+          ROW_NUMBER() OVER (PARTITION BY site_id, visitor_id ORDER BY created_at ASC, id ASC) AS rn
+        FROM base
+      )
+      SELECT
+        g.site_id,
+        g.site_id AS landing_site,
+        g.visitor_id,
+        g.first_seen_at,
+        g.last_seen_at,
+        g.event_count,
+        g.pageviews,
+        g.section_views,
+        g.dwell_count,
+        g.avg_dwell_ms,
+        g.max_dwell_ms,
+        g.contact_clicks,
+        COALESCE(g.contact_channels, '') AS contact_channels,
+        COALESCE(g.section_ids, '') AS section_ids,
+        COALESCE(NULLIF(f.referrer_host, ''), COALESCE(l.referrer_host, '')) AS referrer_host,
+        COALESCE(l.country, '') AS country,
+        COALESCE(l.city, '') AS city,
+        COALESCE(l.timezone, '') AS timezone,
+        COALESCE(l.ui_lang, '') AS ui_lang,
+        COALESCE(l.browser_lang, '') AS browser_lang,
+        COALESCE(NULLIF(f.landing_path, ''), COALESCE(l.landing_path, '/')) AS landing_path,
+        COALESCE(NULLIF(f.utm_source, ''), COALESCE(l.utm_source, '')) AS utm_source,
+        COALESCE(NULLIF(f.utm_medium, ''), COALESCE(l.utm_medium, '')) AS utm_medium,
+        COALESCE(NULLIF(f.utm_campaign, ''), COALESCE(l.utm_campaign, '')) AS utm_campaign
+      FROM grouped g
+      LEFT JOIN latest l ON l.site_id = g.site_id AND l.visitor_id = g.visitor_id AND l.rn = 1
+      LEFT JOIN first_touch f ON f.site_id = g.site_id AND f.visitor_id = g.visitor_id AND f.rn = 1
+      ORDER BY g.last_seen_at DESC
+      LIMIT 160
     `, [since])
   ]);
 
@@ -602,8 +688,42 @@ async function visitorDashboard(request, env) {
         count: Number(row.count || 0)
       }))
     },
-    sites
+    sites,
+    visitor_rows: visitorRows.map((row) => ({
+      site_id: row.site_id || '',
+      landing_site: row.landing_site || row.site_id || '',
+      visitor_id: row.visitor_id || '',
+      first_seen_at: row.first_seen_at || '',
+      last_seen_at: row.last_seen_at || '',
+      event_count: Number(row.event_count || 0),
+      pageviews: Number(row.pageviews || 0),
+      section_views: Number(row.section_views || 0),
+      dwell_count: Number(row.dwell_count || 0),
+      avg_dwell_ms: Number(row.avg_dwell_ms || 0),
+      max_dwell_ms: Number(row.max_dwell_ms || 0),
+      contact_clicks: Number(row.contact_clicks || 0),
+      contact_channels: splitCsv(row.contact_channels),
+      section_ids: splitCsv(row.section_ids),
+      referrer_host: row.referrer_host || '',
+      country: row.country || '',
+      city: row.city || '',
+      timezone: row.timezone || '',
+      ui_lang: row.ui_lang || '',
+      browser_lang: row.browser_lang || '',
+      landing_path: row.landing_path || '/',
+      utm_source: row.utm_source || '',
+      utm_medium: row.utm_medium || '',
+      utm_campaign: row.utm_campaign || ''
+    }))
   }, request);
+}
+
+function splitCsv(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 20);
 }
 
 async function visitorRank(db, since, field, valueExpr) {
