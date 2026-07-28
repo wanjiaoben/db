@@ -354,6 +354,95 @@ td.num, th.num { text-align: right; }
 .raw-table table {
   min-width: 620px;
 }
+.visitor-table {
+  display: grid;
+  gap: 4px;
+}
+.visitor-row-head,
+.visitor-row summary {
+  display: grid;
+  grid-template-columns: 42px 58px minmax(0, 1fr) 92px 34px;
+  align-items: center;
+  gap: 6px;
+}
+.visitor-row-head {
+  padding: 0 7px 2px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.visitor-row-head span:first-child {
+  visibility: hidden;
+}
+.visitor-row {
+  border: 1px solid #ece6da;
+  border-radius: 6px;
+  background: #fffdfa;
+  min-width: 0;
+}
+.visitor-row summary {
+  height: 34px;
+  padding: 0 7px;
+  cursor: pointer;
+  list-style: none;
+}
+.visitor-row summary::-webkit-details-marker {
+  display: none;
+}
+.site-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 18px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 5px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.visitor-cell {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.visitor-time {
+  font-variant-numeric: tabular-nums;
+}
+.visitor-contact {
+  text-align: right;
+  color: var(--green);
+  font-weight: 800;
+}
+.visitor-detail {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  padding: 7px;
+  border-top: 1px solid #ece6da;
+  color: var(--muted);
+  font-size: 11px;
+}
+.visitor-detail div {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.visitor-detail b {
+  display: block;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .inventory-card h2 {
   display: flex;
   align-items: center;
@@ -472,6 +561,31 @@ td.num, th.num { text-align: right; }
   .visitor-sites,
   .visitor-lists {
     grid-template-columns: 1fr;
+  }
+  .visitor-row-head,
+  .visitor-row summary {
+    grid-template-columns: 34px 54px minmax(0, 1fr) 82px 28px;
+    gap: 5px;
+  }
+  .visitor-row-head {
+    padding-left: 5px;
+    padding-right: 5px;
+  }
+  .visitor-row summary {
+    height: 32px;
+    padding-left: 5px;
+    padding-right: 5px;
+  }
+  .visitor-cell {
+    font-size: 11px;
+  }
+  .site-badge {
+    height: 17px;
+    padding: 0 4px;
+    font-size: 9px;
+  }
+  .visitor-detail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .visitor-stats {
     grid-template-columns: repeat(2, 1fr);
@@ -790,41 +904,91 @@ function listHtml(items) {
   return '<ol>' + items.map((item) => '<li><span>' + escapeHtml(item.value || '-') + '</span><b>' + n(item.count) + '</b></li>').join('') + '</ol>';
 }
 
-function rawRecordsHtml(records) {
-  if (!records || !records.length) return '<div class="empty">样本不足，暂无原始记录</div>';
-  return '<div class="raw-table"><table><thead><tr><th>时间</th><th>站</th><th>事件</th><th>来源</th><th>国家城市</th><th>落地页</th></tr></thead><tbody>' +
-    records.map((r) => row([
-      escapeHtml(timeText(r.created_at)),
-      escapeHtml(r.site_id || '-'),
-      escapeHtml(r.event_type || '-'),
-      escapeHtml(r.referrer_host || 'direct'),
-      escapeHtml([r.country, r.city].filter(Boolean).join(' · ') || '-'),
-      escapeHtml(r.landing_path || '/')
-    ])).join('') +
-    '</tbody></table></div>';
+function relativeTime(value) {
+  const ts = Date.parse(value || '');
+  if (!Number.isFinite(ts)) return '-';
+  const diff = Math.max(0, Date.now() - ts);
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return '刚刚';
+  if (min < 60) return min + '分前';
+  const hour = Math.floor(min / 60);
+  if (hour < 24) return hour + '時間前';
+  if (hour < 48) return '昨日';
+  const d = new Date(ts);
+  return (d.getMonth() + 1) + '/' + d.getDate();
 }
 
-function visitorSiteHtml(site) {
-  const protectedSample = Boolean(site.protected);
-  const subtitle = protectedSample ? '样本<' + n(site.sample_min_events) + '，显示原始记录' : n(site.event_count) + ' events';
-  const body = protectedSample ? rawRecordsHtml(site.raw_records) : (
-    '<div class="visitor-lists">' +
-      '<div class="mini-list"><h4>来源</h4>' + listHtml(site.referrers) + '</div>' +
-      '<div class="mini-list"><h4>国家 · 城市</h4>' + listHtml(site.locations) + '</div>' +
-      '<div class="mini-list"><h4>落地页</h4>' + listHtml(site.landing_pages) + '</div>' +
-      '<div class="mini-list"><h4>UI 语言</h4>' + listHtml(site.ui_langs) + '</div>' +
-      '<div class="mini-list"><h4>UTM source</h4>' + listHtml(site.utm_sources) + '</div>' +
-    '</div>'
-  );
-  return '<section class="visitor-site">' +
-    '<h3><span>' + escapeHtml(site.site_id || '-') + '</span><span class="visitor-label">' + escapeHtml(subtitle) + '</span></h3>' +
-    '<div class="visitor-stats">' +
-      '<div class="visitor-stat"><span class="visitor-label">UV</span><strong>' + n(site.uv) + '</strong></div>' +
-      '<div class="visitor-stat"><span class="visitor-label">PV</span><strong>' + n(site.pv) + '</strong></div>' +
-      '<div class="visitor-stat"><span class="visitor-label">dwell 中位</span><strong>' + seconds(site.median_dwell_ms) + '</strong></div>' +
-      '<div class="visitor-stat"><span class="visitor-label">contact</span><strong>' + n(site.contact_clicks) + '</strong></div>' +
-    '</div>' + body +
-  '</section>';
+function sourceLabel(host) {
+  const h = String(host || '').toLowerCase().replace(/^www\./, '');
+  if (!h || h === 'direct') return '直接访问';
+  if (h.includes('google.')) return 'google';
+  if (h.includes('bing.')) return 'bing';
+  if (h.includes('yahoo.')) return 'yahoo';
+  if (h.includes('baidu.')) return 'baidu';
+  if (h.includes('duckduckgo.')) return 'duckduckgo';
+  if (h.endsWith('.nice.okinawa') || h === 'nice.okinawa') return h.replace('.nice.okinawa', '');
+  return h.split('.')[0] || h;
+}
+
+function countryLabel(country) {
+  const map = { JP: '日本', US: '美国', TW: '台湾', HK: '香港', CN: '中国', KR: '韩国', SG: '新加坡' };
+  const key = String(country || '').toUpperCase();
+  return map[key] || key || '-';
+}
+
+function cityLabel(city) {
+  const map = { Okinawa: '沖縄', Naha: '那覇', Tokyo: '東京', Osaka: '大阪' };
+  return map[city] || city || '-';
+}
+
+function geoLabel(row) {
+  const country = countryLabel(row.country);
+  const city = cityLabel(row.city);
+  if (country === '-' && city === '-') return '-';
+  if (city === '-') return country;
+  if (country === '-') return city;
+  return country + '・' + city;
+}
+
+function shortVisitor(id) {
+  const value = String(id || '');
+  return value ? value.slice(0, 8) : '-';
+}
+
+function visitorRowHtml(rowData) {
+  const fullTime = timeText(rowData.last_seen_at);
+  const source = sourceLabel(rowData.referrer_host);
+  const geo = geoLabel(rowData);
+  const contact = Number(rowData.contact_clicks || 0);
+  const sections = (rowData.section_ids || []).slice(0, 5).join(', ') || '-';
+  const channels = (rowData.contact_channels || []).join(', ') || '-';
+  return '<details class="visitor-row">' +
+    '<summary title="' + escapeHtml(fullTime) + '">' +
+      '<span class="site-badge" title="' + escapeHtml(rowData.landing_site || rowData.site_id || '-') + '">' + escapeHtml(rowData.landing_site || rowData.site_id || '-') + '</span>' +
+      '<span class="visitor-cell visitor-time">' + escapeHtml(relativeTime(rowData.last_seen_at)) + '</span>' +
+      '<span class="visitor-cell" title="' + escapeHtml(rowData.referrer_host || '直接访问') + '">' + escapeHtml(source) + '</span>' +
+      '<span class="visitor-cell" title="' + escapeHtml(geo) + '">' + escapeHtml(geo) + '</span>' +
+      '<span class="visitor-cell visitor-contact">' + (contact ? '●' + (contact > 1 ? n(contact) : '') : '') + '</span>' +
+    '</summary>' +
+    '<div class="visitor-detail">' +
+      '<div><span>完整时间</span><b>' + escapeHtml(fullTime) + '</b></div>' +
+      '<div><span>访客</span><b>' + escapeHtml(shortVisitor(rowData.visitor_id)) + '</b></div>' +
+      '<div><span>PV / section</span><b>' + n(rowData.pageviews) + ' / ' + n(rowData.section_views) + '</b></div>' +
+      '<div><span>dwell</span><b>' + seconds(rowData.avg_dwell_ms || rowData.max_dwell_ms) + '</b></div>' +
+      '<div><span>落地页</span><b>' + escapeHtml(rowData.landing_path || '/') + '</b></div>' +
+      '<div><span>UTM</span><b>' + escapeHtml([rowData.utm_source, rowData.utm_medium, rowData.utm_campaign].filter(Boolean).join(' / ') || '-') + '</b></div>' +
+      '<div><span>联络渠道</span><b>' + escapeHtml(channels) + '</b></div>' +
+      '<div><span>section</span><b>' + escapeHtml(sections) + '</b></div>' +
+    '</div>' +
+  '</details>';
+}
+
+function visitorRowsHtml(rows) {
+  if (!rows || !rows.length) return '<div class="empty">当前窗口暂无访客事件</div>';
+  return '<div class="visitor-table">' +
+    '<div class="visitor-row-head"><span>站</span><span>时间</span><span>来源</span><span>国家·城市</span><span>联络</span></div>' +
+    rows.map(visitorRowHtml).join('') +
+  '</div>';
 }
 
 function setVisitorWindow(days) {
@@ -996,9 +1160,7 @@ async function loadVisitors() {
     $('visitorContactSites').innerHTML = bySite.length
       ? bySite.map((r) => '<div class="contact-site"><span>' + escapeHtml(r.site_id || '-') + '</span><strong>' + n(r.count) + '</strong></div>').join('')
       : '<div class="empty">暂无 contact_click</div>';
-    $('visitorSites').innerHTML = (data.sites || []).length
-      ? data.sites.map(visitorSiteHtml).join('')
-      : '<div class="empty">当前窗口暂无访客事件</div>';
+    $('visitorSites').innerHTML = visitorRowsHtml(data.visitor_rows || []);
   } catch (e) {
     $('visitorUpdated').textContent = '';
     $('visitorContactTotal').textContent = '-';

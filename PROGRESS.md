@@ -1,5 +1,7 @@
 # db.nice.okinawa Progress
 
+M0728-12 changes the visitor dashboard card to render one collapsed row per site_id plus visitor_id, with four mobile-first columns and detailed metrics moved into row expansion.
+
 M0727-27 fixes beacon dwell delivery by switching unload sendBeacon payloads to text/plain JSON and allowing /events to parse text/plain JSON without changing origin, allowlist, or rate-limit checks.
 M0727-31 adds a DASHBOARD_KEY-protected visitor dashboard endpoint/card for production visitor_events and closes the missing-token anonymous admin access path with 403 responses.
 

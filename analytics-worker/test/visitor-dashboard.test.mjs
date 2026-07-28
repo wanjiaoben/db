@@ -5,6 +5,7 @@ import worker from '../src/worker.js';
 
 function fakeDb(fixtures) {
   const calls = [];
+  const fixtureKeys = Object.keys(fixtures).sort((a, b) => b.length - a.length);
   return {
     calls,
     prepare(sql) {
@@ -16,11 +17,11 @@ function fakeDb(fixtures) {
           return this;
         },
         async all() {
-          const key = Object.keys(fixtures).find((needle) => sql.includes(needle));
+          const key = fixtureKeys.find((needle) => sql.includes(needle));
           return { results: key ? fixtures[key] : [] };
         },
         async first() {
-          const key = Object.keys(fixtures).find((needle) => sql.includes(needle));
+          const key = fixtureKeys.find((needle) => sql.includes(needle));
           return key ? fixtures[key] : null;
         }
       };
@@ -61,6 +62,34 @@ test('visitor dashboard returns 28/7 day aggregate with sample protection', asyn
         city: 'Okinawa',
         landing_path: '/'
       }
+    ],
+    'GROUP_CONCAT(DISTINCT CASE WHEN event_type': [
+      {
+        site_id: 'snorkel',
+        landing_site: 'snorkel',
+        visitor_id: 'visitor-123',
+        first_seen_at: '2026-07-27T04:00:00.000Z',
+        last_seen_at: '2026-07-27T04:03:00.000Z',
+        event_count: 4,
+        pageviews: 1,
+        section_views: 2,
+        dwell_count: 1,
+        avg_dwell_ms: 12000,
+        max_dwell_ms: 12000,
+        contact_clicks: 1,
+        contact_channels: 'email',
+        section_ids: 'hero,price',
+        referrer_host: 'google.com',
+        country: 'JP',
+        city: 'Okinawa',
+        timezone: 'Asia/Tokyo',
+        ui_lang: 'zh-Hant',
+        browser_lang: 'zh-CN',
+        landing_path: '/',
+        utm_source: 'google',
+        utm_medium: 'organic',
+        utm_campaign: ''
+      }
     ]
   });
   const res = await worker.fetch(new Request('https://analytics.nice.okinawa/visitors?days=7', {
@@ -80,5 +109,10 @@ test('visitor dashboard returns 28/7 day aggregate with sample protection', asyn
   assert.equal(data.sites[1].site_id, 'fishing');
   assert.equal(data.sites[1].protected, true);
   assert.equal(data.sites[1].raw_records.length, 1);
+  assert.equal(data.visitor_rows[0].site_id, 'snorkel');
+  assert.equal(data.visitor_rows[0].visitor_id, 'visitor-123');
+  assert.equal(data.visitor_rows[0].referrer_host, 'google.com');
+  assert.deepEqual(data.visitor_rows[0].contact_channels, ['email']);
+  assert.deepEqual(data.visitor_rows[0].section_ids, ['hero', 'price']);
   assert.match(db.calls[0].params[0], /^\d{4}-\d{2}-\d{2}T/);
 });

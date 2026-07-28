@@ -21,7 +21,7 @@ preview_urls = true
 routes = []
 
 [env.preview.vars]
-DASHBOARD_ORIGIN = "https://raw.githubusercontent.com/wanjiaoben/db/codex/m0727-31-visitor-panel"
+DASHBOARD_ORIGIN = "https://raw.githubusercontent.com/wanjiaoben/db/codex/m0728-12-visitor-rows"
 ANALYTICS_ORIGIN = "https://nice-analytics-t0705-12.gerheidicn.workers.dev"
 
 [[env.preview.services]]
