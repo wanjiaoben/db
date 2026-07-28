@@ -252,6 +252,9 @@ td.num, th.num { text-align: right; }
 .visitor-head h2 {
   min-width: 0;
 }
+.days-control {
+  display: none;
+}
 .segmented {
   display: inline-flex;
   border: 1px solid var(--line);
@@ -270,26 +273,100 @@ td.num, th.num { text-align: right; }
   background: var(--ink);
   color: white;
 }
-.site-overview {
+.metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-}
-.site-card {
-  display: grid;
-  grid-template-columns: minmax(54px, 1fr) repeat(4, minmax(30px, 0.7fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 4px;
-  align-items: center;
+}
+.metric-item {
   min-width: 0;
-  max-width: 100%;
-  min-height: 38px;
   border: 1px solid #ece6da;
-  border-radius: 6px;
+  border-radius: 5px;
   padding: 5px 6px;
   background: #fffdfa;
+}
+.metric-item span {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.metric-item strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 15px;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.site-overview {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+.site-overview-table {
+  display: grid;
+  grid-template-columns: minmax(76px, 1.6fr) repeat(4, minmax(0, 1fr));
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #ece6da;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fffdfa;
+}
+.site-overview-row {
+  display: contents;
+}
+.site-overview-cell {
+  min-width: 0;
+  min-height: 29px;
+  padding: 0 6px;
+  border-bottom: 1px solid #ece6da;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   color: var(--ink);
-  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.site-overview-row:last-child .site-overview-cell {
+  border-bottom: 0;
+}
+.site-overview-head .site-overview-cell {
+  min-height: 25px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  background: #fbf7ee;
+}
+.site-overview-cell:first-child {
+  justify-content: flex-start;
   text-align: left;
+  font-weight: 800;
+}
+.site-overview-row.is-clickable .site-overview-cell {
+  cursor: pointer;
+}
+.site-overview-row.is-clickable:hover .site-overview-cell,
+.site-overview-row.active .site-overview-cell {
+  background: #f3fbf4;
+}
+.site-overview-row.zero .site-overview-cell {
+  color: var(--muted);
+  background: #f7f5ef;
+  opacity: 0.7;
+}
+.site-card {
+  min-width: 0;
+  max-width: 100%;
 }
 .site-card:hover,
 .site-card.active {
@@ -627,9 +704,6 @@ td.num, th.num { text-align: right; }
   main { grid-template-columns: 1fr; }
   .card { max-height: none; }
   .control-grid { grid-template-columns: 1fr; }
-  .site-overview {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .detail-lists {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -667,13 +741,34 @@ td.num, th.num { text-align: right; }
     flex-direction: column;
     align-items: stretch;
   }
-  .site-overview {
-    grid-template-columns: 1fr;
+  .segmented {
+    width: 100%;
   }
-  .site-card {
-    grid-template-columns: minmax(72px, 1fr) repeat(4, minmax(36px, 0.55fr));
-    min-height: 34px;
-    padding: 4px;
+  .segmented button {
+    flex: 1 1 0;
+    padding: 0 4px;
+  }
+  .metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .metric-item {
+    padding: 4px 5px;
+  }
+  .metric-item strong {
+    font-size: 14px;
+  }
+  .site-overview-table {
+    grid-template-columns: minmax(70px, 1.35fr) repeat(4, minmax(0, 0.8fr));
+  }
+  .site-overview-cell {
+    min-height: 28px;
+    padding: 0 4px;
+    font-size: 11px;
+  }
+  .site-overview-head .site-overview-cell {
+    min-height: 24px;
+    font-size: 10px;
   }
   .site-name {
     font-size: 11px;
@@ -745,7 +840,7 @@ td.num, th.num { text-align: right; }
   </div>
   <div class="controls">
     <span class="pill"><span class="dot"></span><span id="status">等待连接</span></span>
-    <select id="days">
+    <select id="days" class="days-control" aria-label="时间范围">
       <option value="today">今天</option>
       <option value="7" selected>7天</option>
       <option value="30">30天</option>
@@ -770,16 +865,23 @@ td.num, th.num { text-align: right; }
   <div class="error" id="error"></div>
 
   <section class="card metrics">
-    <table>
-      <thead><tr><th>实时在线</th><th>今日访问</th><th>区间访问</th><th>访客</th><th>平均停留</th><th>平均滚动</th></tr></thead>
-      <tbody><tr><td id="online">-</td><td id="todayViews">-</td><td id="views">-</td><td id="visitors">-</td><td id="duration">-</td><td id="scroll">-</td></tr></tbody>
-    </table>
+    <div class="metric-item"><span>实时在线</span><strong id="online">-</strong></div>
+    <div class="metric-item"><span>今日访问</span><strong id="todayViews">-</strong></div>
+    <div class="metric-item"><span>区间访问</span><strong id="views">-</strong></div>
+    <div class="metric-item"><span>访客</span><strong id="visitors">-</strong></div>
+    <div class="metric-item"><span>平均停留</span><strong id="duration">-</strong></div>
+    <div class="metric-item"><span>平均滚动</span><strong id="scroll">-</strong></div>
   </section>
 
   <section class="card visitor-card">
     <div class="visitor-head">
       <h2 style="position:static;margin:0;padding:0;border:0">站点总览 <span class="sub" id="visitorUpdated"></span></h2>
-      <span class="pill">今天 / 7天 / 30天 / 180天</span>
+      <div class="segmented" id="visitorRangeTabs" aria-label="访客时间范围">
+        <button type="button" data-range="today">今天</button>
+        <button type="button" data-range="7" class="active">7天</button>
+        <button type="button" data-range="30">30天</button>
+        <button type="button" data-range="180">180天</button>
+      </div>
     </div>
     <div class="site-overview" id="siteOverview"><div class="empty">等待访客数据</div></div>
     <div class="site-detail" id="siteDetail"></div>
@@ -1100,6 +1202,13 @@ function visitorDaysFromControl() {
   return [1, 7, 30, 180].includes(days) ? days : 7;
 }
 
+function syncRangeTabs() {
+  const current = $('days').value || '7';
+  document.querySelectorAll('#visitorRangeTabs button').forEach((button) => {
+    button.classList.toggle('active', button.dataset.range === current);
+  });
+}
+
 function rangeLabel(days) {
   if (days === 1) return '今天';
   return days + '天';
@@ -1107,17 +1216,26 @@ function rangeLabel(days) {
 
 function siteOverviewHtml(sites) {
   if (!sites || !sites.length) return '<div class="empty">当前窗口暂无访客事件</div>';
-  return sites.map((site) => {
+  const rows = sites.map((site) => {
     const empty = Number(site.event_count || 0) === 0;
     const active = selectedVisitorSite === site.site_id;
-    return '<button type="button" class="site-card' + (empty ? ' zero' : '') + (active ? ' active' : '') + '" data-visitor-site="' + escapeHtml(site.site_id || '') + '">' +
-      '<span class="site-name" title="' + escapeHtml(site.site_id || '-') + '">' + escapeHtml(site.site_id || '-') + '</span>' +
-      '<span class="site-metric"><span>UV</span><strong>' + n(site.uv) + '</strong></span>' +
-      '<span class="site-metric"><span>PV</span><strong>' + n(site.pv) + '</strong></span>' +
-      '<span class="site-metric"><span>dwell</span><strong>' + escapeHtml(seconds(site.median_dwell_ms)) + '</strong></span>' +
-      '<span class="site-metric"><span>联络</span><strong>' + n(site.contact_clicks) + '</strong></span>' +
-    '</button>';
+    const className = 'site-overview-row is-clickable' + (empty ? ' zero' : '') + (active ? ' active' : '');
+    return '<div class="' + className + '" data-visitor-site="' + escapeHtml(site.site_id || '') + '" role="button" tabindex="0">' +
+      '<div class="site-overview-cell" title="' + escapeHtml(site.site_id || '-') + '">' + escapeHtml(site.site_id || '-') + '</div>' +
+      '<div class="site-overview-cell">' + n(site.uv) + '</div>' +
+      '<div class="site-overview-cell">' + n(site.pv) + '</div>' +
+      '<div class="site-overview-cell">' + escapeHtml(seconds(site.median_dwell_ms)) + '</div>' +
+      '<div class="site-overview-cell">' + n(site.contact_clicks) + '</div>' +
+    '</div>';
   }).join('');
+  return '<div class="site-overview-table" role="table" aria-label="站点总览">' +
+    '<div class="site-overview-row site-overview-head" role="row">' +
+      '<div class="site-overview-cell" role="columnheader">站点</div>' +
+      '<div class="site-overview-cell" role="columnheader">UV</div>' +
+      '<div class="site-overview-cell" role="columnheader">PV</div>' +
+      '<div class="site-overview-cell" role="columnheader">停留</div>' +
+      '<div class="site-overview-cell" role="columnheader">联络</div>' +
+    '</div>' + rows + '</div>';
 }
 
 function siteDetailHtml(site, rows) {
@@ -1455,11 +1573,27 @@ $('syncGsc').addEventListener('click', async () => {
     $('error').style.display = 'block';
   }
 });
-$('days').addEventListener('change', () => { load(); loadVisitors(); });
+$('days').addEventListener('change', () => { syncRangeTabs(); load(); loadVisitors(); });
+$('visitorRangeTabs').addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-range]');
+  if (!button) return;
+  $('days').value = button.dataset.range || '7';
+  syncRangeTabs();
+  load();
+  loadVisitors();
+});
 $('siteOverview').addEventListener('click', (event) => {
-  const card = event.target.closest('[data-visitor-site]');
-  if (!card) return;
-  selectedVisitorSite = card.dataset.visitorSite || '';
+  const rowEl = event.target.closest('[data-visitor-site]');
+  if (!rowEl) return;
+  selectedVisitorSite = rowEl.dataset.visitorSite || '';
+  loadVisitors();
+});
+$('siteOverview').addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  const rowEl = event.target.closest('[data-visitor-site]');
+  if (!rowEl) return;
+  event.preventDefault();
+  selectedVisitorSite = rowEl.dataset.visitorSite || '';
   loadVisitors();
 });
 $('siteDetail').addEventListener('click', (event) => {
@@ -1487,6 +1621,7 @@ $('pageTable').addEventListener('click', (event) => {
   load();
 });
 $('key').value = localStorage.getItem('nice_dashboard_key') || '';
+syncRangeTabs();
 load();
 loadControl();
 loadVisitors();
