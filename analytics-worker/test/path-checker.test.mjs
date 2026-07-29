@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -66,4 +67,28 @@ test('path checker fingerprints are stable and compact', () => {
   assert.equal(one, two);
   assert.notEqual(one, three);
   assert.match(one, /^[0-9a-f]{8}$/);
+});
+
+test('path checker test hooks do not send dashboard self-check email', () => {
+  const source = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
+  const wrangler = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
+  const previewCronBlock = source.slice(
+    source.indexOf('cron === PATH_CHECK_PREVIEW_TEST_EMAIL_CRON'),
+    source.indexOf('cron === PATH_CHECK_CRON')
+  );
+  assert.match(previewCronBlock, /sendPathCheckTestAlert\(env\)/);
+  assert.doesNotMatch(previewCronBlock, /sendManualTestAlert\(env\)/);
+
+  const monthlyFunction = source.slice(
+    source.indexOf('async function sendMonthlyAlertChannelSelfCheck'),
+    source.indexOf('export function collectAlertItems')
+  );
+  assert.doesNotMatch(monthlyFunction, /sendAlertEmail\(/);
+  assert.match(monthlyFunction, /no_email: true/);
+  assert.match(source, /pathCheckAlertsEnabled\(env\)/);
+  assert.match(source, /dashboardAlertsEnabled\(env\)/);
+  assert.match(wrangler, /PATH_CHECK_ALERTS_ENABLED = "1"/);
+  assert.match(wrangler, /DASHBOARD_ALERTS_ENABLED = "1"/);
+  assert.match(wrangler, /\[env\.preview\.vars\][\s\S]*PATH_CHECK_ALERTS_ENABLED = "0"/);
+  assert.match(wrangler, /\[env\.preview\.vars\][\s\S]*DASHBOARD_ALERTS_ENABLED = "0"/);
 });

@@ -960,20 +960,24 @@ async function runScheduledTasks(event, env) {
 
   if (isPreviewEnv(env) && cron === PATH_CHECK_PREVIEW_TEST_EMAIL_CRON) {
     try {
-      await sendManualTestAlert(env);
+      await sendPathCheckTestAlert(env);
     } catch (e) {
       errors.push(`path-check-test-email:${e.message}`);
     }
+    return { ok: errors.length === 0, errors };
   }
 
   if (cron === PATH_CHECK_CRON || (isPreviewEnv(env) && cron === PATH_CHECK_PREVIEW_INJECT_CRON)) {
     try {
       await runPathChecks(env, cron, {
-        notify: !isPreviewEnv(env),
+        notify: pathCheckAlertsEnabled(env),
         extraTargets: cron === PATH_CHECK_PREVIEW_INJECT_CRON ? [pathCheckInjectedFailure()] : []
       });
     } catch (e) {
       errors.push(`path-checks:${e.message}`);
+    }
+    if (isPreviewEnv(env) && cron === PATH_CHECK_PREVIEW_INJECT_CRON) {
+      return { ok: errors.length === 0, errors };
     }
   }
 
@@ -991,7 +995,7 @@ async function runScheduledTasks(event, env) {
     }
   }
   try {
-    await evaluateDashboardAlerts(env, cron);
+    await evaluateDashboardAlerts(env, cron, { notify: dashboardAlertsEnabled(env) });
   } catch (e) {
     errors.push(`alerts:${e.message}`);
   }
@@ -1985,6 +1989,22 @@ async function sendPathCheckAlert(env, candidate, reason, now) {
   return sendAlertEmail(config, subject, text);
 }
 
+async function sendPathCheckTestAlert(env) {
+  const config = getAlertConfig(env);
+  const prefix = env.ALERT_SUBJECT_PREFIX || '';
+  const subject = `${prefix}[Nice Path Check] TEST: alert channel`;
+  const text = [
+    'Nice customer path checker test email.',
+    '',
+    'This message verifies the Resend alert channel for customer path checks.',
+    'It is not a dashboard self-check and it is not a recovery/green report.',
+    '',
+    `Time: ${new Date().toISOString()}`
+  ].join('\n');
+  const result = await sendAlertEmail(config, subject, text);
+  return { sent: true, to: config.to, result };
+}
+
 async function getPathCheckStatus(env) {
   await ensurePathCheckTables(env);
   const heartbeat = await first(env.DB, `
@@ -2028,6 +2048,14 @@ function randomId() {
 function isPreviewEnv(env) {
   return String(env.ALERT_SUBJECT_PREFIX || '').includes('[TEST]')
     || String(env.DASHBOARD_ORIGIN || '').includes('db-t0705-12');
+}
+
+function pathCheckAlertsEnabled(env) {
+  return String(env.PATH_CHECK_ALERTS_ENABLED || '') === '1';
+}
+
+function dashboardAlertsEnabled(env) {
+  return String(env.DASHBOARD_ALERTS_ENABLED || '') === '1';
 }
 
 const PROBE_TARGETS = [
@@ -2565,7 +2593,7 @@ async function ensureAlertSelfCheckTable(env) {
   `).run();
 }
 
-async function evaluateDashboardAlerts(env, reason = 'cron') {
+async function evaluateDashboardAlerts(env, reason = 'cron', options = {}) {
   await ensureAlertTable(env);
   await ensureAlertSendLogTable(env);
   const [backups, deployments, probes] = await Promise.all([
@@ -2584,7 +2612,7 @@ async function evaluateDashboardAlerts(env, reason = 'cron') {
   let sendLock = null;
   let alert = null;
 
-  if (shouldNotify) {
+  if (shouldNotify && options.notify !== false) {
     sendLock = await claimAlertSend(env, {
       key,
       status,
@@ -2611,6 +2639,7 @@ async function evaluateDashboardAlerts(env, reason = 'cron') {
     status,
     previous_status: previous?.status || null,
     sent: !!alert?.ok,
+    notify_enabled: options.notify !== false,
     alert,
     red_items: redItems,
     send_lock: sendLock

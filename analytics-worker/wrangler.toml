@@ -41,6 +41,8 @@ WAN_ALERT_EMAIL = "aboutokinawa@gmail.com"
 ALERT_EMAIL_ALLOWLIST = "aboutokinawa@gmail.com"
 ALERT_FROM_EMAIL = "Nice Okinawa Inquiry <noreply@nice.okinawa>"
 ALERT_SUBJECT_PREFIX = ""
+PATH_CHECK_ALERTS_ENABLED = "1"
+DASHBOARD_ALERTS_ENABLED = "1"
 # Monthly alert-channel self-check records status only; green runs do not send email.
 ALERT_CHANNEL_SELF_CHECK_EMAIL = "aboutokinawa@gmail.com"
 
@@ -84,5 +86,7 @@ WAN_ALERT_EMAIL = "aboutokinawa@gmail.com"
 ALERT_EMAIL_ALLOWLIST = "aboutokinawa@gmail.com"
 ALERT_FROM_EMAIL = "Nice Okinawa Inquiry <noreply@nice.okinawa>"
 ALERT_SUBJECT_PREFIX = "[TEST] "
+PATH_CHECK_ALERTS_ENABLED = "0"
+DASHBOARD_ALERTS_ENABLED = "0"
 # Preview uses the same recipient with [TEST] subjects.
 ALERT_CHANNEL_SELF_CHECK_EMAIL = "aboutokinawa@gmail.com"
