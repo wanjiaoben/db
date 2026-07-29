@@ -1,5 +1,7 @@
 # db.nice.okinawa Progress
 
+M0729-11 adds the draft customer path checker for analytics Worker preview: path_check_* D1 tables, 15-minute scheduled checks with status + content/resource contracts, heartbeat rows, red-only Resend alert debounce, and monthly green self-check email suppression.
+
 M0728-17r2 changes the visitor dashboard into a three-layer view: 12-site overview, per-site aggregates, and collapsed compact visitor rows with global 1/7/30/180-day ranges.
 
 M0728-12 changes the visitor dashboard card to render one collapsed row per site_id plus visitor_id, with four mobile-first columns and detailed metrics moved into row expansion.

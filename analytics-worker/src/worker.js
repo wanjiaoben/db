@@ -1,6 +1,9 @@
 const COLLECT_ORIGIN = 'https://translation.nice.okinawa';
 const DASHBOARD_ORIGIN = 'https://db.nice.okinawa';
 const MONTHLY_ALERT_SELF_CHECK_CRON = '0 0 1 * *';
+const PATH_CHECK_CRON = '*/15 * * * *';
+const PATH_CHECK_PREVIEW_INJECT_CRON = '11 29 7 29 *';
+const PATH_CHECK_PREVIEW_TEST_EMAIL_CRON = '12 29 7 29 *';
 const VISITOR_EVENT_PATH = '/events';
 const VISITOR_DASHBOARD_PATH = '/visitors';
 const VISITOR_EVENT_RATE_LIMIT_PER_MINUTE = 30;
@@ -22,6 +25,55 @@ const VISITOR_EVENT_SITES = Object.freeze({
   progress: 'progress.nice.okinawa',
   kiso: 'kiso.nice.okinawa'
 });
+const PATH_CHECK_ALERT_WINDOW_MS = 6 * 60 * 60 * 1000;
+const PATH_CHECK_TIMEOUT_MS = 12000;
+const PATH_CHECK_FAILURE_DEBOUNCE = 3;
+const PATH_CHECK_FAST_FAILURE_DEBOUNCE = 2;
+const PATH_CHECK_BASELINES = Object.freeze([
+  pageCheck('site-snorkel-home', 'snorkel home', 'https://snorkel.nice.okinawa/', 'Okinawa Snorkeling Tours'),
+  pageCheck('site-fishing-home', 'fishing home', 'https://fishing.nice.okinawa/', 'Okinawa Fishing Charter'),
+  pageCheck('site-rental-home', 'rental home', 'https://rental.nice.okinawa/', 'Okinawa Rental'),
+  pageCheck('site-japanusedcars-home', 'japanusedcars home', 'https://japanusedcars.nice.okinawa/', 'Used Cars Okinawa Japan'),
+  pageCheck('site-golf-home', 'golf home', 'https://golf.nice.okinawa/', 'Okinawa Golf Guide'),
+  pageCheck('site-activity-home', 'activity home', 'https://activity.nice.okinawa/', '冲绳体验预约'),
+  pageCheck('site-translation-home', 'translation home', 'https://translation.nice.okinawa/', '中日英商务翻译'),
+  pageCheck('site-ev-home', 'ev home', 'https://ev.nice.okinawa/', 'EV SEA'),
+  pageCheck('site-nice-okinawa-home', 'nice.okinawa home', 'https://nice.okinawa/', 'Nice Okinawa'),
+  pageCheck('site-bjt-home', 'bjt home', 'https://bjt.nice.okinawa/', 'BJT商务日语能力考试'),
+  pageCheck('site-progress-home', 'progress home', 'https://progress.nice.okinawa/', 'progress · nice.okinawa'),
+  pageCheck('site-kiso-home', 'kiso home', 'https://kiso.nice.okinawa/', '从零开始学日语'),
+  {
+    ...pageCheck('bjt-mogi-trial', 'BJT mogi free trial', 'https://bjt.nice.okinawa/mogi/trial/', '体验版固定开放 9 题'),
+    resources: [
+      resourceCheck('https://bjt.nice.okinawa/assets/js/bjt-ui-i18n.js', [200])
+    ]
+  },
+  {
+    ...pageCheck('bjt-patto-bjt-trial', 'BJT PATTO free trial', 'https://bjt.nice.okinawa/patto/bjt/trial/', 'TRIAL_FIXED_WORD_IDS'),
+    resources: [
+      resourceCheck('https://bjt.nice.okinawa/audio/voca/bank01.js', [200])
+    ]
+  },
+  {
+    ...pageCheck('bjt-patto-keigo-trial', 'BJT keigo free trial', 'https://bjt.nice.okinawa/patto/keigo/trial/', 'BJT Pro 免费体验 · 固定 8 题'),
+    resources: [
+      resourceCheck('https://bjt.nice.okinawa/patto/keigo/keigo_a_bank.js', [200])
+    ]
+  },
+  pageCheck('bjt-buy', 'BJT Pro buy page', 'https://bjt.nice.okinawa/pro/buy/', 'BJT Pro 购买页'),
+  pageCheck('bjt-login', 'BJT login page', 'https://bjt.nice.okinawa/pro', '邮箱登录 / メールでログイン'),
+  pageCheck('bjt-score-check', 'BJT score check page', 'https://bjt.nice.okinawa/score-check/', '80'),
+  jsonCheck('bjt-member-missing-token', 'BJT member missing token', 'https://bjt-worker.gerheidicn.workers.dev/api/member', [401], ['error'], { error: 'Missing token' }, { serviceBinding: 'BJT_API' }),
+  jsonCheck('bjt-questions-free', 'BJT free question API', 'https://bjt-worker.gerheidicn.workers.dev/api/questions?scope=mogi&set=04', [200], ['ok', 'access', 'questions', 'lockedCount'], { ok: true, access: 'free' }, { serviceBinding: 'BJT_API' }),
+  jsonCheck('bjt-check-locked', 'BJT check locked question', 'https://bjt-worker.gerheidicn.workers.dev/api/check', [403], ['error'], { error: 'Question locked' }, {
+    method: 'POST',
+    body: { id: 'mogi:01:A:1番', answer: 1, scope: 'mogi', set: '01' },
+    serviceBinding: 'BJT_API'
+  }),
+  jsonCheck('bjt-ebook-catalog', 'BJT ebook catalog', 'https://bjt-worker.gerheidicn.workers.dev/api/ebooks/bjt-taihon', [200], ['id', 'book', 'chapters'], { id: 'bjt-taihon' }, { serviceBinding: 'BJT_API' }),
+  jsonCheck('bjt-ebook-locked-chapter', 'BJT ebook locked chapter', 'https://bjt-worker.gerheidicn.workers.dev/api/ebooks/bjt-taihon/chapters/ch1', [401], ['error'], {}, { serviceBinding: 'BJT_API' }),
+  jsonCheck('bjt-video-logs-locked', 'BJT video logs locked', 'https://bjt-worker.gerheidicn.workers.dev/api/video/logs', [401], ['error'], { error: 'Missing token' }, { serviceBinding: 'BJT_API' })
+]);
 const BOT_LIKE_CITIES = new Set([
   'the dalles',
   'boardman',
@@ -101,6 +153,27 @@ export default {
         return json({ ok: false, error: 'unauthorized' }, request, 403);
       }
       const result = await runProbes(env, 'manual');
+      return json({ ok: true, ...result }, request);
+    }
+
+    if (url.pathname === '/path-checks/run' && request.method === 'POST') {
+      if (!requireDashboard(request, env)) {
+        return json({ ok: false, error: 'unauthorized' }, request, 403);
+      }
+      const injectFailure = url.searchParams.get('inject_failure') === '1';
+      const notify = url.searchParams.get('notify') === '1';
+      const result = await runPathChecks(env, injectFailure ? 'manual-injected-failure' : 'manual', {
+        notify,
+        extraTargets: injectFailure ? [pathCheckInjectedFailure()] : []
+      });
+      return json({ ok: true, ...result }, request);
+    }
+
+    if (url.pathname === '/path-checks/status' && request.method === 'GET') {
+      if (!requireDashboard(request, env)) {
+        return json({ ok: false, error: 'unauthorized' }, request, 403);
+      }
+      const result = await getPathCheckStatus(env);
       return json({ ok: true, ...result }, request);
     }
 
@@ -885,6 +958,25 @@ async function runScheduledTasks(event, env) {
     }
   }
 
+  if (isPreviewEnv(env) && cron === PATH_CHECK_PREVIEW_TEST_EMAIL_CRON) {
+    try {
+      await sendManualTestAlert(env);
+    } catch (e) {
+      errors.push(`path-check-test-email:${e.message}`);
+    }
+  }
+
+  if (cron === PATH_CHECK_CRON || (isPreviewEnv(env) && cron === PATH_CHECK_PREVIEW_INJECT_CRON)) {
+    try {
+      await runPathChecks(env, cron, {
+        notify: !isPreviewEnv(env),
+        extraTargets: cron === PATH_CHECK_PREVIEW_INJECT_CRON ? [pathCheckInjectedFailure()] : []
+      });
+    } catch (e) {
+      errors.push(`path-checks:${e.message}`);
+    }
+  }
+
   try {
     await runProbes(env, cron);
   } catch (e) {
@@ -1374,6 +1466,568 @@ function parsePage(siteUrl, page) {
       return { site: '', path: '/' };
     }
   }
+}
+
+function pageCheck(key, label, url, contains, options = {}) {
+  return {
+    key,
+    label,
+    url,
+    method: options.method || 'GET',
+    okStatuses: options.okStatuses || [200],
+    contract: { type: 'text_contains', contains },
+    critical: options.critical !== false,
+    serviceBinding: options.serviceBinding || ''
+  };
+}
+
+function resourceCheck(url, okStatuses = [200]) {
+  return { url, okStatuses };
+}
+
+function jsonCheck(key, label, url, okStatuses, fields, equals = {}, options = {}) {
+  return {
+    key,
+    label,
+    url,
+    method: options.method || 'GET',
+    body: options.body || null,
+    okStatuses,
+    contract: { type: 'json_fields', fields, equals },
+    critical: options.critical !== false,
+    serviceBinding: options.serviceBinding || ''
+  };
+}
+
+function pathCheckInjectedFailure() {
+  return pageCheck(
+    'm0729-11-injected-failure',
+    'M0729-11 injected failure',
+    'https://bjt.nice.okinawa/mogi/trial/',
+    'M0729-11_THIS_STRING_MUST_NOT_EXIST',
+    { critical: true }
+  );
+}
+
+async function ensurePathCheckTables(env) {
+  const statements = [
+    env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS path_check_runs (
+        run_id TEXT PRIMARY KEY,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        trigger TEXT NOT NULL,
+        ok INTEGER NOT NULL DEFAULT 0,
+        total INTEGER NOT NULL DEFAULT 0,
+        failed INTEGER NOT NULL DEFAULT 0,
+        duration_ms INTEGER,
+        worker_version TEXT,
+        summary_json TEXT
+      )
+    `),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_path_check_runs_started_at ON path_check_runs(started_at)'),
+    env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS path_check_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT NOT NULL,
+        check_key TEXT NOT NULL,
+        label TEXT NOT NULL,
+        url TEXT NOT NULL,
+        ok INTEGER NOT NULL DEFAULT 0,
+        status INTEGER,
+        expected_status TEXT,
+        contract_ok INTEGER NOT NULL DEFAULT 0,
+        contract_type TEXT,
+        duration_ms INTEGER,
+        error TEXT,
+        fingerprint TEXT NOT NULL DEFAULT '',
+        excerpt TEXT,
+        checked_at TEXT NOT NULL,
+        FOREIGN KEY (run_id) REFERENCES path_check_runs(run_id)
+      )
+    `),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_path_check_results_run_id ON path_check_results(run_id)'),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_path_check_results_key_checked ON path_check_results(check_key, checked_at)'),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_path_check_results_ok_checked ON path_check_results(ok, checked_at)'),
+    env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS path_check_state (
+        check_key TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        url TEXT NOT NULL,
+        status TEXT NOT NULL,
+        fingerprint TEXT NOT NULL DEFAULT '',
+        consecutive_failures INTEGER NOT NULL DEFAULT 0,
+        last_ok_at TEXT,
+        last_fail_at TEXT,
+        last_alert_at TEXT,
+        recovered_at TEXT,
+        detail_json TEXT,
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      )
+    `),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_path_check_state_status_updated ON path_check_state(status, updated_at)'),
+    env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS path_check_heartbeat (
+        name TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        finished_at TEXT NOT NULL,
+        status TEXT NOT NULL,
+        ok INTEGER NOT NULL DEFAULT 0,
+        total INTEGER NOT NULL DEFAULT 0,
+        failed INTEGER NOT NULL DEFAULT 0,
+        summary_json TEXT,
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      )
+    `)
+  ];
+  await env.DB.batch(statements);
+  await ensureAlertSendLogTable(env);
+}
+
+async function runPathChecks(env, reason = 'manual', options = {}) {
+  await ensurePathCheckTables(env);
+  const startedAt = new Date();
+  const runId = `path-${startedAt.toISOString()}-${randomId().slice(0, 8)}`;
+  const targets = [...PATH_CHECK_BASELINES, ...(options.extraTargets || [])];
+  await env.DB.prepare(`
+    INSERT INTO path_check_runs (run_id, started_at, trigger, worker_version)
+    VALUES (?, ?, ?, ?)
+  `).bind(runId, startedAt.toISOString(), reason, env.WORKER_VERSION || '').run();
+
+  const results = [];
+  for (const target of targets) {
+    results.push(await checkPathTarget(target, env, runId));
+  }
+  const finishedAt = new Date();
+  const failedResults = results.filter((result) => !result.ok);
+  const groupFailure = isFastPathCheckFailure(failedResults, results);
+  const alertCandidates = [];
+  const stateUpdates = [];
+  for (const result of results) {
+    const state = await updatePathCheckState(env, result, finishedAt, groupFailure);
+    stateUpdates.push(state);
+    if (state.should_alert) alertCandidates.push({ result, state });
+  }
+  const alert = options.notify === false
+    ? { sent: false, skipped: true, reason: 'notify_disabled', candidates: alertCandidates.length }
+    : await sendPathCheckAlerts(env, alertCandidates, reason, finishedAt);
+
+  const summary = {
+    reason,
+    ok: failedResults.length === 0,
+    total: results.length,
+    failed: failedResults.length,
+    failed_keys: failedResults.map((item) => item.key),
+    alert
+  };
+  await env.DB.prepare(`
+    UPDATE path_check_runs
+    SET finished_at = ?, ok = ?, total = ?, failed = ?, duration_ms = ?, summary_json = ?
+    WHERE run_id = ?
+  `).bind(
+    finishedAt.toISOString(),
+    failedResults.length === 0 ? 1 : 0,
+    results.length,
+    failedResults.length,
+    finishedAt.getTime() - startedAt.getTime(),
+    JSON.stringify(summary),
+    runId
+  ).run();
+  await env.DB.prepare(`
+    INSERT INTO path_check_heartbeat (
+      name, run_id, started_at, finished_at, status, ok, total, failed, summary_json, updated_at
+    )
+    VALUES ('customer-path-checker', ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(name) DO UPDATE SET
+      run_id = excluded.run_id,
+      started_at = excluded.started_at,
+      finished_at = excluded.finished_at,
+      status = excluded.status,
+      ok = excluded.ok,
+      total = excluded.total,
+      failed = excluded.failed,
+      summary_json = excluded.summary_json,
+      updated_at = excluded.updated_at
+  `).bind(
+    runId,
+    startedAt.toISOString(),
+    finishedAt.toISOString(),
+    failedResults.length === 0 ? 'green' : 'red',
+    failedResults.length === 0 ? 1 : 0,
+    results.length,
+    failedResults.length,
+    JSON.stringify(summary)
+  ).run();
+
+  return {
+    run_id: runId,
+    started_at: startedAt.toISOString(),
+    finished_at: finishedAt.toISOString(),
+    ok: failedResults.length === 0,
+    total: results.length,
+    failed: failedResults.length,
+    results,
+    states: stateUpdates,
+    alert
+  };
+}
+
+async function checkPathTarget(target, env, runId) {
+  const started = Date.now();
+  const checkedAt = new Date().toISOString();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort('timeout'), PATH_CHECK_TIMEOUT_MS);
+  let status = 0;
+  let text = '';
+  let contract = { ok: false, error: 'not_checked' };
+  let resourceResults = [];
+  let error = '';
+  try {
+    const res = await pathFetch(target, env, controller.signal);
+    status = res.status;
+    text = await res.text();
+    contract = checkPathContract(target.contract, text);
+    if (contract.ok && Array.isArray(target.resources) && target.resources.length) {
+      resourceResults = await Promise.all(target.resources.map((resource) => checkPathResource(resource, env)));
+      const bad = resourceResults.find((item) => !item.ok);
+      if (bad) contract = { ok: false, error: `resource_failed:${bad.url}:${bad.status || bad.error}` };
+    }
+  } catch (e) {
+    error = clean(e.message || String(e), 300);
+  } finally {
+    clearTimeout(timer);
+  }
+  const statusOk = (target.okStatuses || [200]).includes(status);
+  const ok = statusOk && contract.ok && !error;
+  const failureText = ok ? '' : [
+    `status:${status || 'error'} expected:${(target.okStatuses || [200]).join('/')}`,
+    `contract:${contract.ok ? 'ok' : contract.error}`,
+    error ? `error:${error}` : ''
+  ].filter(Boolean).join('|');
+  const result = {
+    key: target.key,
+    label: target.label,
+    url: target.url,
+    ok,
+    status,
+    expected_status: (target.okStatuses || [200]).join(','),
+    contract_ok: !!contract.ok,
+    contract_type: target.contract?.type || '',
+    duration_ms: Date.now() - started,
+    error: clean(error || contract.error || '', 300),
+    fingerprint: ok ? '' : stableFingerprint(`${target.key}|${failureText}`),
+    excerpt: clean(text.replace(/\s+/g, ' ').trim(), 240),
+    checked_at: checkedAt,
+    critical: target.critical !== false,
+    resources: resourceResults
+  };
+  await env.DB.prepare(`
+    INSERT INTO path_check_results (
+      run_id, check_key, label, url, ok, status, expected_status, contract_ok,
+      contract_type, duration_ms, error, fingerprint, excerpt, checked_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    runId,
+    result.key,
+    result.label,
+    result.url,
+    result.ok ? 1 : 0,
+    result.status,
+    result.expected_status,
+    result.contract_ok ? 1 : 0,
+    result.contract_type,
+    result.duration_ms,
+    result.error,
+    result.fingerprint,
+    result.excerpt,
+    result.checked_at
+  ).run();
+  return result;
+}
+
+async function pathFetch(target, env, signal) {
+  const fetcher = target.serviceBinding ? env[target.serviceBinding] : null;
+  const init = {
+    method: target.method || 'GET',
+    headers: {
+      accept: 'application/json,text/html,text/plain,*/*',
+      'user-agent': 'nice-customer-path-checker/1.0'
+    },
+    signal,
+    cf: { cacheTtl: 0, cacheEverything: false }
+  };
+  if (target.body) {
+    init.headers['content-type'] = 'application/json';
+    init.body = JSON.stringify(target.body);
+  }
+  const request = new Request(target.url, init);
+  return fetcher ? fetcher.fetch(request) : fetch(request);
+}
+
+async function checkPathResource(resource, env) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort('timeout'), PATH_CHECK_TIMEOUT_MS);
+  const started = Date.now();
+  try {
+    const res = await pathFetch({
+      url: resource.url,
+      method: 'GET',
+      okStatuses: resource.okStatuses || [200]
+    }, env, controller.signal);
+    await res.body?.cancel?.();
+    const ok = (resource.okStatuses || [200]).includes(res.status);
+    return { url: resource.url, ok, status: res.status, duration_ms: Date.now() - started };
+  } catch (e) {
+    return {
+      url: resource.url,
+      ok: false,
+      status: 0,
+      duration_ms: Date.now() - started,
+      error: clean(e.message || String(e), 200)
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function checkPathContract(contract, text) {
+  if (!contract) return { ok: true };
+  if (contract.type === 'text_contains') {
+    const needle = String(contract.contains || '');
+    return text.includes(needle)
+      ? { ok: true }
+      : { ok: false, error: `missing_text:${needle.slice(0, 80)}` };
+  }
+  if (contract.type === 'json_fields') {
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      return { ok: false, error: 'bad_json' };
+    }
+    for (const field of contract.fields || []) {
+      if (!hasJsonPath(data, field)) return { ok: false, error: `missing_field:${field}` };
+    }
+    for (const [field, expected] of Object.entries(contract.equals || {})) {
+      const actual = getJsonPath(data, field);
+      if (actual !== expected) return { ok: false, error: `field_mismatch:${field}` };
+    }
+    return { ok: true };
+  }
+  return { ok: false, error: `unknown_contract:${contract.type}` };
+}
+
+function hasJsonPath(data, path) {
+  return getJsonPath(data, path) !== undefined;
+}
+
+function getJsonPath(data, path) {
+  return String(path || '').split('.').reduce((current, part) => {
+    if (current === undefined || current === null) return undefined;
+    return current[part];
+  }, data);
+}
+
+function isFastPathCheckFailure(failedResults, results) {
+  if (!failedResults.length) return false;
+  if (failedResults.length >= 2) return true;
+  const only = failedResults[0];
+  if (!only) return false;
+  if (only.status >= 500 || only.status === 0) return true;
+  const failedRatio = results.length ? failedResults.length / results.length : 0;
+  return failedRatio >= 0.25;
+}
+
+async function updatePathCheckState(env, result, now, groupFailure) {
+  const previous = await first(env.DB, `
+    SELECT check_key, status, fingerprint, consecutive_failures, last_alert_at
+    FROM path_check_state
+    WHERE check_key = ?
+  `, [result.key]);
+  const nowIso = now.toISOString();
+  let consecutiveFailures = 0;
+  let status = 'green';
+  let shouldAlert = false;
+  const threshold = groupFailure ? PATH_CHECK_FAST_FAILURE_DEBOUNCE : PATH_CHECK_FAILURE_DEBOUNCE;
+  if (!result.ok) {
+    status = 'red';
+    consecutiveFailures = previous?.fingerprint === result.fingerprint
+      ? Number(previous.consecutive_failures || 0) + 1
+      : 1;
+    const alreadyAlertedForFingerprint = previous?.fingerprint === result.fingerprint && previous?.last_alert_at;
+    shouldAlert = result.critical !== false
+      && consecutiveFailures >= threshold
+      && !alreadyAlertedForFingerprint;
+    await env.DB.prepare(`
+      INSERT INTO path_check_state (
+        check_key, label, url, status, fingerprint, consecutive_failures,
+        last_ok_at, last_fail_at, last_alert_at, recovered_at, detail_json, updated_at
+      )
+      VALUES (?, ?, ?, 'red', ?, ?, NULL, ?, NULL, NULL, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      ON CONFLICT(check_key) DO UPDATE SET
+        label = excluded.label,
+        url = excluded.url,
+        status = excluded.status,
+        fingerprint = excluded.fingerprint,
+        consecutive_failures = excluded.consecutive_failures,
+        last_fail_at = excluded.last_fail_at,
+        detail_json = excluded.detail_json,
+        updated_at = excluded.updated_at
+    `).bind(
+      result.key,
+      result.label,
+      result.url,
+      result.fingerprint,
+      consecutiveFailures,
+      nowIso,
+      JSON.stringify({ result, threshold, group_failure: groupFailure })
+    ).run();
+  } else {
+    const recovered = previous?.status === 'red';
+    await env.DB.prepare(`
+      INSERT INTO path_check_state (
+        check_key, label, url, status, fingerprint, consecutive_failures,
+        last_ok_at, last_fail_at, last_alert_at, recovered_at, detail_json, updated_at
+      )
+      VALUES (?, ?, ?, 'green', '', 0, ?, NULL, NULL, NULL, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      ON CONFLICT(check_key) DO UPDATE SET
+        label = excluded.label,
+        url = excluded.url,
+        status = excluded.status,
+        fingerprint = excluded.fingerprint,
+        consecutive_failures = 0,
+        last_ok_at = excluded.last_ok_at,
+        recovered_at = CASE WHEN path_check_state.status = 'red' THEN excluded.last_ok_at ELSE path_check_state.recovered_at END,
+        detail_json = excluded.detail_json,
+        updated_at = excluded.updated_at
+    `).bind(
+      result.key,
+      result.label,
+      result.url,
+      nowIso,
+      JSON.stringify({ result, recovered })
+    ).run();
+  }
+  return {
+    check_key: result.key,
+    status,
+    fingerprint: result.fingerprint,
+    consecutive_failures: consecutiveFailures,
+    threshold,
+    should_alert: shouldAlert
+  };
+}
+
+async function sendPathCheckAlerts(env, candidates, reason, now) {
+  if (!candidates.length) return { sent: false, candidates: 0 };
+  const sent = [];
+  const skipped = [];
+  for (const candidate of candidates) {
+    const { result, state } = candidate;
+    const lock = await claimAlertSend(env, {
+      key: `path-check:${result.key}`,
+      status: 'red',
+      fingerprint: result.fingerprint,
+      reason,
+      detail: JSON.stringify({ result, state })
+    }, PATH_CHECK_ALERT_WINDOW_MS);
+    if (!lock.acquired) {
+      skipped.push({ key: result.key, reason: 'dedup_window', fingerprint: result.fingerprint });
+      continue;
+    }
+    const alert = await trySendPathCheckAlert(env, candidate, reason, now);
+    await finishAlertSend(env, lock.id, alert);
+    if (alert.ok) {
+      await env.DB.prepare(`
+        UPDATE path_check_state
+        SET last_alert_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE check_key = ?
+      `).bind(result.key).run();
+    }
+    sent.push({ key: result.key, ok: alert.ok, error: alert.error || '' });
+  }
+  return { sent: sent.some((item) => item.ok), candidates: candidates.length, sent_items: sent, skipped };
+}
+
+async function trySendPathCheckAlert(env, candidate, reason, now) {
+  try {
+    const result = await sendPathCheckAlert(env, candidate, reason, now);
+    return { ok: true, result };
+  } catch (error) {
+    return { ok: false, error: clean(error.message || String(error), 300) };
+  }
+}
+
+async function sendPathCheckAlert(env, candidate, reason, now) {
+  const config = getAlertConfig(env);
+  const prefix = env.ALERT_SUBJECT_PREFIX || '';
+  const { result, state } = candidate;
+  const subject = `${prefix}[Nice Path Check] ALERT: ${result.label}`;
+  const text = [
+    'Nice customer path check found a failing path.',
+    '',
+    `Path: ${result.label}`,
+    `URL: ${result.url}`,
+    `Status: ${result.status}`,
+    `Expected status: ${result.expected_status}`,
+    `Contract: ${result.contract_type}`,
+    `Contract ok: ${result.contract_ok ? 'yes' : 'no'}`,
+    `Error: ${result.error || '-'}`,
+    `Consecutive failures: ${state.consecutive_failures}/${state.threshold}`,
+    `Fingerprint: ${result.fingerprint}`,
+    `Reason: ${reason}`,
+    `Time: ${now.toISOString()}`,
+    '',
+    `Excerpt: ${result.excerpt || '-'}`
+  ].join('\n');
+  return sendAlertEmail(config, subject, text);
+}
+
+async function getPathCheckStatus(env) {
+  await ensurePathCheckTables(env);
+  const heartbeat = await first(env.DB, `
+    SELECT name, run_id, started_at, finished_at, status, ok, total, failed, summary_json, updated_at
+    FROM path_check_heartbeat
+    WHERE name = 'customer-path-checker'
+  `);
+  const states = await all(env.DB, `
+    SELECT check_key, label, url, status, fingerprint, consecutive_failures,
+           last_ok_at, last_fail_at, last_alert_at, recovered_at, updated_at
+    FROM path_check_state
+    ORDER BY status DESC, label
+  `);
+  const recentRuns = await all(env.DB, `
+    SELECT run_id, started_at, finished_at, trigger, ok, total, failed, duration_ms
+    FROM path_check_runs
+    ORDER BY started_at DESC
+    LIMIT 5
+  `);
+  return { heartbeat, states, recent_runs: recentRuns, baseline_count: PATH_CHECK_BASELINES.length };
+}
+
+function stableFingerprint(value) {
+  let hash = 0x811c9dc5;
+  const input = String(value || '');
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function randomId() {
+  try {
+    return crypto.randomUUID();
+  } catch (e) {
+    return `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+  }
+}
+
+function isPreviewEnv(env) {
+  return String(env.ALERT_SUBJECT_PREFIX || '').includes('[TEST]')
+    || String(env.DASHBOARD_ORIGIN || '').includes('db-t0705-12');
 }
 
 const PROBE_TARGETS = [
@@ -1924,7 +2578,8 @@ async function evaluateDashboardAlerts(env, reason = 'cron') {
   const fingerprint = redItems.map((item) => `${item.type}:${item.key}`).sort().join('|');
   const key = 'dashboard-control';
   const previous = await first(env.DB, 'SELECT key, status, fingerprint FROM alert_state WHERE key = ?', [key]);
-  const shouldNotify = !previous ? status === 'red' : previous.status !== status;
+  const shouldNotify = status === 'red'
+    && (!previous || previous.status !== status || previous.fingerprint !== fingerprint);
   const generatedAt = new Date().toISOString();
   let sendLock = null;
   let alert = null;
@@ -1997,54 +2652,28 @@ async function sendMonthlyAlertChannelSelfCheck(env, scheduledAt, reason = MONTH
   const prefix = env.ALERT_SUBJECT_PREFIX || '';
   const subject = `${prefix}[Nice Dashboard] 通道自检 ${monthKey}`;
   const scheduledIso = scheduledAt.toISOString();
-  const text = [
-    'Nice dashboard alert-channel monthly self-check.',
-    '',
-    '收到这封邮件 = 报警通道正常。',
-    '若某月 1 号 09:00 JST 没收到这封邮件，请排查报警系统本身。',
-    '',
-    `Month: ${monthKey}`,
-    `Scheduled at: ${scheduledIso}`,
-    `Cron: ${reason}`,
-    `Recipient: ${recipient}`
-  ].join('\n');
-
-  try {
-    const config = getAlertConfig(env, recipient);
-    const result = await sendAlertEmail(config, subject, text);
-    await env.DB.prepare(`
-      INSERT INTO alert_channel_self_checks (
-        month_key, scheduled_at, sent_at, ok, recipient, subject, error, result, updated_at
-      )
-      VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 1, ?, ?, '', ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-      ON CONFLICT(month_key) DO UPDATE SET
-        scheduled_at = excluded.scheduled_at,
-        sent_at = excluded.sent_at,
-        ok = excluded.ok,
-        recipient = excluded.recipient,
-        subject = excluded.subject,
-        error = excluded.error,
-        result = excluded.result,
-        updated_at = excluded.updated_at
-    `).bind(monthKey, scheduledIso, config.to, subject, JSON.stringify(result)).run();
-    return { sent: true, month_key: monthKey, to: config.to, result };
-  } catch (error) {
-    const message = clean(error.message || String(error), 300);
-    await env.DB.prepare(`
-      INSERT INTO alert_channel_self_checks (
-        month_key, scheduled_at, sent_at, ok, recipient, subject, error, result, updated_at
-      )
-      VALUES (?, ?, NULL, 0, ?, ?, ?, '', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-      ON CONFLICT(month_key) DO UPDATE SET
-        scheduled_at = excluded.scheduled_at,
-        ok = excluded.ok,
-        recipient = excluded.recipient,
-        subject = excluded.subject,
-        error = excluded.error,
-        updated_at = excluded.updated_at
-    `).bind(monthKey, scheduledIso, recipient, subject, message).run();
-    throw error;
-  }
+  await env.DB.prepare(`
+    INSERT INTO alert_channel_self_checks (
+      month_key, scheduled_at, sent_at, ok, recipient, subject, error, result, updated_at
+    )
+    VALUES (?, ?, NULL, 1, ?, ?, '', ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(month_key) DO UPDATE SET
+      scheduled_at = excluded.scheduled_at,
+      sent_at = excluded.sent_at,
+      ok = excluded.ok,
+      recipient = excluded.recipient,
+      subject = excluded.subject,
+      error = excluded.error,
+      result = excluded.result,
+      updated_at = excluded.updated_at
+  `).bind(
+    monthKey,
+    scheduledIso,
+    recipient,
+    subject,
+    JSON.stringify({ no_email: true, reason: 'green self-check disabled by Wan 2026-07-29' })
+  ).run();
+  return { sent: false, recorded: true, month_key: monthKey, to: recipient };
 }
 
 export function collectAlertItems(backups, deployments, probes) {
@@ -2105,8 +2734,8 @@ function d1ChangedRows(result) {
   return Number(result?.meta?.changes || result?.changes || 0);
 }
 
-async function claimAlertSend(env, { key, status, fingerprint, reason, detail }) {
-  const windowStart = alertSendWindowStart(new Date());
+async function claimAlertSend(env, { key, status, fingerprint, reason, detail }, windowMs) {
+  const windowStart = alertSendWindowStart(new Date(), windowMs);
   const claimed = await env.DB.prepare(`
     INSERT INTO alert_send_log (key, status, fingerprint, window_start, reason, detail)
     VALUES (?, ?, ?, ?, ?, ?)
@@ -2140,8 +2769,7 @@ async function finishAlertSend(env, id, alert) {
   ).run();
 }
 
-function alertSendWindowStart(date) {
-  const windowMs = 5 * 60 * 1000;
+function alertSendWindowStart(date, windowMs = 5 * 60 * 1000) {
   return new Date(Math.floor(date.getTime() / windowMs) * windowMs).toISOString();
 }
 
@@ -2268,4 +2896,10 @@ function jstMonthKey(date) {
   return `${year}-${month}`;
 }
 
-export { BEACON_SCRIPT };
+export {
+  BEACON_SCRIPT,
+  PATH_CHECK_BASELINES,
+  checkPathContract,
+  isFastPathCheckFailure,
+  stableFingerprint
+};
