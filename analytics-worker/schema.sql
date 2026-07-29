@@ -102,6 +102,74 @@ CREATE TABLE IF NOT EXISTS probe_results (
 CREATE INDEX IF NOT EXISTS idx_probe_results_checked_at ON probe_results(checked_at);
 CREATE INDEX IF NOT EXISTS idx_probe_results_target_checked ON probe_results(target, checked_at);
 
+CREATE TABLE IF NOT EXISTS path_check_runs (
+  run_id TEXT PRIMARY KEY,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  trigger TEXT NOT NULL,
+  ok INTEGER NOT NULL DEFAULT 0,
+  total INTEGER NOT NULL DEFAULT 0,
+  failed INTEGER NOT NULL DEFAULT 0,
+  duration_ms INTEGER,
+  worker_version TEXT,
+  summary_json TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_path_check_runs_started_at ON path_check_runs(started_at);
+
+CREATE TABLE IF NOT EXISTS path_check_results (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT NOT NULL,
+  check_key TEXT NOT NULL,
+  label TEXT NOT NULL,
+  url TEXT NOT NULL,
+  ok INTEGER NOT NULL DEFAULT 0,
+  status INTEGER,
+  expected_status TEXT,
+  contract_ok INTEGER NOT NULL DEFAULT 0,
+  contract_type TEXT,
+  duration_ms INTEGER,
+  error TEXT,
+  fingerprint TEXT NOT NULL DEFAULT '',
+  excerpt TEXT,
+  checked_at TEXT NOT NULL,
+  FOREIGN KEY (run_id) REFERENCES path_check_runs(run_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_path_check_results_run_id ON path_check_results(run_id);
+CREATE INDEX IF NOT EXISTS idx_path_check_results_key_checked ON path_check_results(check_key, checked_at);
+CREATE INDEX IF NOT EXISTS idx_path_check_results_ok_checked ON path_check_results(ok, checked_at);
+
+CREATE TABLE IF NOT EXISTS path_check_state (
+  check_key TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  url TEXT NOT NULL,
+  status TEXT NOT NULL,
+  fingerprint TEXT NOT NULL DEFAULT '',
+  consecutive_failures INTEGER NOT NULL DEFAULT 0,
+  last_ok_at TEXT,
+  last_fail_at TEXT,
+  last_alert_at TEXT,
+  recovered_at TEXT,
+  detail_json TEXT,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_path_check_state_status_updated ON path_check_state(status, updated_at);
+
+CREATE TABLE IF NOT EXISTS path_check_heartbeat (
+  name TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT NOT NULL,
+  status TEXT NOT NULL,
+  ok INTEGER NOT NULL DEFAULT 0,
+  total INTEGER NOT NULL DEFAULT 0,
+  failed INTEGER NOT NULL DEFAULT 0,
+  summary_json TEXT,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
 CREATE TABLE IF NOT EXISTS alert_state (
   key TEXT PRIMARY KEY,
   status TEXT NOT NULL,

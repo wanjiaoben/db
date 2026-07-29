@@ -8,7 +8,7 @@ routes = [
 ]
 
 [triggers]
-crons = ["18 * * * *", "0 0 1 * *"]
+crons = ["*/15 * * * *", "18 * * * *", "0 0 1 * *"]
 
 [[d1_databases]]
 binding = "DB"
@@ -35,13 +35,15 @@ service = "nice-analytics"
 ALLOWED_ORIGIN = "https://translation.nice.okinawa"
 DASHBOARD_ORIGIN = "https://db.nice.okinawa"
 GSC_SITE_URLS = "https://translation.nice.okinawa/,https://nice.okinawa/,https://activity.nice.okinawa/,https://golf.nice.okinawa/,https://fishing.nice.okinawa/,https://rental.nice.okinawa/,https://snorkel.nice.okinawa/,https://japanusedcars.nice.okinawa/,https://bjt.nice.okinawa/,https://progress.nice.okinawa/,https://kiso.nice.okinawa/"
-# Alert mail is sent via Resend only on red/green state changes or manual admin tests.
+# Alert mail is sent via Resend only on red states or manual admin tests.
 # Secret required: RESEND_API_KEY.
 WAN_ALERT_EMAIL = "aboutokinawa@gmail.com"
 ALERT_EMAIL_ALLOWLIST = "aboutokinawa@gmail.com"
 ALERT_FROM_EMAIL = "Nice Okinawa Inquiry <noreply@nice.okinawa>"
 ALERT_SUBJECT_PREFIX = ""
-# Monthly alert-channel self-check runs at 09:00 JST on the first day of each month.
+PATH_CHECK_ALERTS_ENABLED = "1"
+DASHBOARD_ALERTS_ENABLED = "1"
+# Monthly alert-channel self-check records status only; green runs do not send email.
 ALERT_CHANNEL_SELF_CHECK_EMAIL = "aboutokinawa@gmail.com"
 
 [env.preview]
@@ -51,7 +53,7 @@ preview_urls = true
 routes = []
 
 [env.preview.triggers]
-crons = []
+crons = ["*/15 * * * *"]
 
 [[env.preview.d1_databases]]
 binding = "DB"
@@ -84,5 +86,7 @@ WAN_ALERT_EMAIL = "aboutokinawa@gmail.com"
 ALERT_EMAIL_ALLOWLIST = "aboutokinawa@gmail.com"
 ALERT_FROM_EMAIL = "Nice Okinawa Inquiry <noreply@nice.okinawa>"
 ALERT_SUBJECT_PREFIX = "[TEST] "
+PATH_CHECK_ALERTS_ENABLED = "0"
+DASHBOARD_ALERTS_ENABLED = "0"
 # Preview uses the same recipient with [TEST] subjects.
 ALERT_CHANNEL_SELF_CHECK_EMAIL = "aboutokinawa@gmail.com"
