@@ -13,6 +13,7 @@ test('path checker baseline covers customer-facing pages and APIs', () => {
   const keys = new Set(PATH_CHECK_BASELINES.map((target) => target.key));
   for (const key of [
     'bjt-mogi-trial',
+    'bjt-patto-trial',
     'bjt-patto-bjt-trial',
     'bjt-patto-keigo-trial',
     'bjt-buy',
@@ -27,6 +28,29 @@ test('path checker baseline covers customer-facing pages and APIs', () => {
     assert.ok(keys.has(key), `${key} is missing from path checker baseline`);
   }
   assert.equal(PATH_CHECK_BASELINES.filter((target) => target.key.startsWith('site-')).length, 12);
+});
+
+test('BJT trial resource probes target trial-only files and keep full banks as reverse probes', () => {
+  const byKey = new Map(PATH_CHECK_BASELINES.map((target) => [target.key, target]));
+  const resources = [
+    ...(byKey.get('bjt-patto-trial')?.resources || []),
+    ...(byKey.get('bjt-patto-bjt-trial')?.resources || []),
+    ...(byKey.get('bjt-patto-keigo-trial')?.resources || []),
+  ];
+  const expected = new Map([
+    ['https://bjt.nice.okinawa/patto/trial_bank.js', [200]],
+    ['https://bjt.nice.okinawa/patto/bjt/trial/trial_bank.js', [200]],
+    ['https://bjt.nice.okinawa/patto/keigo/trial/trial_bank.js', [200]],
+    ['https://bjt.nice.okinawa/audio/voca/bank01.js', [404]],
+    ['https://bjt.nice.okinawa/patto/keigo/keigo_a_bank.js', [404]],
+  ]);
+  for (const [url, statuses] of expected) {
+    const match = resources.find((resource) => resource.url === url);
+    assert.ok(match, `${url} is missing from BJT trial path checker resources`);
+    assert.deepEqual(match.okStatuses, statuses, `${url} must use the expected status contract`);
+  }
+  assert.equal(resources.filter((resource) => resource.url === 'https://bjt.nice.okinawa/audio/voca/bank01.js').length, 1);
+  assert.equal(resources.filter((resource) => resource.url === 'https://bjt.nice.okinawa/patto/keigo/keigo_a_bank.js').length, 1);
 });
 
 test('path checker text contracts catch broken 200 shells', () => {

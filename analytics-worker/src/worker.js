@@ -49,15 +49,23 @@ const PATH_CHECK_BASELINES = Object.freeze([
     ]
   },
   {
+    ...pageCheck('bjt-patto-trial', 'BJT PATTO root free trial', 'https://bjt.nice.okinawa/patto/', 'btn-start'),
+    resources: [
+      resourceCheck('https://bjt.nice.okinawa/patto/trial_bank.js', [200])
+    ]
+  },
+  {
     ...pageCheck('bjt-patto-bjt-trial', 'BJT PATTO free trial', 'https://bjt.nice.okinawa/patto/bjt/trial/', 'TRIAL_FIXED_WORD_IDS'),
     resources: [
-      resourceCheck('https://bjt.nice.okinawa/audio/voca/bank01.js', [200])
+      resourceCheck('https://bjt.nice.okinawa/patto/bjt/trial/trial_bank.js', [200]),
+      resourceCheck('https://bjt.nice.okinawa/audio/voca/bank01.js', [404])
     ]
   },
   {
     ...pageCheck('bjt-patto-keigo-trial', 'BJT keigo free trial', 'https://bjt.nice.okinawa/patto/keigo/trial/', 'BJT Pro 免费体验 · 固定 8 题'),
     resources: [
-      resourceCheck('https://bjt.nice.okinawa/patto/keigo/keigo_a_bank.js', [200])
+      resourceCheck('https://bjt.nice.okinawa/patto/keigo/trial/trial_bank.js', [200]),
+      resourceCheck('https://bjt.nice.okinawa/patto/keigo/keigo_a_bank.js', [404])
     ]
   },
   pageCheck('bjt-buy', 'BJT Pro buy page', 'https://bjt.nice.okinawa/pro/buy/', 'BJT Pro 购买页'),
