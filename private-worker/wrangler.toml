@@ -14,6 +14,10 @@ DASHBOARD_ORIGIN = "https://raw.githubusercontent.com/wanjiaoben/db/main"
 binding = "ANALYTICS"
 service = "nice-analytics"
 
+[[kv_namespaces]]
+binding = "BJT_KV"
+id = "fc382800625e42b7bbfe13830dd39e82"
+
 [env.preview]
 name = "db-private-t0705-12"
 workers_dev = true
@@ -21,9 +25,13 @@ preview_urls = true
 routes = []
 
 [env.preview.vars]
-DASHBOARD_ORIGIN = "https://raw.githubusercontent.com/wanjiaoben/db/agent/m0728-26-expanded-site-details"
+DASHBOARD_ORIGIN = "https://raw.githubusercontent.com/wanjiaoben/db/codex/m0731-05-order-sources"
 ANALYTICS_ORIGIN = "https://nice-analytics-t0705-12.gerheidicn.workers.dev"
 
 [[env.preview.services]]
 binding = "ANALYTICS"
 service = "nice-analytics-t0705-12"
+
+[[env.preview.kv_namespaces]]
+binding = "BJT_KV"
+id = "4a016f0e1eb94e14a08d6aa53add61e3"

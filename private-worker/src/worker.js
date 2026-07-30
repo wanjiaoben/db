@@ -1,5 +1,29 @@
 const REALM = 'Nice Okinawa Dashboard';
 const DEFAULT_ANALYTICS_ORIGIN = 'https://analytics.nice.okinawa';
+const ORDER_META_PREFIX = 'paypal_order_meta:';
+const ORDER_DAY_OPTIONS = new Set([1, 7, 30, 180]);
+const COUNTRY_REGION_ALIASES = {
+  JP: 'japan',
+  JAPAN: 'japan',
+  TW: 'taiwan',
+  TAIWAN: 'taiwan',
+  HK: 'hong_kong',
+  HONGKONG: 'hong_kong',
+  HONG_KONG: 'hong_kong',
+  MO: 'macau',
+  MACAU: 'macau',
+  MACAO: 'macau',
+  CN: 'china',
+  CHINA: 'china',
+  KR: 'korea',
+  KOREA: 'korea',
+  SG: 'singapore',
+  SINGAPORE: 'singapore',
+  US: 'usa',
+  USA: 'usa',
+  UNITEDSTATES: 'usa',
+  UNITED_STATES: 'usa'
+};
 
 export default {
   async fetch(request, env) {
@@ -23,6 +47,10 @@ export default {
           'x-robots-tag': 'noindex, nofollow'
         }
       });
+    }
+
+    if (url.pathname === '/orders') {
+      return orders(request, env);
     }
 
     if (isAnalyticsProxyPath(url.pathname)) {
@@ -87,6 +115,156 @@ async function proxyAnalytics(request, env, url) {
     status: upstream.status,
     statusText: upstream.statusText,
     headers: outHeaders
+  });
+}
+
+async function orders(request, env) {
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    return json({ ok: false, error: 'method_not_allowed' }, 405);
+  }
+  if (!requireDashboard(request, env)) {
+    return json({ ok: false, error: 'unauthorized' }, 403);
+  }
+  if (!env.BJT_KV) {
+    return json({ ok: false, error: 'missing_BJT_KV' }, 500);
+  }
+
+  const url = new URL(request.url);
+  const requestedDays = Number(url.searchParams.get('days') || 7);
+  const days = ORDER_DAY_OPTIONS.has(requestedDays) ? requestedDays : 7;
+  const sinceMs = Date.now() - days * 86400000;
+  const listed = await env.BJT_KV.list({ prefix: ORDER_META_PREFIX });
+  const keys = Array.isArray(listed.keys) ? listed.keys : [];
+  const rows = [];
+
+  for (const key of keys) {
+    const name = key && key.name;
+    if (!name) continue;
+    const raw = await env.BJT_KV.get(name);
+    if (!raw) continue;
+    let meta;
+    try {
+      meta = JSON.parse(raw);
+    } catch (e) {
+      continue;
+    }
+    const row = orderRow(name, meta);
+    const createdMs = Date.parse(row.created_at || '');
+    if (Number.isFinite(createdMs) && createdMs < sinceMs) continue;
+    rows.push(row);
+  }
+
+  rows.sort((a, b) => {
+    const at = Date.parse(a.created_at || '') || 0;
+    const bt = Date.parse(b.created_at || '') || 0;
+    return bt - at;
+  });
+
+  return json({
+    ok: true,
+    days,
+    generated_at: new Date().toISOString(),
+    total_orders: rows.length,
+    distributions: {
+      overseas_region: distribution(rows, (row) => row.overseas_region || (normalizeRegion(row.buyer_location) === 'japan' ? 'japan' : '')),
+      ip_country: distribution(rows, (row) => row.ip_country),
+      paypal_payer_country: distribution(rows, (row) => row.paypal_payer_country)
+    },
+    orders: rows
+  });
+}
+
+function orderRow(keyName, meta) {
+  const orderId = text(meta.order_id) || keyName.slice(ORDER_META_PREFIX.length);
+  const email = text(meta.email);
+  const ip = text(meta.ip);
+  const row = {
+    key: keyName,
+    order_id: orderId,
+    order_short: orderId ? orderId.slice(-6) : '-',
+    email,
+    email_masked: maskEmail(email),
+    product_type: text(meta.product_type),
+    plan: text(meta.plan),
+    service: text(meta.service),
+    amount: text(meta.amount),
+    currency: text(meta.currency),
+    buyer_location: text(meta.buyer_location),
+    buyer_location_label: text(meta.buyer_location_label),
+    buyer_location_basis: text(meta.buyer_location_basis),
+    ip,
+    ip_country: text(meta.ip_country),
+    overseas_region: text(meta.overseas_region),
+    created_at: text(meta.created_at),
+    updated_at: text(meta.updated_at),
+    status: text(meta.status),
+    source: text(meta.source),
+    paypal_payer_country: text(meta.paypal_payer_country),
+    captured_at: text(meta.captured_at),
+    business_record_key: text(meta.business_record_key)
+  };
+  row.location_mismatch = hasLocationMismatch(row);
+  return row;
+}
+
+function hasLocationMismatch(row) {
+  const values = [
+    normalizeRegion(row.ip_country),
+    selectedBuyerRegion(row),
+    normalizeRegion(row.paypal_payer_country)
+  ].filter(Boolean);
+  return values.length >= 2 && new Set(values).size > 1;
+}
+
+function selectedBuyerRegion(row) {
+  const buyer = normalizeRegion(row.buyer_location);
+  if (buyer === 'japan') return 'japan';
+  return normalizeRegion(row.overseas_region) || buyer;
+}
+
+function normalizeRegion(value) {
+  const raw = text(value);
+  if (!raw) return '';
+  const key = raw.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return COUNTRY_REGION_ALIASES[key] || raw.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+function distribution(rows, pick) {
+  const counts = new Map();
+  for (const row of rows) {
+    const value = text(pick(row)) || '-';
+    counts.set(value, (counts.get(value) || 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+}
+
+function maskEmail(email) {
+  const value = text(email);
+  const at = value.indexOf('@');
+  if (at <= 0) return value ? value[0] + '***' : '';
+  return value[0] + '***' + value.slice(at);
+}
+
+function text(value) {
+  return String(value ?? '').trim();
+}
+
+function requireDashboard(request, env) {
+  const expected = env.DASHBOARD_KEY || '';
+  if (!expected) return false;
+  return request.headers.get('x-dashboard-key') === expected;
+}
+
+function json(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'x-robots-tag': 'noindex, nofollow'
+    }
   });
 }
 

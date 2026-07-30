@@ -242,6 +242,9 @@ td.num, th.num { text-align: right; }
 .visitor-card {
   max-height: none;
 }
+.order-card {
+  max-height: none;
+}
 .visitor-head {
   display: flex;
   align-items: center;
@@ -611,6 +614,112 @@ td.num, th.num { text-align: right; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.order-summary {
+  display: grid;
+  grid-template-columns: 0.7fr repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-bottom: 8px;
+  min-width: 0;
+}
+.order-summary-block {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #ece6da;
+  border-radius: 5px;
+  padding: 6px;
+  background: #fffdfa;
+}
+.order-summary-block span {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+}
+.order-summary-block strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 17px;
+  line-height: 1.1;
+}
+.order-summary-block ol {
+  margin: 2px 0 0;
+  padding-left: 16px;
+  font-size: 11px;
+}
+.order-summary-block li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.order-list {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+.order-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 1.1fr) repeat(7, minmax(68px, 1fr)) 58px;
+  gap: 5px;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid #ece6da;
+  border-radius: 4px;
+  padding: 5px;
+  background: #fffdfa;
+  overflow: hidden;
+}
+.order-row.flagged {
+  border-color: #d9b6a5;
+  background: #fff6ef;
+}
+.order-cell {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.order-cell span {
+  display: block;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.1;
+}
+.order-cell b {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.15;
+}
+.order-short {
+  color: var(--blue);
+  font-weight: 700;
+}
+.order-email {
+  display: block;
+  margin-top: 1px;
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.order-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  border: 1px solid #d9b6a5;
+  border-radius: 999px;
+  padding: 1px 5px;
+  color: #9a4c34;
+  font-size: 10px;
+  font-weight: 700;
+}
 .inventory-card h2 {
   display: flex;
   align-items: center;
@@ -700,6 +809,12 @@ td.num, th.num { text-align: right; }
   .detail-lists {
     grid-template-columns: 1fr;
   }
+  .order-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .order-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 @media (max-width: 680px) {
   header {
@@ -733,6 +848,26 @@ td.num, th.num { text-align: right; }
   .visitor-head {
     flex-direction: column;
     align-items: stretch;
+  }
+  .order-summary {
+    grid-template-columns: 1fr;
+  }
+  .order-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .order-cell {
+    display: grid;
+    grid-template-columns: 82px minmax(0, 1fr);
+    gap: 6px;
+    align-items: baseline;
+  }
+  .order-cell span,
+  .order-cell b {
+    display: block;
+  }
+  .order-cell span {
+    font-size: 10px;
   }
   .segmented {
     width: 100%;
@@ -880,6 +1015,20 @@ td.num, th.num { text-align: right; }
     <div class="site-detail" id="siteDetail"></div>
   </section>
 
+  <section class="card order-card">
+    <div class="visitor-head">
+      <h2 style="position:static;margin:0;padding:0;border:0">订单来源 <span class="sub" id="orderUpdated"></span></h2>
+      <div class="segmented" id="orderRangeTabs" aria-label="订单时间范围">
+        <button type="button" data-range="today">今天</button>
+        <button type="button" data-range="7" class="active">7天</button>
+        <button type="button" data-range="30">30天</button>
+        <button type="button" data-range="180">180天</button>
+      </div>
+    </div>
+    <div class="order-summary" id="orderSummary"><div class="empty">等待订单来源数据</div></div>
+    <div class="order-list" id="orderRows"></div>
+  </section>
+
   <section class="card inventory-card">
     <h2>内容库存 <span class="sub" id="contentUpdated"></span></h2>
     <div class="inventory-grid">
@@ -969,6 +1118,7 @@ const USE_DIRECT_ANALYTICS = location.hostname === '127.0.0.1' || location.hostn
 const API_ROOT = USE_DIRECT_ANALYTICS ? DIRECT_ANALYTICS_ROOT : location.origin;
 const API = API_ROOT + '/summary';
 const VISITOR_API = API_ROOT + '/visitors';
+const ORDER_API = API_ROOT + '/orders';
 if (!USE_DIRECT_ANALYTICS) document.documentElement.classList.add('proxied-dashboard');
 const $ = (id) => document.getElementById(id);
 const fmt = new Intl.NumberFormat('ja-JP');
@@ -1196,7 +1346,7 @@ function visitorDaysFromControl() {
 
 function syncRangeTabs() {
   const current = $('days').value || '7';
-  document.querySelectorAll('#visitorRangeTabs button').forEach((button) => {
+  document.querySelectorAll('#visitorRangeTabs button, #orderRangeTabs button').forEach((button) => {
     button.classList.toggle('active', button.dataset.range === current);
   });
 }
@@ -1301,6 +1451,53 @@ function visitorRowsHtml(rows) {
     '<div class="visitor-row-head"><span>站</span><span>时间</span><span>来源</span><span>国家/地区·城市</span><span>联络</span></div>' +
     rows.map(visitorRowHtml).join('') +
   '</div>';
+}
+
+function moneyText(order) {
+  const amount = order.amount == null || order.amount === '' ? '' : String(order.amount);
+  const currency = order.currency || '';
+  return [currency, amount].filter(Boolean).join(' ') || '-';
+}
+
+function orderSummaryList(items) {
+  if (!items || !items.length) return '<div class="empty">暂无数据</div>';
+  return '<ol>' + items.map((item) => '<li>' + escapeHtml(item.value || '-') + ' <b>' + n(item.count) + '</b></li>').join('') + '</ol>';
+}
+
+function orderSummaryHtml(data) {
+  const dist = data.distributions || {};
+  return '<div class="order-summary-block"><span>总单数</span><strong>' + n(data.total_orders) + '</strong></div>' +
+    '<div class="order-summary-block"><span>自选地区</span>' + orderSummaryList(dist.overseas_region) + '</div>' +
+    '<div class="order-summary-block"><span>IP 国家</span>' + orderSummaryList(dist.ip_country) + '</div>' +
+    '<div class="order-summary-block"><span>PayPal 国家</span>' + orderSummaryList(dist.paypal_payer_country) + '</div>';
+}
+
+function orderRowHtml(order) {
+  const title = [
+    'order_id=' + (order.order_id || '-'),
+    'email=' + (order.email || '-'),
+    'ip=' + (order.ip || '-'),
+    'buyer_location=' + (order.buyer_location || '-'),
+    'buyer_location_basis=' + (order.buyer_location_basis || '-'),
+    'business_record_key=' + (order.business_record_key || '-')
+  ].join(' | ');
+  const flag = order.location_mismatch ? '<span class="order-flag">不一致</span>' : '';
+  return '<div class="order-row' + (order.location_mismatch ? ' flagged' : '') + '" title="' + escapeHtml(title) + '">' +
+    '<div class="order-cell"><span>下单时间</span><b>' + escapeHtml(timeText(order.created_at)) + ' <small class="order-short">#' + escapeHtml(order.order_short || '-') + '</small><em class="order-email">' + escapeHtml(order.email_masked || '-') + '</em></b></div>' +
+    '<div class="order-cell"><span>plan</span><b>' + escapeHtml(order.plan || '-') + '</b></div>' +
+    '<div class="order-cell"><span>amount</span><b>' + escapeHtml(moneyText(order)) + '</b></div>' +
+    '<div class="order-cell"><span>ip_country</span><b>' + escapeHtml(order.ip_country || '-') + '</b></div>' +
+    '<div class="order-cell"><span>buyer</span><b>' + escapeHtml(order.buyer_location_label || '-') + '</b></div>' +
+    '<div class="order-cell"><span>overseas</span><b>' + escapeHtml(order.overseas_region || '-') + '</b></div>' +
+    '<div class="order-cell"><span>paypal</span><b>' + escapeHtml(order.paypal_payer_country || '-') + '</b></div>' +
+    '<div class="order-cell"><span>status</span><b>' + escapeHtml(order.status || '-') + '</b></div>' +
+    '<div class="order-cell"><span>标记</span><b>' + flag + '</b></div>' +
+  '</div>';
+}
+
+function orderRowsHtml(orders) {
+  if (!orders || !orders.length) return '<div class="empty">当前窗口暂无订单</div>';
+  return orders.map(orderRowHtml).join('');
 }
 
 function delta(change) {
@@ -1472,6 +1669,29 @@ async function loadVisitors() {
   }
 }
 
+async function loadOrders() {
+  const key = localStorage.getItem('nice_dashboard_key') || '';
+  const days = visitorDaysFromControl();
+  try {
+    const res = await fetch(ORDER_API + '?days=' + encodeURIComponent(days), {
+      credentials: 'include',
+      headers: {
+        accept: 'application/json',
+        ...(key ? { 'x-dashboard-key': key } : {})
+      }
+    });
+    const data = await readJsonResponse(res);
+    if (!res.ok || !data.ok) throw new Error(data.error || 'orders API 请求失败');
+    $('orderUpdated').textContent = rangeLabel(data.days) + ' · 更新 ' + new Date(data.generated_at).toLocaleTimeString();
+    $('orderSummary').innerHTML = orderSummaryHtml(data);
+    $('orderRows').innerHTML = orderRowsHtml(data.orders || []);
+  } catch (e) {
+    $('orderUpdated').textContent = '';
+    $('orderSummary').innerHTML = '<div class="empty">订单来源读取失败：' + escapeHtml(e.message) + '</div>';
+    $('orderRows').innerHTML = '';
+  }
+}
+
 async function load() {
   $('error').style.display = 'none';
   $('status').textContent = '连接中';
@@ -1541,8 +1761,9 @@ $('saveKey').addEventListener('click', () => {
   load();
   loadControl();
   loadVisitors();
+  loadOrders();
 });
-$('refresh').addEventListener('click', () => { load(); loadControl(); loadVisitors(); loadSnsMetrics(); loadContentStats(); });
+$('refresh').addEventListener('click', () => { load(); loadControl(); loadVisitors(); loadOrders(); loadSnsMetrics(); loadContentStats(); });
 $('syncGsc').addEventListener('click', async () => {
   $('error').style.display = 'none';
   $('status').textContent = '同步搜索词中';
@@ -1570,7 +1791,7 @@ $('syncGsc').addEventListener('click', async () => {
     $('error').style.display = 'block';
   }
 });
-$('days').addEventListener('change', () => { syncRangeTabs(); load(); loadVisitors(); });
+$('days').addEventListener('change', () => { syncRangeTabs(); load(); loadVisitors(); loadOrders(); });
 $('visitorRangeTabs').addEventListener('click', (event) => {
   const button = event.target.closest('button[data-range]');
   if (!button) return;
@@ -1578,6 +1799,16 @@ $('visitorRangeTabs').addEventListener('click', (event) => {
   syncRangeTabs();
   load();
   loadVisitors();
+  loadOrders();
+});
+$('orderRangeTabs').addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-range]');
+  if (!button) return;
+  $('days').value = button.dataset.range || '7';
+  syncRangeTabs();
+  load();
+  loadVisitors();
+  loadOrders();
 });
 $('siteFilter').addEventListener('change', () => {
   selectedSite = $('siteFilter').value;
@@ -1603,9 +1834,10 @@ syncRangeTabs();
 load();
 loadControl();
 loadVisitors();
+loadOrders();
 loadSnsMetrics();
 loadContentStats();
-setInterval(() => { load(); loadControl(); loadVisitors(); loadSnsMetrics(); loadContentStats(); }, 30000);
+setInterval(() => { load(); loadControl(); loadVisitors(); loadOrders(); loadSnsMetrics(); loadContentStats(); }, 30000);
 </script>
 </body>
 </html>
