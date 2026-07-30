@@ -1124,7 +1124,7 @@ function listHtml(items) {
 
 function rawRecordsHtml(records) {
   if (!records || !records.length) return '<div class="empty">样本不足，暂无原始记录</div>';
-  return '<div class="raw-table"><table><thead><tr><th>时间</th><th>站</th><th>事件</th><th>来源</th><th>国家城市</th><th>落地页</th></tr></thead><tbody>' +
+  return '<div class="raw-table"><table><thead><tr><th>时间</th><th>站</th><th>事件</th><th>来源</th><th>国家/地区・城市</th><th>落地页</th></tr></thead><tbody>' +
     records.map((r) => row([
       escapeHtml(timeText(r.created_at)),
       escapeHtml(r.site_id || '-'),
@@ -1163,7 +1163,7 @@ function sourceLabel(host) {
 }
 
 function countryLabel(country) {
-  const map = { JP: '日本', US: '美国', TW: '台湾', HK: '香港', CN: '中国', KR: '韩国', SG: '新加坡' };
+  const map = { JP: '日本', US: '美国', TW: '台湾', HK: '香港', MO: '澳门', CN: '中国', KR: '韩国', SG: '新加坡' };
   const key = String(country || '').toUpperCase();
   return map[key] || key || '-';
 }
@@ -1240,7 +1240,7 @@ function siteAggregateHtml(site) {
   const aggregate = protectedSample ? rawRecordsHtml(site.raw_records) : (
     '<div class="detail-lists">' +
       '<div class="mini-list"><h4>来源</h4>' + listTopHtml(site.referrers) + '</div>' +
-      '<div class="mini-list"><h4>国家 · 城市</h4>' + listTopHtml(site.locations) + '</div>' +
+      '<div class="mini-list"><h4>国家/地区 · 城市</h4>' + listTopHtml(site.locations) + '</div>' +
       '<div class="mini-list"><h4>落地页</h4>' + listTopHtml(site.landing_pages) + '</div>' +
       '<div class="mini-list"><h4>UI 语言</h4>' + listTopHtml(site.ui_langs) + '</div>' +
       '<div class="mini-list"><h4>UTM source</h4>' + listTopHtml(site.utm_sources) + '</div>' +
@@ -1298,7 +1298,7 @@ function visitorRowHtml(rowData) {
 function visitorRowsHtml(rows) {
   if (!rows || !rows.length) return '<div class="empty">当前窗口暂无访客事件</div>';
   return '<div class="visitor-table">' +
-    '<div class="visitor-row-head"><span>站</span><span>时间</span><span>来源</span><span>国家·城市</span><span>联络</span></div>' +
+    '<div class="visitor-row-head"><span>站</span><span>时间</span><span>来源</span><span>国家/地区·城市</span><span>联络</span></div>' +
     rows.map(visitorRowHtml).join('') +
   '</div>';
 }
