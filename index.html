@@ -649,6 +649,59 @@ td.num, th.num { text-align: right; }
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.order-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  min-width: 0;
+}
+.order-tools label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.order-tools input {
+  min-width: 0;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0 7px;
+  background: #fffdfa;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+}
+.order-tools button {
+  height: 28px;
+  border: 1px solid var(--ink);
+  border-radius: 5px;
+  padding: 0 9px;
+  background: var(--ink);
+  color: white;
+  font-size: 12px;
+  cursor: pointer;
+}
+.order-tools button:disabled {
+  border-color: #c9c5bc;
+  background: #d8d3c8;
+  cursor: default;
+}
+.order-tax-note {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.order-subhead {
+  margin: 10px 0 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
 .order-list {
   display: grid;
   gap: 3px;
@@ -812,6 +865,9 @@ td.num, th.num { text-align: right; }
   .order-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .order-tools {
+    align-items: stretch;
+  }
   .order-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -851,6 +907,11 @@ td.num, th.num { text-align: right; }
   }
   .order-summary {
     grid-template-columns: 1fr;
+  }
+  .order-tools,
+  .order-tools label,
+  .order-tools button {
+    width: 100%;
   }
   .order-row {
     grid-template-columns: 1fr;
@@ -1020,12 +1081,17 @@ td.num, th.num { text-align: right; }
       <h2 style="position:static;margin:0;padding:0;border:0">订单来源 <span class="sub" id="orderUpdated"></span></h2>
       <div class="segmented" id="orderRangeTabs" aria-label="订单时间范围">
         <button type="button" data-range="today">今天</button>
-        <button type="button" data-range="7" class="active">7天</button>
+        <button type="button" data-range="7">7天</button>
         <button type="button" data-range="30">30天</button>
         <button type="button" data-range="180">180天</button>
       </div>
     </div>
+    <div class="order-tools">
+      <label>自然月 <input type="month" id="orderMonth"></label>
+      <button type="button" id="exportOrdersCsv" disabled>导出 CSV</button>
+    </div>
     <div class="order-summary" id="orderSummary"><div class="empty">等待订单来源数据</div></div>
+    <div class="order-tax-note" id="orderTaxNote"></div>
     <div class="order-list" id="orderRows"></div>
   </section>
 
@@ -1125,6 +1191,8 @@ const fmt = new Intl.NumberFormat('ja-JP');
 let selectedSite = '';
 let selectedPage = '';
 let visitorDays = 7;
+let orderMode = 'month';
+let lastOrderData = null;
 
 const hash = new URLSearchParams((location.hash || '').replace(/^#/, ''));
 if (hash.get('key')) {
@@ -1346,14 +1414,29 @@ function visitorDaysFromControl() {
 
 function syncRangeTabs() {
   const current = $('days').value || '7';
-  document.querySelectorAll('#visitorRangeTabs button, #orderRangeTabs button').forEach((button) => {
+  document.querySelectorAll('#visitorRangeTabs button').forEach((button) => {
     button.classList.toggle('active', button.dataset.range === current);
+  });
+  document.querySelectorAll('#orderRangeTabs button').forEach((button) => {
+    button.classList.toggle('active', orderMode === 'days' && button.dataset.range === current);
   });
 }
 
 function rangeLabel(days) {
   if (days === 1) return '今天';
   return days + '天';
+}
+
+function previousJstMonth() {
+  const now = new Date();
+  const jst = new Date(now.getTime() + 9 * 3600000);
+  const firstThisMonthUtc = Date.UTC(jst.getUTCFullYear(), jst.getUTCMonth(), 1);
+  const previous = new Date(firstThisMonthUtc - 86400000);
+  return previous.getUTCFullYear() + '-' + String(previous.getUTCMonth() + 1).padStart(2, '0');
+}
+
+function orderMonthValue() {
+  return $('orderMonth').value || previousJstMonth();
 }
 
 function siteOverviewHtml(sites) {
@@ -1459,6 +1542,10 @@ function moneyText(order) {
   return [currency, amount].filter(Boolean).join(' ') || '-';
 }
 
+function amountText(currency, amount) {
+  return escapeHtml(currency || '-') + ' ' + escapeHtml(String(amount || 0));
+}
+
 function orderSummaryList(items) {
   if (!items || !items.length) return '<div class="empty">暂无数据</div>';
   return '<ol>' + items.map((item) => '<li>' + escapeHtml(item.value || '-') + ' <b>' + n(item.count) + '</b></li>').join('') + '</ol>';
@@ -1466,10 +1553,26 @@ function orderSummaryList(items) {
 
 function orderSummaryHtml(data) {
   const dist = data.distributions || {};
-  return '<div class="order-summary-block"><span>总单数</span><strong>' + n(data.total_orders) + '</strong></div>' +
+  const totalLabel = data.mode === 'month' ? '计入单数' : '总单数';
+  const counted = data.mode === 'month' ? data.captured_total : data.total_orders;
+  const totals = data.mode === 'month' ? taxTotalsHtml(data.tax_totals || []) : '';
+  return '<div class="order-summary-block"><span>' + totalLabel + '</span><strong>' + n(counted) + '</strong></div>' +
     '<div class="order-summary-block"><span>自选地区</span>' + orderSummaryList(dist.overseas_region) + '</div>' +
     '<div class="order-summary-block"><span>IP 国家</span>' + orderSummaryList(dist.ip_country) + '</div>' +
-    '<div class="order-summary-block"><span>PayPal 国家</span>' + orderSummaryList(dist.paypal_payer_country) + '</div>';
+    '<div class="order-summary-block"><span>PayPal 国家</span>' + orderSummaryList(dist.paypal_payer_country) + '</div>' +
+    totals;
+}
+
+function taxTotalsHtml(totals) {
+  if (!totals.length) {
+    return '<div class="order-summary-block"><span>月度合计</span><div class="empty">captured 订单为 0</div></div>';
+  }
+  return totals.map((item) => '<div class="order-summary-block"><span>月度合计 ' + escapeHtml(item.currency || '-') + '</span>' +
+    '<ol>' +
+      '<li>日本 ' + n(item.japan_count) + '笔 <b>' + amountText(item.currency, item.japan_amount) + '</b></li>' +
+      '<li>海外 ' + n(item.overseas_count) + '笔 <b>' + amountText(item.currency, item.overseas_amount) + '</b></li>' +
+      '<li>总计 ' + n(item.total_count) + '笔 <b>' + amountText(item.currency, item.total_amount) + '</b></li>' +
+    '</ol></div>').join('');
 }
 
 function orderRowHtml(order) {
@@ -1498,6 +1601,69 @@ function orderRowHtml(order) {
 function orderRowsHtml(orders) {
   if (!orders || !orders.length) return '<div class="empty">当前窗口暂无订单</div>';
   return orders.map(orderRowHtml).join('');
+}
+
+function orderRowsSectionHtml(data) {
+  if (!data || data.mode !== 'month') return orderRowsHtml((data && data.orders) || []);
+  const counted = data.captured_orders || data.orders || [];
+  const excluded = data.excluded_orders || [];
+  return '<div class="order-subhead">计入税务合计：captured ' + n(counted.length) + ' 条</div>' +
+    orderRowsHtml(counted) +
+    '<div class="order-subhead">未计入：pending / 其他状态 ' + n(excluded.length) + ' 条</div>' +
+    orderRowsHtml(excluded);
+}
+
+function jstDateText(value) {
+  const date = new Date(value || '');
+  if (Number.isNaN(date.getTime())) return '';
+  const jst = new Date(date.getTime() + 9 * 3600000);
+  return jst.getUTCFullYear() + '-' +
+    String(jst.getUTCMonth() + 1).padStart(2, '0') + '-' +
+    String(jst.getUTCDate()).padStart(2, '0');
+}
+
+function csvCell(value) {
+  const text = String(value ?? '');
+  return '"' + text.replace(/"/g, '""') + '"';
+}
+
+function ordersCsv(data) {
+  const rows = data && data.mode === 'month' ? (data.captured_orders || data.orders || []) : [];
+  const header = ['下单日期(JST)', 'order_id', 'plan', 'product_type', 'amount', 'currency', 'buyer_location_label', 'overseas_region', 'ip', 'ip_country', 'paypal_payer_country', 'email', 'status', 'captured_at'];
+  const lines = [header.map(csvCell).join(',')];
+  rows.forEach((order) => {
+    lines.push([
+      jstDateText(order.created_at),
+      order.order_id,
+      order.plan,
+      order.product_type,
+      order.amount,
+      order.currency,
+      order.buyer_location_label,
+      order.overseas_region,
+      order.ip,
+      order.ip_country,
+      order.paypal_payer_country,
+      order.email,
+      order.status,
+      order.captured_at
+    ].map(csvCell).join(','));
+  });
+  return '\ufeff' + lines.join('\r\n') + '\r\n';
+}
+
+function exportOrdersCsv() {
+  if (!lastOrderData || lastOrderData.mode !== 'month') return;
+  const csv = ordersCsv(lastOrderData);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'orders_' + (lastOrderData.month || orderMonthValue()) + '.csv';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function delta(change) {
@@ -1672,8 +1838,14 @@ async function loadVisitors() {
 async function loadOrders() {
   const key = localStorage.getItem('nice_dashboard_key') || '';
   const days = visitorDaysFromControl();
+  const query = new URLSearchParams();
+  if (orderMode === 'month') {
+    query.set('month', orderMonthValue());
+  } else {
+    query.set('days', String(days));
+  }
   try {
-    const res = await fetch(ORDER_API + '?days=' + encodeURIComponent(days), {
+    const res = await fetch(ORDER_API + '?' + query.toString(), {
       credentials: 'include',
       headers: {
         accept: 'application/json',
@@ -1682,13 +1854,22 @@ async function loadOrders() {
     });
     const data = await readJsonResponse(res);
     if (!res.ok || !data.ok) throw new Error(data.error || 'orders API 请求失败');
-    $('orderUpdated').textContent = rangeLabel(data.days) + ' · 更新 ' + new Date(data.generated_at).toLocaleTimeString();
+    lastOrderData = data;
+    const label = data.mode === 'month' ? (data.month || orderMonthValue()) : rangeLabel(data.days);
+    $('orderUpdated').textContent = label + ' · 更新 ' + new Date(data.generated_at).toLocaleTimeString();
     $('orderSummary').innerHTML = orderSummaryHtml(data);
-    $('orderRows').innerHTML = orderRowsHtml(data.orders || []);
+    $('orderTaxNote').textContent = data.mode === 'month'
+      ? '税务合计只计入 status=captured；pending 与其他状态列在下方，CSV 仅导出 captured 订单。'
+      : '';
+    $('orderRows').innerHTML = orderRowsSectionHtml(data);
+    $('exportOrdersCsv').disabled = data.mode !== 'month';
   } catch (e) {
+    lastOrderData = null;
     $('orderUpdated').textContent = '';
     $('orderSummary').innerHTML = '<div class="empty">订单来源读取失败：' + escapeHtml(e.message) + '</div>';
+    $('orderTaxNote').textContent = '';
     $('orderRows').innerHTML = '';
+    $('exportOrdersCsv').disabled = true;
   }
 }
 
@@ -1804,12 +1985,17 @@ $('visitorRangeTabs').addEventListener('click', (event) => {
 $('orderRangeTabs').addEventListener('click', (event) => {
   const button = event.target.closest('button[data-range]');
   if (!button) return;
+  orderMode = 'days';
   $('days').value = button.dataset.range || '7';
   syncRangeTabs();
-  load();
-  loadVisitors();
   loadOrders();
 });
+$('orderMonth').addEventListener('change', () => {
+  orderMode = 'month';
+  syncRangeTabs();
+  loadOrders();
+});
+$('exportOrdersCsv').addEventListener('click', exportOrdersCsv);
 $('siteFilter').addEventListener('change', () => {
   selectedSite = $('siteFilter').value;
   $('pageFilter').value = '';
@@ -1830,6 +2016,7 @@ $('pageTable').addEventListener('click', (event) => {
   load();
 });
 $('key').value = localStorage.getItem('nice_dashboard_key') || '';
+$('orderMonth').value = previousJstMonth();
 syncRangeTabs();
 load();
 loadControl();

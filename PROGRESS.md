@@ -1,5 +1,7 @@
 # db.nice.okinawa Progress
 
+M0731-14 adds a draft natural-month order export flow for the order source dashboard: previous-month default, captured-only tax totals, excluded pending rows, and BOM CSV evidence exports.
+
 M0731-05 adds a draft BJT Pro order source dashboard page backed by read-only `paypal_order_meta:*` KV rows through the db-private `/orders` endpoint.
 
 M0729-11 adds the draft customer path checker for analytics Worker preview: path_check_* D1 tables, 15-minute scheduled checks with status + content/resource contracts, heartbeat rows, red-only Resend alert debounce, and monthly green self-check email suppression.
