@@ -109,3 +109,143 @@ test('/orders returns sorted masked order source rows and distributions', async 
     { value: 'TW', count: 1 }
   ]);
 });
+
+test('/orders month mode uses JST boundaries and separates captured from excluded statuses', async () => {
+  const records = {
+    'paypal_order_meta:june-jst-last': JSON.stringify({
+      order_id: 'june-jst-last',
+      email: 'june@example.com',
+      product_type: 'pro',
+      plan: 'monthly',
+      amount: '1000',
+      currency: 'JPY',
+      buyer_location: 'japan',
+      buyer_location_label: '日本',
+      ip: '203.0.113.1',
+      ip_country: 'JP',
+      overseas_region: '',
+      created_at: '2026-06-30T14:59:59.000Z',
+      status: 'captured',
+      paypal_payer_country: 'JP',
+      captured_at: '2026-06-30T15:02:00.000Z'
+    }),
+    'paypal_order_meta:july-jst-first': JSON.stringify({
+      order_id: 'july-jst-first',
+      email: 'first@example.com',
+      product_type: 'pro',
+      plan: 'monthly',
+      amount: '1200',
+      currency: 'JPY',
+      buyer_location: 'japan',
+      buyer_location_label: '日本',
+      ip: '203.0.113.2',
+      ip_country: 'JP',
+      overseas_region: '',
+      created_at: '2026-06-30T15:00:00.000Z',
+      status: 'captured',
+      paypal_payer_country: 'JP',
+      captured_at: '2026-06-30T15:03:00.000Z'
+    }),
+    'paypal_order_meta:july-overseas': JSON.stringify({
+      order_id: 'july-overseas',
+      email: 'overseas@example.com',
+      product_type: 'pro',
+      plan: 'yearly',
+      amount: '50',
+      currency: 'USD',
+      buyer_location: 'overseas',
+      buyer_location_label: '海外',
+      ip: '198.51.100.2',
+      ip_country: 'US',
+      overseas_region: 'usa',
+      created_at: '2026-07-10T01:00:00.000Z',
+      status: 'captured',
+      paypal_payer_country: 'US',
+      captured_at: '2026-07-10T01:01:00.000Z'
+    }),
+    'paypal_order_meta:july-pending': JSON.stringify({
+      order_id: 'july-pending',
+      email: 'pending@example.com',
+      product_type: 'pro',
+      plan: 'monthly',
+      amount: '980',
+      currency: 'JPY',
+      buyer_location: 'japan',
+      buyer_location_label: '日本',
+      ip: '203.0.113.3',
+      ip_country: 'JP',
+      overseas_region: '',
+      created_at: '2026-07-31T14:59:59.000Z',
+      status: 'pending',
+      paypal_payer_country: '',
+      captured_at: ''
+    }),
+    'paypal_order_meta:august-jst-first': JSON.stringify({
+      order_id: 'august-jst-first',
+      email: 'august@example.com',
+      product_type: 'pro',
+      plan: 'monthly',
+      amount: '1000',
+      currency: 'JPY',
+      buyer_location: 'japan',
+      buyer_location_label: '日本',
+      ip: '203.0.113.4',
+      ip_country: 'JP',
+      overseas_region: '',
+      created_at: '2026-07-31T15:00:00.000Z',
+      status: 'captured',
+      paypal_payer_country: 'JP',
+      captured_at: '2026-07-31T15:02:00.000Z'
+    })
+  };
+
+  const res = await worker.fetch(new Request('https://db.nice.okinawa/orders?month=2026-07', {
+    headers: { authorization: AUTH, 'x-dashboard-key': 'dash' }
+  }), envWithKv(records), {});
+  const data = await res.json();
+
+  assert.equal(res.status, 200);
+  assert.equal(data.mode, 'month');
+  assert.equal(data.month_start_jst, '2026-07-01T00:00:00+09:00');
+  assert.equal(data.month_end_jst, '2026-08-01T00:00:00+09:00');
+  assert.deepEqual(data.captured_orders.map((order) => order.order_id), ['july-overseas', 'july-jst-first']);
+  assert.deepEqual(data.excluded_orders.map((order) => order.order_id), ['july-pending']);
+  assert.equal(data.total_orders, 3);
+  assert.equal(data.captured_total, 2);
+  assert.equal(data.excluded_total, 1);
+  assert.deepEqual(data.tax_totals, [
+    {
+      currency: 'JPY',
+      japan_count: 1,
+      japan_amount: 1200,
+      overseas_count: 0,
+      overseas_amount: 0,
+      total_count: 1,
+      total_amount: 1200
+    },
+    {
+      currency: 'USD',
+      japan_count: 0,
+      japan_amount: 0,
+      overseas_count: 1,
+      overseas_amount: 50,
+      total_count: 1,
+      total_amount: 50
+    }
+  ]);
+});
+
+test('/orders empty month keeps exportable response shape', async () => {
+  const res = await worker.fetch(new Request('https://db.nice.okinawa/orders?month=2026-05', {
+    headers: { authorization: AUTH, 'x-dashboard-key': 'dash' }
+  }), envWithKv({}), {});
+  const data = await res.json();
+
+  assert.equal(res.status, 200);
+  assert.equal(data.mode, 'month');
+  assert.equal(data.month, '2026-05');
+  assert.deepEqual(data.orders, []);
+  assert.deepEqual(data.captured_orders, []);
+  assert.deepEqual(data.excluded_orders, []);
+  assert.deepEqual(data.tax_totals, []);
+});

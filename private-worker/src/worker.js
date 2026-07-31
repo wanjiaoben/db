@@ -2,6 +2,7 @@ const REALM = 'Nice Okinawa Dashboard';
 const DEFAULT_ANALYTICS_ORIGIN = 'https://analytics.nice.okinawa';
 const ORDER_META_PREFIX = 'paypal_order_meta:';
 const ORDER_DAY_OPTIONS = new Set([1, 7, 30, 180]);
+const MONTH_PATTERN = /^\d{4}-\d{2}$/;
 const COUNTRY_REGION_ALIASES = {
   JP: 'japan',
   JAPAN: 'japan',
@@ -130,6 +131,8 @@ async function orders(request, env) {
   }
 
   const url = new URL(request.url);
+  const requestedMonth = text(url.searchParams.get('month'));
+  const monthRange = MONTH_PATTERN.test(requestedMonth) ? jstMonthRange(requestedMonth) : null;
   const requestedDays = Number(url.searchParams.get('days') || 7);
   const days = ORDER_DAY_OPTIONS.has(requestedDays) ? requestedDays : 7;
   const sinceMs = Date.now() - days * 86400000;
@@ -150,7 +153,11 @@ async function orders(request, env) {
     }
     const row = orderRow(name, meta);
     const createdMs = Date.parse(row.created_at || '');
-    if (Number.isFinite(createdMs) && createdMs < sinceMs) continue;
+    if (monthRange) {
+      if (!Number.isFinite(createdMs) || createdMs < monthRange.startMs || createdMs >= monthRange.endMs) continue;
+    } else if (Number.isFinite(createdMs) && createdMs < sinceMs) {
+      continue;
+    }
     rows.push(row);
   }
 
@@ -160,18 +167,51 @@ async function orders(request, env) {
     return bt - at;
   });
 
+  const capturedRows = rows.filter((row) => isCaptured(row));
+  const excludedRows = rows.filter((row) => !isCaptured(row));
+  const countedRows = monthRange ? capturedRows : rows;
+
   return json({
     ok: true,
+    mode: monthRange ? 'month' : 'days',
     days,
+    month: monthRange ? monthRange.month : null,
+    month_start_jst: monthRange ? monthRange.startJst : null,
+    month_end_jst: monthRange ? monthRange.endJst : null,
     generated_at: new Date().toISOString(),
     total_orders: rows.length,
+    captured_total: capturedRows.length,
+    excluded_total: excludedRows.length,
+    tax_totals: taxTotals(capturedRows),
     distributions: {
-      overseas_region: distribution(rows, (row) => row.overseas_region || (normalizeRegion(row.buyer_location) === 'japan' ? 'japan' : '')),
-      ip_country: distribution(rows, (row) => row.ip_country),
-      paypal_payer_country: distribution(rows, (row) => row.paypal_payer_country)
+      overseas_region: distribution(countedRows, (row) => row.overseas_region || (normalizeRegion(row.buyer_location) === 'japan' ? 'japan' : '')),
+      ip_country: distribution(countedRows, (row) => row.ip_country),
+      paypal_payer_country: distribution(countedRows, (row) => row.paypal_payer_country)
     },
-    orders: rows
+    orders: monthRange ? capturedRows : rows,
+    captured_orders: capturedRows,
+    excluded_orders: excludedRows
   });
+}
+
+function jstMonthRange(month) {
+  const [year, monthNumber] = month.split('-').map((part) => Number(part));
+  const startMs = Date.UTC(year, monthNumber - 1, 1, -9, 0, 0, 0);
+  const endMs = Date.UTC(year, monthNumber, 1, -9, 0, 0, 0);
+  return {
+    month,
+    startMs,
+    endMs,
+    startJst: `${month}-01T00:00:00+09:00`,
+    endJst: jstMonthLabel(endMs)
+  };
+}
+
+function jstMonthLabel(ms) {
+  const date = new Date(ms + 9 * 3600000);
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  return `${year}-${month}-01T00:00:00+09:00`;
 }
 
 function orderRow(keyName, meta) {
@@ -220,6 +260,42 @@ function selectedBuyerRegion(row) {
   const buyer = normalizeRegion(row.buyer_location);
   if (buyer === 'japan') return 'japan';
   return normalizeRegion(row.overseas_region) || buyer;
+}
+
+function isCaptured(row) {
+  return text(row.status).toLowerCase() === 'captured';
+}
+
+function taxTotals(rows) {
+  const currencies = new Map();
+  for (const row of rows) {
+    const currency = text(row.currency) || '-';
+    if (!currencies.has(currency)) {
+      currencies.set(currency, {
+        currency,
+        japan_count: 0,
+        japan_amount: 0,
+        overseas_count: 0,
+        overseas_amount: 0,
+        total_count: 0,
+        total_amount: 0
+      });
+    }
+    const bucket = currencies.get(currency);
+    const amount = Number(row.amount);
+    const safeAmount = Number.isFinite(amount) ? amount : 0;
+    const region = selectedBuyerRegion(row);
+    if (region === 'japan') {
+      bucket.japan_count += 1;
+      bucket.japan_amount += safeAmount;
+    } else {
+      bucket.overseas_count += 1;
+      bucket.overseas_amount += safeAmount;
+    }
+    bucket.total_count += 1;
+    bucket.total_amount += safeAmount;
+  }
+  return Array.from(currencies.values()).sort((a, b) => a.currency.localeCompare(b.currency));
 }
 
 function normalizeRegion(value) {
