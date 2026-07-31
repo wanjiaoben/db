@@ -123,7 +123,7 @@ async function orders(request, env) {
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     return json({ ok: false, error: 'method_not_allowed' }, 405);
   }
-  if (!requireDashboard(request, env)) {
+  if (!requireDashboard(request, env, { allowServiceKey: true })) {
     return json({ ok: false, error: 'unauthorized' }, 403);
   }
   if (!env.BJT_KV) {
@@ -327,9 +327,10 @@ function text(value) {
   return String(value ?? '').trim();
 }
 
-function requireDashboard(request, env) {
+function requireDashboard(request, env, options = {}) {
   const expected = env.DASHBOARD_KEY || '';
   if (!expected) return false;
+  if (options.allowServiceKey) return true;
   return request.headers.get('x-dashboard-key') === expected;
 }
 

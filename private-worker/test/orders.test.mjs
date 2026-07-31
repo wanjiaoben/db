@@ -37,8 +37,16 @@ test('/orders keeps Basic protection before dashboard key checks', async () => {
   assert.equal(res.status, 401);
 });
 
-test('/orders requires x-dashboard-key after Basic auth', async () => {
+test('/orders allows Basic-authenticated dashboard requests without x-dashboard-key', async () => {
   const res = await worker.fetch(request(), envWithKv({}), {});
+  const data = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal(data.ok, true);
+  assert.equal(data.total_orders, 0);
+});
+
+test('/orders remains fail-closed when DASHBOARD_KEY is missing', async () => {
+  const res = await worker.fetch(request(), envWithKv({}, { DASHBOARD_KEY: '' }), {});
   assert.equal(res.status, 403);
   assert.deepEqual(await res.json(), { ok: false, error: 'unauthorized' });
 });

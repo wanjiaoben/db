@@ -1,5 +1,7 @@
 # db.nice.okinawa Progress
 
+M0731-34 aligns the db-private `/orders` dashboard auth path with proxied dashboard APIs so Basic-authenticated dashboard users can load monthly order exports without a browser-stored dashboard key.
+
 M0731-28 ships the monthly order CSV export to production and adjusts the default month so month-start tax handoff opens the previous month while month-end verification stays on the current JST month.
 
 M0731-14 adds a draft natural-month order export flow for the order source dashboard: previous-month default, captured-only tax totals, excluded pending rows, and BOM CSV evidence exports.
