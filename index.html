@@ -220,6 +220,40 @@ td.num, th.num { text-align: right; }
 .control-card {
   max-height: none;
 }
+.path-check-status {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 10px;
+  align-items: center;
+  margin: 0 0 8px;
+  padding: 8px;
+  border: 1px solid #cfe0d8;
+  border-radius: 6px;
+  background: #f4fbf7;
+  min-width: 0;
+}
+.path-check-status.red {
+  border-color: #e0b5b5;
+  background: #fff4f4;
+}
+.path-check-main {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.path-check-meta {
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+  white-space: nowrap;
+}
+.path-check-detail {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
 .muted { color: var(--muted); }
 .error {
   display: none;
@@ -1125,6 +1159,11 @@ td.num, th.num { text-align: right; }
   <div class="control-grid">
     <section class="card control-card">
       <h2>系统健康 <span class="sub" id="controlUpdated"></span></h2>
+      <div class="path-check-status" id="pathCheckStatus">
+        <div class="path-check-main">上次巡检：读取中</div>
+        <div class="path-check-meta">PASS - / FAIL -</div>
+        <div class="path-check-detail">等待巡检器心跳</div>
+      </div>
       <table>
         <thead><tr><th>项目</th><th>状态</th><th>最近时间</th><th>来源</th></tr></thead>
         <tbody id="backupTable"><tr><td colspan="4" class="empty">等待备份状态</td></tr></tbody>
@@ -1185,6 +1224,7 @@ const API_ROOT = USE_DIRECT_ANALYTICS ? DIRECT_ANALYTICS_ROOT : location.origin;
 const API = API_ROOT + '/summary';
 const VISITOR_API = API_ROOT + '/visitors';
 const ORDER_API = API_ROOT + '/orders';
+const PATH_CHECK_API = API_ROOT + '/path-checks/status';
 if (!USE_DIRECT_ANALYTICS) document.documentElement.classList.add('proxied-dashboard');
 const $ = (id) => document.getElementById(id);
 const fmt = new Intl.NumberFormat('ja-JP');
@@ -1241,6 +1281,20 @@ function timeText(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return escapeHtml(value);
   return date.toLocaleString();
+}
+
+function relativeMinutes(value) {
+  if (!value) return { label: '无心跳', minutes: Infinity, time: '' };
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return { label: '时间异常', minutes: Infinity, time: String(value) };
+  const diffMs = Date.now() - date.getTime();
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return { label: '刚刚', minutes: 0, time: date.toLocaleString() };
+  if (minutes < 60) return { label: minutes + ' 分钟前', minutes, time: date.toLocaleString() };
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return { label: hours + ' 小时前', minutes, time: date.toLocaleString() };
+  const days = Math.floor(hours / 24);
+  return { label: days + ' 天前', minutes, time: date.toLocaleString() };
 }
 
 function yen(value) {
@@ -1810,6 +1864,55 @@ async function loadControl() {
   }
 }
 
+function renderPathCheckStatus(data) {
+  const el = $('pathCheckStatus');
+  if (!el) return;
+  const heartbeat = data && data.heartbeat;
+  const recent = ((data && data.recent_runs) || [])[0] || {};
+  const finishedAt = heartbeat && (heartbeat.finished_at || heartbeat.updated_at);
+  const rel = relativeMinutes(finishedAt);
+  const total = Number(heartbeat?.total ?? recent.total ?? 0);
+  const failed = Number(heartbeat?.failed ?? recent.failed ?? 0);
+  const passed = Math.max(0, total - failed);
+  const stale = !Number.isFinite(rel.minutes) || rel.minutes > 45;
+  const ok = Number(heartbeat?.ok ?? recent.ok ?? 0) === 1;
+  const red = stale || !ok;
+  el.className = 'path-check-status' + (red ? ' red' : '');
+  const title = rel.time ? ' title="' + escapeHtml(rel.time) + '"' : '';
+  const main = stale ? '巡检器可能停摆' : '上次巡检：' + rel.label;
+  const detail = stale
+    ? '心跳超过 45 分钟未更新'
+    : ('最近一轮 ' + (failed ? 'FAIL' : 'PASS') + ' · baseline ' + n(data?.baseline_count || total));
+  el.innerHTML =
+    '<div class="path-check-main"' + title + '>' + statusDot(!red, false) + escapeHtml(main) + '</div>' +
+    '<div class="path-check-meta">PASS ' + n(passed) + ' / FAIL ' + n(failed) + '</div>' +
+    '<div class="path-check-detail">' + escapeHtml(detail) + '</div>';
+}
+
+async function loadPathCheckStatus() {
+  const key = localStorage.getItem('nice_dashboard_key') || '';
+  try {
+    const res = await fetch(PATH_CHECK_API, {
+      credentials: 'include',
+      headers: {
+        accept: 'application/json',
+        ...(key ? { 'x-dashboard-key': key } : {})
+      }
+    });
+    const data = await readJsonResponse(res);
+    if (!res.ok || !data.ok) throw new Error(data.error || 'path-checks API 请求失败');
+    renderPathCheckStatus(data);
+  } catch (e) {
+    const el = $('pathCheckStatus');
+    if (!el) return;
+    el.className = 'path-check-status red';
+    el.innerHTML =
+      '<div class="path-check-main">' + statusDot(false, false) + '巡检状态读取失败</div>' +
+      '<div class="path-check-meta">PASS - / FAIL -</div>' +
+      '<div class="path-check-detail">' + escapeHtml(e.message) + '</div>';
+  }
+}
+
 async function loadVisitors() {
   const key = localStorage.getItem('nice_dashboard_key') || '';
   visitorDays = visitorDaysFromControl();
@@ -2020,11 +2123,12 @@ $('orderMonth').value = defaultOrderMonth();
 syncRangeTabs();
 load();
 loadControl();
+loadPathCheckStatus();
 loadVisitors();
 loadOrders();
 loadSnsMetrics();
 loadContentStats();
-setInterval(() => { load(); loadControl(); loadVisitors(); loadOrders(); loadSnsMetrics(); loadContentStats(); }, 30000);
+setInterval(() => { load(); loadControl(); loadPathCheckStatus(); loadVisitors(); loadOrders(); loadSnsMetrics(); loadContentStats(); }, 30000);
 </script>
 </body>
 </html>

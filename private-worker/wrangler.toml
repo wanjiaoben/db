@@ -25,7 +25,7 @@ preview_urls = true
 routes = []
 
 [env.preview.vars]
-DASHBOARD_ORIGIN = "https://raw.githubusercontent.com/wanjiaoben/db/codex/m0731-14-orders-month-export"
+DASHBOARD_ORIGIN = "https://raw.githubusercontent.com/wanjiaoben/db/main"
 ANALYTICS_ORIGIN = "https://nice-analytics-t0705-12.gerheidicn.workers.dev"
 
 [[env.preview.services]]
