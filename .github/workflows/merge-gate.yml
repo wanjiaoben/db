@@ -25,7 +25,7 @@ jobs:
         run: ruby -e "require 'yaml'; Dir['.github/workflows/*.{yml,yaml}'].each { |file| YAML.parse_file(file) }; puts 'PASS workflow YAML syntax'"
 
       - name: Check release scripts syntax
-        run: node --check scripts/release/verify-release-ref.mjs && node --check scripts/validate/check_release_gate.mjs && node --check scripts/validate/test_release_gate.mjs
+        run: node --check scripts/release/verify-release-ref.mjs && node --check scripts/validate/check_release_gate.mjs && node --check scripts/validate/test_release_gate.mjs && node --check scripts/backup_nice_analytics_d1.mjs
 
       - name: Check production release gate wiring
         run: node scripts/validate/check_release_gate.mjs
