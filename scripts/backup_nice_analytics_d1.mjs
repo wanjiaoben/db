@@ -27,9 +27,6 @@ const protectedRetentionKeys = new Set([
 if (process.env.GITHUB_ACTIONS === 'true' && !process.env.CLOUDFLARE_API_TOKEN) {
   throw new Error('CLOUDFLARE_API_TOKEN GitHub secret is required for nice_analytics D1 backup.');
 }
-if (process.env.GITHUB_ACTIONS === 'true' && !process.env.CLOUDFLARE_ACCOUNT_ID) {
-  throw new Error('CLOUDFLARE_ACCOUNT_ID GitHub secret is required for nice_analytics D1 backup.');
-}
 if (!Number.isFinite(RETENTION_DAYS) || RETENTION_DAYS < 1) {
   throw new Error(`Invalid NICE_ANALYTICS_BACKUP_RETENTION_DAYS: ${RETENTION_DAYS}`);
 }
