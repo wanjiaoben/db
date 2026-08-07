@@ -2255,17 +2255,19 @@ async function getProbeSummary(env) {
 }
 
 async function getBackupStatus(env) {
-  const [bjt, progressProduction, progressPreview] = await Promise.all([
+  const [bjt, progressProduction, progressPreview, niceAnalyticsProduction] = await Promise.all([
     readR2Json(env.BJT_BACKUPS, 'kv-snapshots/latest/manifest.json'),
     readR2Json(env.PROGRESS_BACKUP, 'd1/progress/production/latest.json'),
-    readR2Json(env.PROGRESS_BACKUP, 'd1/progress/preview/latest.json')
+    readR2Json(env.PROGRESS_BACKUP, 'd1/progress/preview/latest.json'),
+    readR2Json(env.PROGRESS_BACKUP, 'd1/nice_analytics/production/latest.json')
   ]);
   return {
     generated_at: new Date().toISOString(),
     items: [
       backupItem('bjt', 'BJT R2 latest manifest', bjt, ['generatedAt', 'generated_at', 'created_at', 'date']),
       progressBackupItem('progress-production', 'Progress production D1 export', progressProduction, 'production', 'progress'),
-      progressBackupItem('progress-preview', 'Progress preview D1 export', progressPreview, 'preview', 'progress-otp-preview')
+      progressBackupItem('progress-preview', 'Progress preview D1 export', progressPreview, 'preview', 'progress-otp-preview'),
+      d1BackupItem('nice-analytics-production', 'nice_analytics production D1 export', niceAnalyticsProduction, 'production', 'nice_analytics', 'd1/nice_analytics/production/')
     ]
   };
 }
@@ -2318,10 +2320,13 @@ export function backupItem(key, label, result, dateFields, now = new Date()) {
 }
 
 export function progressBackupItem(key, label, result, expectedEnvironment, expectedDatabase, now = new Date()) {
+  return d1BackupItem(key, label, result, expectedEnvironment, expectedDatabase, `d1/progress/${expectedEnvironment}/`, now);
+}
+
+export function d1BackupItem(key, label, result, expectedEnvironment, expectedDatabase, expectedPrefix, now = new Date()) {
   const data = result.data || {};
   const dateValue = firstDateValue(data, ['generated_at', 'generatedAt', 'created_at', 'date']) || result.updated_at || '';
   const { ageMs, fresh: ageFresh } = backupAge(dateValue, now);
-  const expectedPrefix = `d1/progress/${expectedEnvironment}/`;
   let validationError = '';
   if (result.ok && data.environment !== expectedEnvironment) {
     validationError = `manifest environment mismatch: expected ${expectedEnvironment}, got ${data.environment || '<missing>'}`;

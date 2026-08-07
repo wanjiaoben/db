@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { backupItem, collectAlertItems, progressBackupItem } from '../src/worker.js';
+import { backupItem, collectAlertItems, d1BackupItem, progressBackupItem } from '../src/worker.js';
 
 const now = new Date('2026-07-18T21:00:00.000Z');
 
@@ -97,4 +97,47 @@ test('wrong database or object prefix is red', () => {
   );
   assert.equal(wrongDatabase.ok, false);
   assert.equal(wrongPrefix.ok, false);
+});
+
+test('nice_analytics production backup manifest is validated on environment, database, and prefix', () => {
+  const fresh = {
+    ok: true,
+    status: 'ok',
+    key: 'd1/nice_analytics/production/latest.json',
+    data: {
+      environment: 'production',
+      database: 'nice_analytics',
+      generated_at: '2026-07-18T18:29:01.000Z',
+      object_key: 'd1/nice_analytics/production/2026-07-18/nice_analytics-d1-2026-07-18T18-29-01-000Z.sql',
+      sha256: 'a'.repeat(64),
+      size_bytes: 1024,
+      table_counts: { events: 3 },
+      failures: []
+    }
+  };
+  const item = d1BackupItem(
+    'nice-analytics-production',
+    'nice_analytics production D1 export',
+    fresh,
+    'production',
+    'nice_analytics',
+    'd1/nice_analytics/production/',
+    now
+  );
+  const crossed = d1BackupItem(
+    'nice-analytics-production',
+    'nice_analytics production D1 export',
+    {
+      ...fresh,
+      data: { ...fresh.data, object_key: 'd1/progress/production/progress-d1.json' }
+    },
+    'production',
+    'nice_analytics',
+    'd1/nice_analytics/production/',
+    now
+  );
+  assert.equal(item.ok, true);
+  assert.equal(item.database, 'nice_analytics');
+  assert.equal(crossed.ok, false);
+  assert.match(crossed.error, /object key crosses environment boundary/);
 });
