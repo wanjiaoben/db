@@ -19,6 +19,10 @@ const RETENTION_DAYS = Number(process.env.NICE_ANALYTICS_BACKUP_RETENTION_DAYS |
 const MONTHLY_KEEP_DAY = Number(process.env.NICE_ANALYTICS_BACKUP_MONTHLY_KEEP_DAY || 1);
 const WRANGLER_VERSION = process.env.NICE_ANALYTICS_BACKUP_WRANGLER_VERSION || '4.112.0';
 const maxWranglerAttempts = Number(process.env.NICE_ANALYTICS_BACKUP_WRANGLER_ATTEMPTS || 3);
+const protectedRetentionKeys = new Set([
+  `${PREFIX}/latest.json`,
+  `${PREFIX}/index.json`,
+]);
 
 if (process.env.GITHUB_ACTIONS === 'true' && !process.env.CLOUDFLARE_API_TOKEN) {
   throw new Error('CLOUDFLARE_API_TOKEN GitHub secret is required for nice_analytics D1 backup.');
@@ -28,6 +32,10 @@ if (process.env.GITHUB_ACTIONS === 'true' && !process.env.CLOUDFLARE_ACCOUNT_ID)
 }
 if (!Number.isFinite(RETENTION_DAYS) || RETENTION_DAYS < 1) {
   throw new Error(`Invalid NICE_ANALYTICS_BACKUP_RETENTION_DAYS: ${RETENTION_DAYS}`);
+}
+if (process.argv.includes('--self-test')) {
+  runRetentionDeleteSelfTest();
+  process.exit(0);
 }
 
 const rootWrangler = join(process.cwd(), 'node_modules', '.bin', 'wrangler');
@@ -89,7 +97,7 @@ try {
 
   for (const key of retentionPlan.deleteKeys) {
     try {
-      wrangler(['r2', 'object', 'delete', `${BUCKET}/${key}`, '--remote'], { stdio: 'inherit' });
+      deleteRetentionObject(key);
       manifest.retention.deleted_objects += 1;
     } catch (error) {
       manifest.failures.push({
@@ -199,6 +207,23 @@ async function putObject(key, file, contentType) {
   ], { stdio: 'inherit' });
 }
 
+function deleteRetentionObject(key) {
+  assertRetentionDeleteKeyAllowed(key);
+  wrangler(['r2', 'object', 'delete', `${BUCKET}/${key}`, '--remote'], { stdio: 'inherit' });
+}
+
+function assertRetentionDeleteKeyAllowed(key) {
+  const normalized = stripSlashes(key);
+  const allowedPrefix = `${PREFIX}/`;
+  if (!normalized.startsWith(allowedPrefix)) {
+    throw new Error(`Refusing retention delete outside ${allowedPrefix}: ${key}`);
+  }
+  if (protectedRetentionKeys.has(normalized)) {
+    throw new Error(`Refusing retention delete of protected index object: ${key}`);
+  }
+  return normalized;
+}
+
 async function readPriorIndex(key) {
   try {
     wrangler(['r2', 'object', 'get', `${BUCKET}/${key}`, '--file', priorIndexPath, '--remote'], { attempts: 1 });
@@ -291,6 +316,57 @@ function planRetention(referenceDate, entries) {
 
 function entryKeys(entry) {
   return [entry.object_key, entry.manifest_key].filter(Boolean);
+}
+
+function runRetentionDeleteSelfTest() {
+  const candidateKeys = [
+    'd1/daily/2026-08-01/progress-d1-2026-08-01.sql',
+    'd1/manual/m0807-66/progress-manual-backup.sql',
+    `${PREFIX}/latest.json`,
+    `${PREFIX}/index.json`,
+    'audio/_sync/latest.json',
+    'progress-audio/audio/female/en/sample.mp3',
+    `${PREFIX}/2026-06-01/nice_analytics-d1-2026-06-01T00-00-00-000Z.sql`,
+    `${PREFIX}/2026-06-01/manifest-2026-06-01T00-00-00-000Z.json`,
+  ];
+  const blocked = [];
+  const allowed = [];
+  for (const key of candidateKeys) {
+    try {
+      allowed.push(assertRetentionDeleteKeyAllowed(key));
+    } catch (error) {
+      blocked.push({
+        key,
+        reason: cleanError(error),
+      });
+    }
+  }
+  const summary = {
+    ok: true,
+    mode: 'retention-delete-self-test',
+    bucket: BUCKET,
+    required_prefix: `${PREFIX}/`,
+    protected_keys: [...protectedRetentionKeys].sort(),
+    blocked,
+    allowed,
+  };
+  const requiredBlocked = [
+    'd1/daily/2026-08-01/progress-d1-2026-08-01.sql',
+    'd1/manual/m0807-66/progress-manual-backup.sql',
+    `${PREFIX}/latest.json`,
+    `${PREFIX}/index.json`,
+    'audio/_sync/latest.json',
+    'progress-audio/audio/female/en/sample.mp3',
+  ];
+  for (const key of requiredBlocked) {
+    if (!blocked.some((item) => item.key === key)) {
+      throw new Error(`Self-test failed: expected blocked key ${key}`);
+    }
+  }
+  if (allowed.length !== 2) {
+    throw new Error(`Self-test failed: expected 2 allowed keys, got ${allowed.length}`);
+  }
+  console.log(JSON.stringify(summary, null, 2));
 }
 
 function objectKeyDate(key) {
