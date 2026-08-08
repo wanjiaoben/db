@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { backupItem, collectAlertItems, d1BackupItem, progressBackupItem } from '../src/worker.js';
+import { backupItem, collectAlertItems, d1BackupItem, progressBackupItem, selectDeploymentWorkflowRun } from '../src/worker.js';
 
 const now = new Date('2026-07-18T21:00:00.000Z');
 
@@ -140,4 +140,35 @@ test('nice_analytics production backup manifest is validated on environment, dat
   assert.equal(item.database, 'nice_analytics');
   assert.equal(crossed.ok, false);
   assert.match(crossed.error, /object key crosses environment boundary/);
+});
+
+test('deployment status ignores scheduled backup failures and uses latest deployment workflow', () => {
+  const run = selectDeploymentWorkflowRun([
+    {
+      head_branch: 'main',
+      name: 'nice_analytics D1 backup to R2',
+      event: 'schedule',
+      status: 'completed',
+      conclusion: 'failure',
+      updated_at: '2026-08-07T19:26:21Z'
+    },
+    {
+      head_branch: 'main',
+      name: 'pages build and deployment',
+      event: 'dynamic',
+      status: 'completed',
+      conclusion: 'success',
+      updated_at: '2026-08-07T12:28:11Z'
+    },
+    {
+      head_branch: 'main',
+      name: 'MERGE_GATE',
+      event: 'push',
+      status: 'completed',
+      conclusion: 'success',
+      updated_at: '2026-08-07T12:27:52Z'
+    }
+  ]);
+  assert.equal(run.name, 'pages build and deployment');
+  assert.equal(run.conclusion, 'success');
 });
