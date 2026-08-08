@@ -2368,7 +2368,7 @@ async function getDeploymentStatus(env) {
   const items = await Promise.all(DEPLOYMENT_REPOS.map((repo) => getRepoDeploymentStatus(env, repo)));
   return {
     generated_at: new Date().toISOString(),
-    source: 'GitHub Actions latest main deployment workflow run',
+    source: 'GitHub Actions latest main non-scheduled non-backup workflow run',
     items
   };
 }
@@ -2427,18 +2427,15 @@ async function getRepoDeploymentStatus(env, repo) {
 }
 
 export function selectDeploymentWorkflowRun(runs) {
-  return (runs || []).find((item) => item.head_branch === 'main' && isDeploymentWorkflowRun(item)) || null;
+  return (runs || []).find((item) => item.head_branch === 'main' && isDeploymentStatusRun(item)) || null;
 }
 
-function isDeploymentWorkflowRun(run) {
+function isDeploymentStatusRun(run) {
   const name = String(run?.name || run?.display_title || '').toLowerCase();
   const event = String(run?.event || '').toLowerCase();
   if (event === 'schedule') return false;
   if (name.includes('backup')) return false;
-  return name.includes('atomic release')
-    || name.includes('pages build and deployment')
-    || /\bdeploy(?:ment)?\b/.test(name)
-    || /\brelease\b/.test(name);
+  return true;
 }
 
 async function getRevenueSummary(env) {
