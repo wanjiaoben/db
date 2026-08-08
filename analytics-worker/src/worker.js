@@ -2368,7 +2368,7 @@ async function getDeploymentStatus(env) {
   const items = await Promise.all(DEPLOYMENT_REPOS.map((repo) => getRepoDeploymentStatus(env, repo)));
   return {
     generated_at: new Date().toISOString(),
-    source: 'GitHub Actions latest main workflow run',
+    source: 'GitHub Actions latest main deployment workflow run',
     items
   };
 }
@@ -2397,9 +2397,9 @@ async function getRepoDeploymentStatus(env, repo) {
         manual: !token
       };
     }
-    const run = (data.workflow_runs || []).find((item) => item.head_branch === 'main') || (data.workflow_runs || [])[0];
+    const run = selectDeploymentWorkflowRun(data.workflow_runs || []);
     if (!run) {
-      return { repo, ok: false, status: 'unknown', conclusion: '', updated_at: '', url: '', error: 'no_main_runs', manual: false };
+      return { repo, ok: false, status: 'unknown', conclusion: '', updated_at: '', url: '', error: 'no_deployment_runs', manual: false };
     }
     const conclusion = run.conclusion || run.status || '';
     return {
@@ -2424,6 +2424,21 @@ async function getRepoDeploymentStatus(env, repo) {
       manual: false
     };
   }
+}
+
+export function selectDeploymentWorkflowRun(runs) {
+  return (runs || []).find((item) => item.head_branch === 'main' && isDeploymentWorkflowRun(item)) || null;
+}
+
+function isDeploymentWorkflowRun(run) {
+  const name = String(run?.name || run?.display_title || '').toLowerCase();
+  const event = String(run?.event || '').toLowerCase();
+  if (event === 'schedule') return false;
+  if (name.includes('backup')) return false;
+  return name.includes('atomic release')
+    || name.includes('pages build and deployment')
+    || /\bdeploy(?:ment)?\b/.test(name)
+    || /\brelease\b/.test(name);
 }
 
 async function getRevenueSummary(env) {
