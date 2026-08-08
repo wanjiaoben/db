@@ -142,7 +142,7 @@ test('nice_analytics production backup manifest is validated on environment, dat
   assert.match(crossed.error, /object key crosses environment boundary/);
 });
 
-test('deployment status ignores scheduled backup failures and uses latest deployment workflow', () => {
+test('deployment status ignores scheduled backup failures and uses latest eligible main workflow', () => {
   const run = selectDeploymentWorkflowRun([
     {
       head_branch: 'main',
@@ -170,5 +170,28 @@ test('deployment status ignores scheduled backup failures and uses latest deploy
     }
   ]);
   assert.equal(run.name, 'pages build and deployment');
+  assert.equal(run.conclusion, 'success');
+});
+
+test('deployment status ignores manually dispatched backup failures and falls back to main gate', () => {
+  const run = selectDeploymentWorkflowRun([
+    {
+      head_branch: 'main',
+      name: 'Progress D1 backup to R2',
+      event: 'workflow_dispatch',
+      status: 'completed',
+      conclusion: 'failure',
+      updated_at: '2026-08-08T09:11:13Z'
+    },
+    {
+      head_branch: 'main',
+      name: 'MERGE_GATE',
+      event: 'push',
+      status: 'completed',
+      conclusion: 'success',
+      updated_at: '2026-08-08T07:59:09Z'
+    }
+  ]);
+  assert.equal(run.name, 'MERGE_GATE');
   assert.equal(run.conclusion, 'success');
 });
