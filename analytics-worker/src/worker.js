@@ -26,6 +26,8 @@ const VISITOR_EVENT_SITES = Object.freeze({
   kiso: 'kiso.nice.okinawa'
 });
 const PATH_CHECK_ALERT_WINDOW_MS = 6 * 60 * 60 * 1000;
+const PATH_CHECK_ALERT_ESCALATION_MS = 24 * 60 * 60 * 1000;
+const PATH_CHECK_INTERVAL_MS = 15 * 60 * 1000;
 const PATH_CHECK_TIMEOUT_MS = 12000;
 const PATH_CHECK_FAILURE_DEBOUNCE = 3;
 const PATH_CHECK_FAST_FAILURE_DEBOUNCE = 2;
@@ -33,7 +35,7 @@ const PATH_CHECK_BASELINES = Object.freeze([
   pageCheck('site-snorkel-home', 'snorkel home', 'https://snorkel.nice.okinawa/', 'Okinawa Snorkeling Tours'),
   pageCheck('site-fishing-home', 'fishing home', 'https://fishing.nice.okinawa/', 'Okinawa Fishing Charter'),
   pageCheck('site-rental-home', 'rental home', 'https://rental.nice.okinawa/', 'Okinawa Rental'),
-  pageCheck('site-japanusedcars-home', 'japanusedcars home', 'https://japanusedcars.nice.okinawa/', 'Used Cars Okinawa Japan'),
+  pageCheck('site-japanusedcars-home', 'japanusedcars home', 'https://japanusedcars.nice.okinawa/', 'Okinawa Used Cars', { caseInsensitive: true }),
   pageCheck('site-golf-home', 'golf home', 'https://golf.nice.okinawa/', 'Okinawa Golf Guide'),
   pageCheck('site-activity-home', 'activity home', 'https://activity.nice.okinawa/', '冲绳体验预约'),
   pageCheck('site-translation-home', 'translation home', 'https://translation.nice.okinawa/', '中日英商务翻译'),
@@ -1487,7 +1489,7 @@ function pageCheck(key, label, url, contains, options = {}) {
     url,
     method: options.method || 'GET',
     okStatuses: options.okStatuses || [200],
-    contract: { type: 'text_contains', contains },
+    contract: { type: 'text_contains', contains, case_insensitive: !!options.caseInsensitive },
     critical: options.critical !== false,
     serviceBinding: options.serviceBinding || ''
   };
@@ -1808,7 +1810,9 @@ function checkPathContract(contract, text) {
   if (!contract) return { ok: true };
   if (contract.type === 'text_contains') {
     const needle = String(contract.contains || '');
-    return text.includes(needle)
+    const haystack = contract.case_insensitive ? String(text || '').toLowerCase() : String(text || '');
+    const match = contract.case_insensitive ? needle.toLowerCase() : needle;
+    return haystack.includes(match)
       ? { ok: true }
       : { ok: false, error: `missing_text:${needle.slice(0, 80)}` };
   }
@@ -1854,7 +1858,7 @@ function isFastPathCheckFailure(failedResults, results) {
 
 async function updatePathCheckState(env, result, now, groupFailure) {
   const previous = await first(env.DB, `
-    SELECT check_key, status, fingerprint, consecutive_failures, last_alert_at
+    SELECT check_key, status, fingerprint, consecutive_failures, last_ok_at, last_fail_at, last_alert_at
     FROM path_check_state
     WHERE check_key = ?
   `, [result.key]);
@@ -1868,10 +1872,13 @@ async function updatePathCheckState(env, result, now, groupFailure) {
     consecutiveFailures = previous?.fingerprint === result.fingerprint
       ? Number(previous.consecutive_failures || 0) + 1
       : 1;
-    const alreadyAlertedForFingerprint = previous?.fingerprint === result.fingerprint && previous?.last_alert_at;
-    shouldAlert = result.critical !== false
-      && consecutiveFailures >= threshold
-      && !alreadyAlertedForFingerprint;
+    shouldAlert = shouldSendPathCheckAlert({
+      result,
+      previous,
+      consecutiveFailures,
+      threshold,
+      now
+    });
     await env.DB.prepare(`
       INSERT INTO path_check_state (
         check_key, label, url, status, fingerprint, consecutive_failures,
@@ -1930,6 +1937,25 @@ async function updatePathCheckState(env, result, now, groupFailure) {
     threshold,
     should_alert: shouldAlert
   };
+}
+
+function shouldSendPathCheckAlert({ result, previous, consecutiveFailures, threshold, now }) {
+  if (result.critical === false || consecutiveFailures < threshold) return false;
+  const sameFingerprint = previous?.fingerprint === result.fingerprint;
+  const lastAlertMs = parseTimeMs(previous?.last_alert_at);
+  if (!sameFingerprint || !lastAlertMs) return true;
+  if (now.getTime() - lastAlertMs < PATH_CHECK_ALERT_ESCALATION_MS) return false;
+  const lastOkMs = parseTimeMs(previous?.last_ok_at);
+  const estimatedFailureMs = Math.max(0, Number(consecutiveFailures || 0) - 1) * PATH_CHECK_INTERVAL_MS;
+  const sinceLastOkMs = lastOkMs ? Math.max(0, now.getTime() - lastOkMs) : 0;
+  const continuousFailureMs = Math.max(estimatedFailureMs, sinceLastOkMs);
+  return continuousFailureMs >= PATH_CHECK_ALERT_ESCALATION_MS;
+}
+
+function parseTimeMs(value) {
+  if (!value) return 0;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : 0;
 }
 
 async function sendPathCheckAlerts(env, candidates, reason, now) {
@@ -2955,5 +2981,6 @@ export {
   PATH_CHECK_BASELINES,
   checkPathContract,
   isFastPathCheckFailure,
+  shouldSendPathCheckAlert,
   stableFingerprint
 };

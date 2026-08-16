@@ -6,6 +6,7 @@ import {
   PATH_CHECK_BASELINES,
   checkPathContract,
   isFastPathCheckFailure,
+  shouldSendPathCheckAlert,
   stableFingerprint
 } from '../src/worker.js';
 
@@ -63,6 +64,17 @@ test('path checker text contracts catch broken 200 shells', () => {
   assert.match(broken.error, /missing_text/);
 });
 
+test('japanusedcars home contract uses stable title text case-insensitively', () => {
+  const byKey = new Map(PATH_CHECK_BASELINES.map((target) => [target.key, target]));
+  const target = byKey.get('site-japanusedcars-home');
+  assert.equal(target.contract.contains, 'Okinawa Used Cars');
+  assert.equal(target.contract.case_insensitive, true);
+  assert.deepEqual(
+    checkPathContract(target.contract, '<title>okinawa used cars | export support</title>'),
+    { ok: true }
+  );
+});
+
 test('path checker JSON contracts require fields and exact values', () => {
   const contract = {
     type: 'json_fields',
@@ -91,6 +103,51 @@ test('path checker fingerprints are stable and compact', () => {
   assert.equal(one, two);
   assert.notEqual(one, three);
   assert.match(one, /^[0-9a-f]{8}$/);
+});
+
+test('path checker alert escalation repeats unresolved red lights daily', () => {
+  const now = new Date('2026-08-16T12:00:00.000Z');
+  const result = { ok: false, critical: true, fingerprint: 'deadbeef' };
+  const previous = {
+    fingerprint: 'deadbeef',
+    last_ok_at: '2026-08-15T11:00:00.000Z',
+    last_alert_at: '2026-08-15T11:30:00.000Z'
+  };
+
+  assert.equal(shouldSendPathCheckAlert({
+    result,
+    previous,
+    consecutiveFailures: 100,
+    threshold: 3,
+    now
+  }), true);
+});
+
+test('path checker alert escalation keeps same-fingerprint red lights quiet inside daily window', () => {
+  const now = new Date('2026-08-16T12:00:00.000Z');
+  const result = { ok: false, critical: true, fingerprint: 'deadbeef' };
+  assert.equal(shouldSendPathCheckAlert({
+    result,
+    previous: {
+      fingerprint: 'deadbeef',
+      last_ok_at: '2026-08-15T11:00:00.000Z',
+      last_alert_at: '2026-08-16T01:00:00.000Z'
+    },
+    consecutiveFailures: 100,
+    threshold: 3,
+    now
+  }), false);
+  assert.equal(shouldSendPathCheckAlert({
+    result,
+    previous: {
+      fingerprint: 'deadbeef',
+      last_ok_at: '2026-08-16T06:00:00.000Z',
+      last_alert_at: '2026-08-15T11:00:00.000Z'
+    },
+    consecutiveFailures: 10,
+    threshold: 3,
+    now
+  }), false);
 });
 
 test('path checker test hooks do not send dashboard self-check email', () => {
