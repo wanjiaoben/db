@@ -236,6 +236,20 @@ td.num, th.num { text-align: right; }
   border-color: #e0b5b5;
   background: #fff4f4;
 }
+.path-check-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 8px;
+}
+.path-check-top .path-check-main {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.path-check-top .path-check-meta {
+  flex: 0 0 auto;
+}
 .path-check-main {
   min-width: 0;
   font-size: 13px;
@@ -1087,6 +1101,11 @@ td.num, th.num { text-align: right; }
 <main>
   <div class="error" id="error"></div>
 
+  <div class="path-check-status path-check-top" id="pathCheckTopStatus">
+    <div class="path-check-main">上次巡检 --:-- · -/- OK</div>
+    <div class="path-check-meta">读取中</div>
+  </div>
+
   <section class="card metrics">
     <div class="metric-item"><span>实时在线</span><strong id="online">-</strong></div>
     <div class="metric-item"><span>今日访问</span><strong id="todayViews">-</strong></div>
@@ -1866,7 +1885,7 @@ async function loadControl() {
 
 function renderPathCheckStatus(data) {
   const el = $('pathCheckStatus');
-  if (!el) return;
+  const top = $('pathCheckTopStatus');
   const heartbeat = data && data.heartbeat;
   const recent = ((data && data.recent_runs) || [])[0] || {};
   const finishedAt = heartbeat && (heartbeat.finished_at || heartbeat.updated_at);
@@ -1877,6 +1896,18 @@ function renderPathCheckStatus(data) {
   const stale = !Number.isFinite(rel.minutes) || rel.minutes > 45;
   const ok = Number(heartbeat?.ok ?? recent.ok ?? 0) === 1;
   const red = stale || !ok;
+  if (top) {
+    const date = new Date(finishedAt || '');
+    const time = Number.isNaN(date.getTime())
+      ? '--:--'
+      : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const topText = stale ? '巡检器可能停摆' : ('上次巡检 ' + time + ' · ' + n(passed) + '/' + n(total) + ' OK');
+    top.className = 'path-check-status path-check-top' + (red ? ' red' : '');
+    top.innerHTML =
+      '<div class="path-check-main" title="' + escapeHtml(rel.time || '') + '">' + statusDot(!red, false) + escapeHtml(topText) + '</div>' +
+      '<div class="path-check-meta">' + escapeHtml(failed ? ('FAIL ' + n(failed)) : 'PASS') + '</div>';
+  }
+  if (!el) return;
   el.className = 'path-check-status' + (red ? ' red' : '');
   const title = rel.time ? ' title="' + escapeHtml(rel.time) + '"' : '';
   const main = stale ? '巡检器可能停摆' : '上次巡检：' + rel.label;
@@ -1904,12 +1935,20 @@ async function loadPathCheckStatus() {
     renderPathCheckStatus(data);
   } catch (e) {
     const el = $('pathCheckStatus');
-    if (!el) return;
-    el.className = 'path-check-status red';
-    el.innerHTML =
+    const top = $('pathCheckTopStatus');
+    if (top) {
+      top.className = 'path-check-status path-check-top red';
+      top.innerHTML =
+        '<div class="path-check-main">' + statusDot(false, false) + '巡检状态读取失败</div>' +
+        '<div class="path-check-meta">FAIL</div>';
+    }
+    if (el) {
+      el.className = 'path-check-status red';
+      el.innerHTML =
       '<div class="path-check-main">' + statusDot(false, false) + '巡检状态读取失败</div>' +
       '<div class="path-check-meta">PASS - / FAIL -</div>' +
       '<div class="path-check-detail">' + escapeHtml(e.message) + '</div>';
+    }
   }
 }
 
