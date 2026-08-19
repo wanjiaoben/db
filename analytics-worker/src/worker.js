@@ -2281,6 +2281,7 @@ async function getProbeSummary(env) {
 }
 
 async function getBackupStatus(env) {
+  const now = new Date();
   const [bjt, progressProduction, progressPreview, niceAnalyticsProduction] = await Promise.all([
     readR2Json(env.BJT_BACKUPS, 'kv-snapshots/latest/manifest.json'),
     readR2Json(env.PROGRESS_BACKUP, 'd1/progress/production/latest.json'),
@@ -2288,12 +2289,14 @@ async function getBackupStatus(env) {
     readR2Json(env.PROGRESS_BACKUP, 'd1/nice_analytics/production/latest.json')
   ]);
   return {
-    generated_at: new Date().toISOString(),
+    generated_at: now.toISOString(),
     items: [
-      backupItem('bjt', 'BJT R2 latest manifest', bjt, ['generatedAt', 'generated_at', 'created_at', 'date']),
-      progressBackupItem('progress-production', 'Progress production D1 export', progressProduction, 'production', 'progress'),
-      progressBackupItem('progress-preview', 'Progress preview D1 export', progressPreview, 'preview', 'progress-otp-preview'),
-      d1BackupItem('nice-analytics-production', 'nice_analytics production D1 export', niceAnalyticsProduction, 'production', 'nice_analytics', 'd1/nice_analytics/production/')
+      backupItem('bjt', 'BJT R2 latest manifest', bjt, ['generatedAt', 'generated_at', 'created_at', 'date'], now, {
+        maxAgeHours: BJT_BACKUP_MAX_AGE_HOURS
+      }),
+      progressBackupItem('progress-production', 'Progress production D1 export', progressProduction, 'production', 'progress', now),
+      progressBackupItem('progress-preview', 'Progress preview D1 export', progressPreview, 'preview', 'progress-otp-preview', now),
+      d1BackupItem('nice-analytics-production', 'nice_analytics production D1 export', niceAnalyticsProduction, 'production', 'nice_analytics', 'd1/nice_analytics/production/', now)
     ]
   };
 }
@@ -2316,20 +2319,23 @@ async function readR2Json(bucket, key) {
   }
 }
 
-const BACKUP_MAX_AGE_HOURS = 27;
-const BACKUP_MAX_AGE_MS = BACKUP_MAX_AGE_HOURS * 60 * 60 * 1000;
+const BJT_BACKUP_MAX_AGE_HOURS = 51;
+const DAILY_D1_BACKUP_MAX_AGE_HOURS = 27;
+const DAILY_D1_BACKUP_MAX_AGE_MS = DAILY_D1_BACKUP_MAX_AGE_HOURS * 60 * 60 * 1000;
 
-function backupAge(dateValue, now) {
+function backupAge(dateValue, now, maxAgeMs) {
   const parsed = parseDateSafe(dateValue);
   if (!parsed) return { ageMs: Number.POSITIVE_INFINITY, fresh: false };
   const ageMs = now.getTime() - parsed.getTime();
-  return { ageMs, fresh: ageMs >= 0 && ageMs <= BACKUP_MAX_AGE_MS };
+  return { ageMs, fresh: ageMs >= 0 && ageMs <= maxAgeMs };
 }
 
-export function backupItem(key, label, result, dateFields, now = new Date()) {
+export function backupItem(key, label, result, dateFields, now = new Date(), options = {}) {
+  const maxAgeHours = options.maxAgeHours || DAILY_D1_BACKUP_MAX_AGE_HOURS;
+  const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
   const data = result.data || {};
   const dateValue = firstDateValue(data, dateFields) || result.updated_at || '';
-  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now);
+  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now, maxAgeMs);
   const fresh = result.ok && ageFresh;
   return {
     key,
@@ -2338,9 +2344,9 @@ export function backupItem(key, label, result, dateFields, now = new Date()) {
     status: fresh ? result.status : (result.ok ? 'stale' : result.status),
     ok: fresh,
     latest_at: dateValue,
-    max_age_hours: BACKUP_MAX_AGE_HOURS,
+    max_age_hours: maxAgeHours,
     age_hours: Number.isFinite(ageMs) ? Math.round(ageMs / 36000) / 100 : null,
-    error: result.error || (!fresh && result.ok ? `latest manifest is outside 27h freshness window: ${dateValue || '<missing>'}` : ''),
+    error: result.error || (!fresh && result.ok ? `latest manifest is outside ${maxAgeHours}h freshness window: ${dateValue || '<missing>'}` : ''),
     source: 'R2'
   };
 }
@@ -2352,7 +2358,7 @@ export function progressBackupItem(key, label, result, expectedEnvironment, expe
 export function d1BackupItem(key, label, result, expectedEnvironment, expectedDatabase, expectedPrefix, now = new Date()) {
   const data = result.data || {};
   const dateValue = firstDateValue(data, ['generated_at', 'generatedAt', 'created_at', 'date']) || result.updated_at || '';
-  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now);
+  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now, DAILY_D1_BACKUP_MAX_AGE_MS);
   let validationError = '';
   if (result.ok && data.environment !== expectedEnvironment) {
     validationError = `manifest environment mismatch: expected ${expectedEnvironment}, got ${data.environment || '<missing>'}`;
@@ -2373,9 +2379,9 @@ export function d1BackupItem(key, label, result, expectedEnvironment, expectedDa
     status: ok ? 'ok' : (validationError ? 'environment_mismatch' : (result.ok ? 'stale' : result.status)),
     ok,
     latest_at: dateValue,
-    max_age_hours: BACKUP_MAX_AGE_HOURS,
+    max_age_hours: DAILY_D1_BACKUP_MAX_AGE_HOURS,
     age_hours: Number.isFinite(ageMs) ? Math.round(ageMs / 36000) / 100 : null,
-    error: result.error || validationError || (!fresh && result.ok ? `latest manifest is older than 27h: ${dateValue || '<missing>'}` : ''),
+    error: result.error || validationError || (!fresh && result.ok ? `latest manifest is older than ${DAILY_D1_BACKUP_MAX_AGE_HOURS}h: ${dateValue || '<missing>'}` : ''),
     source: 'R2'
   };
 }
