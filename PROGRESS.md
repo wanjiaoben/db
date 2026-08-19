@@ -4,6 +4,8 @@ M0731-34 aligns the db-private `/orders` dashboard auth path with proxied dashbo
 
 M0731-28 ships the monthly order CSV export to production and adjusts the default month so month-start tax handoff opens the previous month while month-end verification stays on the current JST month.
 
+DB-0818-01 splits backup freshness windows so BJT R2 latest manifest follows the every-other-day cron with a 51h window while Progress and nice_analytics D1 manifests stay on the daily 27h window; Draft PR #28 is open with local tests and merge gate green.
+
 M0731-14 adds a draft natural-month order export flow for the order source dashboard: previous-month default, captured-only tax totals, excluded pending rows, and BOM CSV evidence exports.
 
 M0731-05 adds a draft BJT Pro order source dashboard page backed by read-only `paypal_order_meta:*` KV rows through the db-private `/orders` endpoint.

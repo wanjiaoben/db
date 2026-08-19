@@ -38,7 +38,7 @@ test('a Progress backup at exactly 27h is still fresh and 28h is stale', () => {
   assert.match(item.error, /older than 27h/);
 });
 
-test('BJT and Progress rolling freshness alert only for 28h manifests, not 26h manifests', () => {
+test('BJT backup follows the 51h every-other-day freshness window', () => {
   const manifestResult = (generatedAt) => ({
     ok: true,
     status: 'ok',
@@ -46,11 +46,25 @@ test('BJT and Progress rolling freshness alert only for 28h manifests, not 26h m
     data: { created_at: generatedAt }
   });
   const fresh = backupItem(
-    'bjt', 'BJT', manifestResult('2026-07-17T19:00:00.000Z'), ['created_at'], now
+    'bjt', 'BJT', manifestResult('2026-07-16T19:00:00.000Z'), ['created_at'], now, { maxAgeHours: 51 }
   );
   const stale = backupItem(
-    'bjt', 'BJT', manifestResult('2026-07-17T17:00:00.000Z'), ['created_at'], now
+    'bjt', 'BJT', manifestResult('2026-07-16T17:00:00.000Z'), ['created_at'], now, { maxAgeHours: 51 }
   );
+  const noAlert = collectAlertItems({ items: [fresh] }, { items: [] }, { targets: [] });
+  const alert = collectAlertItems({ items: [stale] }, { items: [] }, { targets: [] });
+
+  assert.equal(fresh.ok, true);
+  assert.equal(fresh.age_hours, 50);
+  assert.equal(fresh.max_age_hours, 51);
+  assert.equal(stale.ok, false);
+  assert.equal(stale.age_hours, 52);
+  assert.match(stale.error, /outside 51h freshness window/);
+  assert.equal(noAlert.length, 0);
+  assert.deepEqual(alert.map((item) => item.key), ['bjt']);
+});
+
+test('Progress rolling freshness remains daily at 27h', () => {
   const freshProgress = progressBackupItem(
     'progress-production', 'Progress production', result('production', '2026-07-17T19:00:00.000Z'),
     'production', 'progress', now
@@ -59,17 +73,16 @@ test('BJT and Progress rolling freshness alert only for 28h manifests, not 26h m
     'progress-production', 'Progress production', result('production', '2026-07-17T17:00:00.000Z'),
     'production', 'progress', now
   );
-  const noAlert = collectAlertItems({ items: [fresh, freshProgress] }, { items: [] }, { targets: [] });
-  const alert = collectAlertItems({ items: [stale, staleProgress] }, { items: [] }, { targets: [] });
+  const noAlert = collectAlertItems({ items: [freshProgress] }, { items: [] }, { targets: [] });
+  const alert = collectAlertItems({ items: [staleProgress] }, { items: [] }, { targets: [] });
 
-  assert.equal(fresh.ok, true);
-  assert.equal(fresh.age_hours, 26);
   assert.equal(freshProgress.ok, true);
-  assert.equal(stale.ok, false);
-  assert.equal(stale.age_hours, 28);
+  assert.equal(freshProgress.age_hours, 26);
+  assert.equal(freshProgress.max_age_hours, 27);
   assert.equal(staleProgress.ok, false);
+  assert.equal(staleProgress.age_hours, 28);
   assert.equal(noAlert.length, 0);
-  assert.deepEqual(alert.map((item) => item.key), ['bjt', 'progress-production']);
+  assert.deepEqual(alert.map((item) => item.key), ['progress-production']);
 });
 
 test('cross-environment latest is red even when fresh', () => {
