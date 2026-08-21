@@ -268,6 +268,20 @@ td.num, th.num { text-align: right; }
   font-size: 11px;
   overflow-wrap: anywhere;
 }
+.path-check-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 10px;
+}
+.path-check-actions button {
+  flex: 0 0 auto;
+}
+.path-check-actions .sub {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .muted { color: var(--muted); }
 .error {
   display: none;
@@ -1214,6 +1228,10 @@ td.num, th.num { text-align: right; }
         <div class="path-check-meta">PASS - / FAIL -</div>
         <div class="path-check-detail">等待巡检器心跳</div>
       </div>
+      <div class="path-check-actions">
+        <button type="button" id="sendTestAlert">发测试告警</button>
+        <span class="sub" id="testAlertStatus"></span>
+      </div>
       <table>
         <thead><tr><th>项目</th><th>状态</th><th>最近成功</th><th>近7天成功率</th><th>来源</th></tr></thead>
         <tbody id="backupTable"><tr><td colspan="5" class="empty">等待备份状态</td></tr></tbody>
@@ -2045,6 +2063,31 @@ async function loadPathCheckStatus() {
   }
 }
 
+async function sendTestAlert() {
+  const button = $('sendTestAlert');
+  const status = $('testAlertStatus');
+  const key = localStorage.getItem('nice_dashboard_key') || '';
+  button.disabled = true;
+  status.textContent = '发送中...';
+  try {
+    const res = await fetch(API_ROOT + '/alerts/test', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        accept: 'application/json',
+        ...(key ? { 'x-dashboard-key': key } : {})
+      }
+    });
+    const data = await readJsonResponse(res);
+    if (!res.ok || !data.ok || !data.sent) throw new Error(data.error || '测试告警发送失败');
+    status.textContent = '已发到 aboutokinawa@gmail.com';
+  } catch (e) {
+    status.textContent = '发送失败：' + e.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function loadVisitors() {
   const key = localStorage.getItem('nice_dashboard_key') || '';
   visitorDays = visitorDaysFromControl();
@@ -2280,6 +2323,7 @@ $('pageTable').addEventListener('click', (event) => {
   selectedPage = '';
   load();
 });
+$('sendTestAlert').addEventListener('click', sendTestAlert);
 $('key').value = localStorage.getItem('nice_dashboard_key') || '';
 $('orderMonth').value = defaultOrderMonth();
 syncRangeTabs();
