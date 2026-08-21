@@ -4,6 +4,9 @@ const MONTHLY_ALERT_SELF_CHECK_CRON = '0 0 1 * *';
 const PATH_CHECK_CRON = '*/15 * * * *';
 const PATH_CHECK_PREVIEW_INJECT_CRON = '11 29 7 29 *';
 const PATH_CHECK_PREVIEW_TEST_EMAIL_CRON = '12 29 7 29 *';
+const GSC_DAILY_SYNC_CRON = '0 0 * * *';
+const GSC_DEFAULT_SYNC_DAYS = 28;
+const GSC_REPORT_WINDOW_DAYS = 7;
 const VISITOR_EVENT_PATH = '/events';
 const VISITOR_DASHBOARD_PATH = '/visitors';
 const VISITOR_EVENT_RATE_LIMIT_PER_MINUTE = 30;
@@ -25,6 +28,9 @@ const VISITOR_EVENT_SITES = Object.freeze({
   progress: 'progress.nice.okinawa',
   kiso: 'kiso.nice.okinawa'
 });
+const SEARCH_CONSOLE_SITE_HOSTS = Object.freeze(
+  Object.fromEntries(Object.entries(VISITOR_EVENT_SITES).map(([site, host]) => [host, site]))
+);
 const PATH_CHECK_ALERT_WINDOW_MS = 6 * 60 * 60 * 1000;
 const PATH_CHECK_ALERT_ESCALATION_MS = 24 * 60 * 60 * 1000;
 const PATH_CHECK_INTERVAL_MS = 15 * 60 * 1000;
@@ -223,6 +229,10 @@ export default {
 
     if (url.pathname === '/search-console/sync' && request.method === 'POST') {
       return syncSearchConsole(request, env);
+    }
+
+    if (url.pathname === '/search-console/weekly-report' && request.method === 'POST') {
+      return searchConsoleWeeklyReport(request, env);
     }
 
     if (url.pathname === '/search-console/status' && request.method === 'GET') {
@@ -997,11 +1007,19 @@ async function runScheduledTasks(event, env) {
     errors.push(`probes:${e.message}`);
   }
 
-  if (scheduledAt.getUTCHours() === 20) {
+  if (cron === GSC_DAILY_SYNC_CRON) {
     try {
       await syncSearchConsoleRange(env);
     } catch (e) {
       errors.push(`gsc:${e.message}`);
+    }
+    if (isJstMonday(scheduledAt)) {
+      try {
+        const report = await sendSearchConsoleWeeklyReport(env, scheduledAt, { reason: cron });
+        if (report?.configured !== false && report?.error) errors.push(`gsc-weekly:${report.error}`);
+      } catch (e) {
+        errors.push(`gsc-weekly:${e.message}`);
+      }
     }
   }
   try {
@@ -1031,6 +1049,7 @@ async function summary(request, env) {
     ? 1
     : Math.min(Math.max(Number(url.searchParams.get('days') || 7), 1), 365);
   const selectedSite = clean(url.searchParams.get('site'), 120);
+  const selectedSearchSite = clean(url.searchParams.get('gsc_site'), 120);
   const selectedPath = clean(url.searchParams.get('path'), 300);
   const filterClause = `${selectedSite ? ' AND site = ?' : ''}${selectedPath ? ' AND path = ?' : ''}`;
   const filterParams = [...(selectedSite ? [selectedSite] : []), ...(selectedPath ? [selectedPath] : [])];
@@ -1199,11 +1218,13 @@ async function summary(request, env) {
     LIMIT 50
   `, [since, ...filterParams]);
 
-  const searchConsole = await searchConsoleSummary(env.DB, {
-    since: range === 'today' ? dateOnly(Date.now()) : dateOnly(Date.now() - days * 86400000),
-    site: selectedSite,
-    path: selectedPath
-  });
+  const searchConsole = hasSearchConsoleConfig(env)
+    ? await searchConsoleSummary(env.DB, {
+      since: range === 'today' ? dateOnly(Date.now()) : dateOnly(Date.now() - days * 86400000),
+      site: selectedSearchSite,
+      path: selectedPath
+    })
+    : unconfiguredSearchConsoleSummary(range === 'today' ? dateOnly(Date.now()) : dateOnly(Date.now() - days * 86400000), selectedSearchSite, selectedPath);
 
   return json({
     ok: true,
@@ -1255,8 +1276,42 @@ async function searchConsoleSummary(db, filters) {
       FROM search_console_daily
       WHERE date >= ?${clause}
       GROUP BY query, site, path
-      ORDER BY clicks DESC, impressions DESC
-      LIMIT 80
+      ORDER BY impressions DESC, clicks DESC
+      LIMIT 20
+    `, params);
+    const noClick = await all(db, `
+      SELECT
+        query,
+        site,
+        path,
+        SUM(clicks) AS clicks,
+        SUM(impressions) AS impressions,
+        CASE WHEN SUM(impressions) > 0 THEN SUM(clicks) * 1.0 / SUM(impressions) ELSE 0 END AS ctr,
+        CASE WHEN SUM(impressions) > 0 THEN SUM(position * impressions) / SUM(impressions) ELSE 0 END AS position
+      FROM search_console_daily
+      WHERE date >= ?${clause}
+      GROUP BY query, site, path
+      HAVING SUM(impressions) > 0 AND SUM(clicks) = 0
+      ORDER BY impressions DESC, position ASC
+      LIMIT 20
+    `, params);
+    const strikingDistance = await all(db, `
+      SELECT
+        query,
+        site,
+        path,
+        SUM(clicks) AS clicks,
+        SUM(impressions) AS impressions,
+        CASE WHEN SUM(impressions) > 0 THEN SUM(clicks) * 1.0 / SUM(impressions) ELSE 0 END AS ctr,
+        CASE WHEN SUM(impressions) > 0 THEN SUM(position * impressions) / SUM(impressions) ELSE 0 END AS position
+      FROM search_console_daily
+      WHERE date >= ?${clause}
+      GROUP BY query, site, path
+      HAVING SUM(impressions) > 0
+         AND (SUM(position * impressions) / SUM(impressions)) >= 4
+         AND (SUM(position * impressions) / SUM(impressions)) <= 15
+      ORDER BY impressions DESC, position ASC
+      LIMIT 20
     `, params);
     const pages = await all(db, `
       SELECT
@@ -1272,10 +1327,51 @@ async function searchConsoleSummary(db, filters) {
       ORDER BY clicks DESC, impressions DESC
       LIMIT 80
     `, params);
-    return { ok: true, totals, queries, pages };
+    const sites = await all(db, `
+      SELECT
+        site,
+        SUM(clicks) AS clicks,
+        SUM(impressions) AS impressions,
+        CASE WHEN SUM(impressions) > 0 THEN SUM(clicks) * 1.0 / SUM(impressions) ELSE 0 END AS ctr,
+        CASE WHEN SUM(impressions) > 0 THEN SUM(position * impressions) / SUM(impressions) ELSE 0 END AS position,
+        MAX(imported_at) AS imported_at
+      FROM search_console_daily
+      WHERE date >= ?
+      GROUP BY site
+      ORDER BY impressions DESC, clicks DESC
+    `, [filters.since]);
+    return {
+      ok: true,
+      range_start: filters.since,
+      selected_site: filters.site || '',
+      totals,
+      sites,
+      queries,
+      no_click: noClick,
+      striking_distance: strikingDistance,
+      pages
+    };
   } catch (e) {
     return { ok: false, error: 'search_console_not_ready' };
   }
+}
+
+function unconfiguredSearchConsoleSummary(since, site = '', path = '') {
+  return {
+    ok: false,
+    configured: false,
+    error: 'missing_search_console_config',
+    message: '未接入 Search Console',
+    range_start: since,
+    selected_site: site || '',
+    selected_path: path || '',
+    totals: { clicks: 0, impressions: 0, ctr: 0, position: 0, imported_at: '' },
+    sites: [],
+    queries: [],
+    no_click: [],
+    striking_distance: [],
+    pages: []
+  };
 }
 
 async function searchConsoleStatus(request, env) {
@@ -1300,11 +1396,23 @@ async function syncSearchConsole(request, env) {
     return json({ ok: false, error: 'unauthorized' }, request, 403);
   }
   const url = new URL(request.url);
-  const days = Math.min(Math.max(Number(url.searchParams.get('days') || 7), 1), 365);
+  const days = Math.min(Math.max(Number(url.searchParams.get('days') || GSC_DEFAULT_SYNC_DAYS), 1), 365);
   const endDate = url.searchParams.get('end') || dateOnly(Date.now() - 2 * 86400000);
   const startDate = url.searchParams.get('start') || dateOnly(Date.parse(endDate + 'T00:00:00Z') - (days - 1) * 86400000);
   const result = await syncSearchConsoleRange(env, startDate, endDate);
   return json({ ok: true, ...result }, request);
+}
+
+async function searchConsoleWeeklyReport(request, env) {
+  if (!requireDashboard(request, env)) {
+    return json({ ok: false, error: 'unauthorized' }, request, 403);
+  }
+  try {
+    const result = await sendSearchConsoleWeeklyReport(env, new Date(), { reason: 'manual', force: true });
+    return json({ ok: true, ...result }, request);
+  } catch (error) {
+    return json({ ok: false, error: clean(error.message || String(error), 300) }, request, 502);
+  }
 }
 
 async function syncSearchConsoleRange(env, startDate, endDate) {
@@ -1312,7 +1420,7 @@ async function syncSearchConsoleRange(env, startDate, endDate) {
     return { configured: false, imported_rows: 0, error: 'missing_search_console_config' };
   }
   const end = endDate || dateOnly(Date.now() - 2 * 86400000);
-  const start = startDate || dateOnly(Date.now() - 8 * 86400000);
+  const start = startDate || dateOnly(Date.parse(end + 'T00:00:00Z') - (GSC_DEFAULT_SYNC_DAYS - 1) * 86400000);
   const token = await googleAccessToken(env);
   const sites = configuredSearchConsoleSites(env);
   let imported = 0;
@@ -1326,8 +1434,144 @@ async function syncSearchConsoleRange(env, startDate, endDate) {
   return { configured: true, start_date: start, end_date: end, imported_rows: imported, sites: details };
 }
 
+async function sendSearchConsoleWeeklyReport(env, now = new Date(), options = {}) {
+  if (!hasSearchConsoleConfig(env)) {
+    return { configured: false, sent: false, error: 'missing_search_console_config' };
+  }
+  const report = await searchConsoleWeeklyReportData(env.DB, now);
+  const recipient = normalizeEmailForAlert(env.GSC_WEEKLY_REPORT_EMAIL || 'info@nice.okinawa');
+  const config = getAlertConfig(env, recipient);
+  const prefix = env.ALERT_SUBJECT_PREFIX || '';
+  const subject = `${prefix}[Nice Dashboard] Google search weekly summary ${report.current.start_date}..${report.current.end_date}`;
+  const text = buildSearchConsoleWeeklyEmailText(report);
+  const result = await sendAlertEmail(config, subject, text);
+  return {
+    configured: true,
+    sent: true,
+    recipient,
+    subject,
+    current: report.current,
+    previous: report.previous,
+    sites: report.sites.length,
+    no_click: report.no_click.length,
+    striking_distance: report.striking_distance.length,
+    reason: options.reason || 'manual',
+    result
+  };
+}
+
+async function searchConsoleWeeklyReportData(db, now = new Date()) {
+  const currentEnd = dateOnly(now.getTime() - 2 * 86400000);
+  const currentStart = dateOnly(Date.parse(currentEnd + 'T00:00:00Z') - (GSC_REPORT_WINDOW_DAYS - 1) * 86400000);
+  const previousEnd = dateOnly(Date.parse(currentStart + 'T00:00:00Z') - 86400000);
+  const previousStart = dateOnly(Date.parse(previousEnd + 'T00:00:00Z') - (GSC_REPORT_WINDOW_DAYS - 1) * 86400000);
+  const currentSites = await searchConsoleSiteTotals(db, currentStart, currentEnd);
+  const previousSites = await searchConsoleSiteTotals(db, previousStart, previousEnd);
+  const previousBySite = new Map(previousSites.map((row) => [row.site, row]));
+  const sites = currentSites.map((row) => {
+    const previous = previousBySite.get(row.site) || { clicks: 0, impressions: 0 };
+    return {
+      ...row,
+      previous_clicks: Number(previous.clicks || 0),
+      previous_impressions: Number(previous.impressions || 0),
+      clicks_delta: Number(row.clicks || 0) - Number(previous.clicks || 0),
+      impressions_delta: Number(row.impressions || 0) - Number(previous.impressions || 0)
+    };
+  });
+  return {
+    generated_at: now.toISOString(),
+    current: { start_date: currentStart, end_date: currentEnd },
+    previous: { start_date: previousStart, end_date: previousEnd },
+    sites,
+    no_click: await searchConsoleTopRows(db, currentStart, currentEnd, 'no_click', 5),
+    striking_distance: await searchConsoleTopRows(db, currentStart, currentEnd, 'striking_distance', 5)
+  };
+}
+
+async function searchConsoleSiteTotals(db, startDate, endDate) {
+  return await all(db, `
+    SELECT
+      site,
+      SUM(clicks) AS clicks,
+      SUM(impressions) AS impressions,
+      CASE WHEN SUM(impressions) > 0 THEN SUM(clicks) * 1.0 / SUM(impressions) ELSE 0 END AS ctr,
+      CASE WHEN SUM(impressions) > 0 THEN SUM(position * impressions) / SUM(impressions) ELSE 0 END AS position
+    FROM search_console_daily
+    WHERE date >= ? AND date <= ?
+    GROUP BY site
+    ORDER BY impressions DESC, clicks DESC
+  `, [startDate, endDate]);
+}
+
+async function searchConsoleTopRows(db, startDate, endDate, kind, limit = 20) {
+  const having = kind === 'striking_distance'
+    ? `HAVING SUM(impressions) > 0
+         AND (SUM(position * impressions) / SUM(impressions)) >= 4
+         AND (SUM(position * impressions) / SUM(impressions)) <= 15`
+    : 'HAVING SUM(impressions) > 0 AND SUM(clicks) = 0';
+  return await all(db, `
+    SELECT
+      query,
+      site,
+      path,
+      SUM(clicks) AS clicks,
+      SUM(impressions) AS impressions,
+      CASE WHEN SUM(impressions) > 0 THEN SUM(clicks) * 1.0 / SUM(impressions) ELSE 0 END AS ctr,
+      CASE WHEN SUM(impressions) > 0 THEN SUM(position * impressions) / SUM(impressions) ELSE 0 END AS position
+    FROM search_console_daily
+    WHERE date >= ? AND date <= ?
+    GROUP BY query, site, path
+    ${having}
+    ORDER BY impressions DESC, position ASC
+    LIMIT ?
+  `, [startDate, endDate, limit]);
+}
+
+export function buildSearchConsoleWeeklyEmailText(report) {
+  const siteLines = report.sites.length
+    ? report.sites.map((row) => `- ${row.site}: clicks ${row.clicks} (${signed(row.clicks_delta)}), impressions ${row.impressions} (${signed(row.impressions_delta)}), CTR ${percentText(row.ctr)}, pos ${positionText(row.position)}`)
+    : ['- no Search Console rows in this window'];
+  const noClickLines = report.no_click.length
+    ? report.no_click.map((row) => `- ${row.site} | ${row.query || '-'} | ${row.path || '-'} | imp ${row.impressions} | pos ${positionText(row.position)}`)
+    : ['- none'];
+  const strikingLines = report.striking_distance.length
+    ? report.striking_distance.map((row) => `- ${row.site} | ${row.query || '-'} | ${row.path || '-'} | clicks ${row.clicks} | imp ${row.impressions} | pos ${positionText(row.position)}`)
+    : ['- none'];
+  return [
+    'Google Search Console weekly summary',
+    '',
+    `Current: ${report.current.start_date}..${report.current.end_date}`,
+    `Previous: ${report.previous.start_date}..${report.previous.end_date}`,
+    '',
+    'Site week-over-week',
+    ...siteLines,
+    '',
+    'CTR opportunities: impressions without clicks Top 5',
+    ...noClickLines,
+    '',
+    'Striking distance: ranking 4-15 Top 5',
+    ...strikingLines,
+    '',
+    `Generated: ${report.generated_at}`
+  ].join('\n');
+}
+
+function signed(value) {
+  const number = Number(value || 0);
+  return `${number >= 0 ? '+' : ''}${number}`;
+}
+
+function percentText(value) {
+  return `${Math.round(Number(value || 0) * 1000) / 10}%`;
+}
+
+function positionText(value) {
+  const number = Number(value || 0);
+  return number ? String(Math.round(number * 10) / 10) : '-';
+}
+
 function hasSearchConsoleConfig(env) {
-  return Boolean(env.GSC_CLIENT_EMAIL && env.GSC_PRIVATE_KEY && configuredSearchConsoleSites(env).length);
+  return Boolean(searchConsoleCredentials(env) && configuredSearchConsoleSites(env).length);
 }
 
 function configuredSearchConsoleSites(env) {
@@ -1341,10 +1585,20 @@ function dateOnly(ms) {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
+function isJstMonday(date) {
+  const weekday = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Tokyo',
+    weekday: 'short'
+  }).format(date);
+  return weekday === 'Mon';
+}
+
 async function googleAccessToken(env) {
+  const credentials = searchConsoleCredentials(env);
+  if (!credentials) throw new Error('missing_search_console_config');
   const now = Math.floor(Date.now() / 1000);
-  const assertion = await signJwt(env.GSC_CLIENT_EMAIL, env.GSC_PRIVATE_KEY, {
-    iss: env.GSC_CLIENT_EMAIL,
+  const assertion = await signJwt(credentials.clientEmail, credentials.privateKey, {
+    iss: credentials.clientEmail,
     scope: 'https://www.googleapis.com/auth/webmasters.readonly',
     aud: 'https://oauth2.googleapis.com/token',
     iat: now,
@@ -1363,6 +1617,24 @@ async function googleAccessToken(env) {
     throw new Error(data.error_description || data.error || 'google_token_failed');
   }
   return data.access_token;
+}
+
+export function searchConsoleCredentials(env) {
+  const rawJson = clean(env.GSC_SERVICE_ACCOUNT_JSON || '', 20000);
+  if (rawJson) {
+    try {
+      const parsed = JSON.parse(rawJson);
+      const clientEmail = clean(parsed.client_email, 300);
+      const privateKey = clean(parsed.private_key, 5000);
+      if (clientEmail && privateKey) return { clientEmail, privateKey, source: 'GSC_SERVICE_ACCOUNT_JSON' };
+    } catch (e) {
+      return null;
+    }
+  }
+  const clientEmail = clean(env.GSC_CLIENT_EMAIL || '', 300);
+  const privateKey = clean(env.GSC_PRIVATE_KEY || '', 5000);
+  if (clientEmail && privateKey) return { clientEmail, privateKey, source: 'split' };
+  return null;
 }
 
 async function signJwt(clientEmail, privateKeyPem, claims) {
@@ -1406,25 +1678,33 @@ function pemToArrayBuffer(pem) {
 
 async function fetchSearchConsoleRows(token, siteUrl, startDate, endDate) {
   const endpoint = `https://searchconsole.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`;
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${token}`,
-      'content-type': 'application/json'
-    },
-    body: JSON.stringify({
-      startDate,
-      endDate,
-      dimensions: ['date', 'page', 'query', 'country', 'device'],
-      rowLimit: 25000,
-      dataState: 'final'
-    })
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error?.message || 'search_console_query_failed');
+  const rows = [];
+  const rowLimit = 25000;
+  for (let startRow = 0; startRow < 250000; startRow += rowLimit) {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        startDate,
+        endDate,
+        dimensions: ['date', 'page', 'query', 'country', 'device'],
+        rowLimit,
+        startRow,
+        dataState: 'final'
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error?.message || 'search_console_query_failed');
+    }
+    const pageRows = data.rows || [];
+    rows.push(...pageRows);
+    if (pageRows.length < rowLimit) break;
   }
-  return data.rows || [];
+  return rows;
 }
 
 async function storeSearchConsoleRows(db, siteUrl, rows) {
@@ -1471,15 +1751,20 @@ async function storeSearchConsoleRows(db, siteUrl, rows) {
 function parsePage(siteUrl, page) {
   try {
     const parsed = new URL(page);
-    return { site: parsed.hostname, path: parsed.pathname || '/' };
+    return { site: siteIdFromHostname(parsed.hostname), path: parsed.pathname || '/' };
   } catch (e) {
     try {
       const fallback = new URL(siteUrl);
-      return { site: fallback.hostname, path: '/' };
+      return { site: siteIdFromHostname(fallback.hostname), path: '/' };
     } catch (err) {
       return { site: '', path: '/' };
     }
   }
+}
+
+function siteIdFromHostname(hostname) {
+  const host = clean(hostname, 300).toLowerCase();
+  return SEARCH_CONSOLE_SITE_HOSTS[host] || host;
 }
 
 function pageCheck(key, label, url, contains, options = {}) {
@@ -2299,7 +2584,7 @@ async function getBackupStatus(env) {
   const previewItem = progressBackupItem('progress-preview', 'Progress preview D1 export', progressPreview, 'preview', 'progress-otp-preview', now);
   const niceItem = attachBackupHistory(d1BackupItem('nice-analytics-production', 'nice_analytics production D1 export', niceAnalyticsProduction, 'production', 'nice_analytics', 'd1/nice_analytics/production/', now), niceAnalyticsHistory);
   return {
-    generated_at: new Date().toISOString(),
+    generated_at: now.toISOString(),
     items: [
       bjtItem,
       progressItem,
@@ -2413,20 +2698,22 @@ async function readR2Json(bucket, key) {
   }
 }
 
-const BACKUP_MAX_AGE_HOURS = 27;
-const BACKUP_MAX_AGE_MS = BACKUP_MAX_AGE_HOURS * 60 * 60 * 1000;
+const DAILY_BACKUP_MAX_AGE_HOURS = 27;
+const BJT_BACKUP_MAX_AGE_HOURS = 51;
 
-function backupAge(dateValue, now) {
+function backupAge(dateValue, now, maxAgeHours) {
   const parsed = parseDateSafe(dateValue);
   if (!parsed) return { ageMs: Number.POSITIVE_INFINITY, fresh: false };
   const ageMs = now.getTime() - parsed.getTime();
-  return { ageMs, fresh: ageMs >= 0 && ageMs <= BACKUP_MAX_AGE_MS };
+  const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
+  return { ageMs, fresh: ageMs >= 0 && ageMs <= maxAgeMs };
 }
 
-export function backupItem(key, label, result, dateFields, now = new Date()) {
+export function backupItem(key, label, result, dateFields, now = new Date(), options = {}) {
+  const maxAgeHours = options.maxAgeHours || DAILY_BACKUP_MAX_AGE_HOURS;
   const data = result.data || {};
   const dateValue = firstDateValue(data, dateFields) || result.updated_at || '';
-  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now);
+  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now, maxAgeHours);
   const fresh = result.ok && ageFresh;
   return {
     key,
@@ -2435,9 +2722,9 @@ export function backupItem(key, label, result, dateFields, now = new Date()) {
     status: fresh ? result.status : (result.ok ? 'stale' : result.status),
     ok: fresh,
     latest_at: dateValue,
-    max_age_hours: BACKUP_MAX_AGE_HOURS,
+    max_age_hours: maxAgeHours,
     age_hours: Number.isFinite(ageMs) ? Math.round(ageMs / 36000) / 100 : null,
-    error: result.error || (!fresh && result.ok ? `latest manifest is outside 27h freshness window: ${dateValue || '<missing>'}` : ''),
+    error: result.error || (!fresh && result.ok ? `latest manifest is outside ${maxAgeHours}h freshness window: ${dateValue || '<missing>'}` : ''),
     source: 'R2'
   };
 }
@@ -2452,7 +2739,7 @@ export function progressBackupItem(key, label, result, expectedEnvironment, expe
 export function dailyD1BackupItem(key, label, result, now = new Date()) {
   const data = result.data || {};
   const dateValue = firstDateValue(data, ['generated_at', 'generatedAt', 'created_at', 'date']) || result.updated_at || '';
-  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now);
+  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now, DAILY_BACKUP_MAX_AGE_HOURS);
   const complete = data.status === 'complete' && !(data.failures || []).length;
   const fresh = result.ok && complete && ageFresh;
   const failureDetail = (data.failures || []).map((item) => `${item.stage || 'backup'}: ${item.error || ''}`).join('; ');
@@ -2466,9 +2753,9 @@ export function dailyD1BackupItem(key, label, result, now = new Date()) {
     status: fresh ? 'ok' : (result.ok ? (complete ? 'stale' : (data.status || 'failed')) : result.status),
     ok: fresh,
     latest_at: dateValue,
-    max_age_hours: BACKUP_MAX_AGE_HOURS,
+    max_age_hours: DAILY_BACKUP_MAX_AGE_HOURS,
     age_hours: Number.isFinite(ageMs) ? Math.round(ageMs / 36000) / 100 : null,
-    error: result.error || failureDetail || (!fresh && result.ok ? `latest manifest is older than ${BACKUP_MAX_AGE_HOURS}h: ${dateValue || '<missing>'}` : ''),
+    error: result.error || failureDetail || (!fresh && result.ok ? `latest manifest is older than ${DAILY_BACKUP_MAX_AGE_HOURS}h: ${dateValue || '<missing>'}` : ''),
     source: 'R2'
   };
 }
@@ -2476,7 +2763,7 @@ export function dailyD1BackupItem(key, label, result, now = new Date()) {
 export function d1BackupItem(key, label, result, expectedEnvironment, expectedDatabase, expectedPrefix, now = new Date()) {
   const data = result.data || {};
   const dateValue = firstDateValue(data, ['generated_at', 'generatedAt', 'created_at', 'date']) || result.updated_at || '';
-  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now);
+  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now, DAILY_BACKUP_MAX_AGE_HOURS);
   let validationError = '';
   if (result.ok && data.environment !== expectedEnvironment) {
     validationError = `manifest environment mismatch: expected ${expectedEnvironment}, got ${data.environment || '<missing>'}`;
@@ -2497,7 +2784,7 @@ export function d1BackupItem(key, label, result, expectedEnvironment, expectedDa
     status: ok ? 'ok' : (validationError ? 'environment_mismatch' : (result.ok ? 'stale' : result.status)),
     ok,
     latest_at: dateValue,
-    max_age_hours: BACKUP_MAX_AGE_HOURS,
+    max_age_hours: DAILY_BACKUP_MAX_AGE_HOURS,
     age_hours: Number.isFinite(ageMs) ? Math.round(ageMs / 36000) / 100 : null,
     error: result.error || validationError || (!fresh && result.ok ? `latest manifest is older than 27h: ${dateValue || '<missing>'}` : ''),
     source: 'R2'
@@ -2525,13 +2812,26 @@ async function getDeploymentStatus(env) {
 
 async function getRepoDeploymentStatus(env, repo) {
   const token = env.GITHUB_TOKEN || '';
+  if (!token) {
+    return {
+      repo,
+      ok: false,
+      status: 'manual',
+      conclusion: '',
+      updated_at: '',
+      url: '',
+      error: 'missing_GITHUB_TOKEN',
+      manual: true,
+      note: '未配 token'
+    };
+  }
   const url = `https://api.github.com/repos/wanjiaoben/${repo}/actions/runs?branch=main&per_page=10`;
   const headers = {
     accept: 'application/vnd.github+json',
     'user-agent': 'nice-analytics-dashboard',
     'x-github-api-version': '2022-11-28'
   };
-  if (token) headers.authorization = `Bearer ${token}`;
+  headers.authorization = `Bearer ${token}`;
   try {
     const res = await fetch(url, { headers });
     const data = await res.json().catch(() => ({}));

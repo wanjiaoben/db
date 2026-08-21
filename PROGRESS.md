@@ -1,5 +1,7 @@
 # db.nice.okinawa Progress
 
+DB-0822-01 adds the draft Search Console dashboard integration: 28-day daily sync via service-account JSON, site/query/page D1 aggregation, Top20/CTR-opportunity/4-15 ranking views, Monday weekly summary email plumbing, and documents missing production secrets blocking live GSC/email validation.
+
 M0731-34 aligns the db-private `/orders` dashboard auth path with proxied dashboard APIs so Basic-authenticated dashboard users can load monthly order exports without a browser-stored dashboard key.
 
 M0731-28 ships the monthly order CSV export to production and adjusts the default month so month-start tax handoff opens the previous month while month-end verification stays on the current JST month.

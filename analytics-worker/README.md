@@ -37,10 +37,11 @@ Admins can force a channel self-check with `POST /alerts/self-check?force=1`.
 
 ## Backup Freshness and Alert Ownership
 
-Nice Dashboard treats the latest BJT manifest and both Progress manifests as
-fresh while their age is between 0 and 27 hours, inclusive. Freshness is a
-rolling duration and does not reset at midnight JST. A date change by itself
-must not turn a backup red or send a recovery email later that morning.
+Nice Dashboard treats the latest BJT manifest as fresh for 51 hours because the
+BJT KV backup cron runs every other day. Daily D1 backups stay on the 27-hour
+freshness window. Freshness is a rolling duration and does not reset at midnight
+JST. A date change by itself must not turn a backup red or send a recovery email
+later that morning.
 
 The two alert layers have separate responsibilities:
 
@@ -60,9 +61,9 @@ source of truth; use Nice Dashboard for the cross-system summary.
 
 After a freshness-rule release, observe two complete JST midnight crossings
 (48 hours). Expected behavior: no red or recovery email caused only by the date
-change. Mail is expected only when a manifest is actually older than 27 hours,
-has an invalid/future timestamp, crosses a Progress environment boundary, or
-another monitored deployment/probe is red.
+change. Mail is expected only when a manifest is actually older than its
+configured freshness window, has an invalid/future timestamp, crosses a
+Progress environment boundary, or another monitored deployment/probe is red.
 
 ## Dashboard
 
@@ -89,17 +90,30 @@ Then Wan sets the generated value with `wrangler secret put DASHBOARD_KEY` in
 ## Google Search Console
 
 The dashboard can show Google search queries, clicks, impressions, CTR, and
-average position after a Google service account is connected.
+average position after a Google service account is connected. It syncs the
+latest 28 days daily at 09:00 JST and sends a Monday 09:00 JST summary to
+`info@nice.okinawa`.
 
 1. In Google Cloud, create a service account and download a JSON key.
 2. In Google Search Console, add the service account email as a user for each
    property listed in `GSC_SITE_URLS`.
-3. Set these Worker secrets:
-   - `GSC_CLIENT_EMAIL`
-   - `GSC_PRIVATE_KEY`
-4. Run `schema.sql` on the D1 database again to create `search_console_daily`.
-5. Deploy the Worker. The cron sync runs daily, and the dashboard button can
-   manually sync the latest 7 days.
+3. Set this Worker secret:
+   - `GSC_SERVICE_ACCOUNT_JSON`
+4. Keep `GSC_WEEKLY_REPORT_EMAIL` and `ALERT_EMAIL_ALLOWLIST` aligned if the
+   recipient changes.
+5. Run `schema.sql` on the D1 database again to create `search_console_daily`.
+6. Deploy the Worker. The cron sync runs daily, and the dashboard button can
+   manually sync the latest 28 days.
+
+`GSC_CLIENT_EMAIL` and `GSC_PRIVATE_KEY` are still accepted as a fallback for
+older preview environments, but production should use the JSON secret above.
+
+## GitHub Deployment Status
+
+The dashboard reads GitHub Actions through `GITHUB_TOKEN` when present. Set a
+read-only repo-status token as a Worker secret named `GITHUB_TOKEN`. When it is
+absent, the four deployment status cells show `未配 token` and do not call the
+GitHub API.
 
 ## Events
 
