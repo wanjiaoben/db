@@ -36,17 +36,14 @@ ALLOWED_ORIGIN = "https://translation.nice.okinawa"
 DASHBOARD_ORIGIN = "https://db.nice.okinawa"
 GSC_SITE_URLS = "https://bjt.nice.okinawa/,https://kiso.nice.okinawa/,https://progress.nice.okinawa/,https://fishing.nice.okinawa/,https://snorkel.nice.okinawa/,https://nice.okinawa/,https://activity.nice.okinawa/,https://translation.nice.okinawa/,https://rental.nice.okinawa/,https://golf.nice.okinawa/,https://japanusedcars.nice.okinawa/"
 # Secret required: GSC_SERVICE_ACCOUNT_JSON.
-GSC_WEEKLY_REPORT_EMAIL = "info@nice.okinawa"
 # Alert mail is sent via Resend only on red states or manual admin tests.
 # Secret required: RESEND_API_KEY.
-WAN_ALERT_EMAIL = "info@nice.okinawa"
-ALERT_EMAIL_ALLOWLIST = "aboutokinawa@gmail.com,info@nice.okinawa"
+ALERT_RECIPIENTS = "aboutokinawa@gmail.com"
 ALERT_FROM_EMAIL = "Nice Okinawa Inquiry <noreply@nice.okinawa>"
 ALERT_SUBJECT_PREFIX = ""
 PATH_CHECK_ALERTS_ENABLED = "1"
 DASHBOARD_ALERTS_ENABLED = "1"
 # Monthly alert-channel self-check records status only; green runs do not send email.
-ALERT_CHANNEL_SELF_CHECK_EMAIL = "info@nice.okinawa"
 
 [env.preview]
 name = "nice-analytics-t0705-12"
@@ -83,14 +80,10 @@ ALLOWED_ORIGIN = "https://db-t0705-12.nice.okinawa"
 DASHBOARD_ORIGIN = "https://db-t0705-12.nice.okinawa"
 GSC_SITE_URLS = "https://bjt.nice.okinawa/,https://kiso.nice.okinawa/,https://progress.nice.okinawa/,https://fishing.nice.okinawa/,https://snorkel.nice.okinawa/,https://nice.okinawa/,https://activity.nice.okinawa/,https://translation.nice.okinawa/,https://rental.nice.okinawa/,https://golf.nice.okinawa/,https://japanusedcars.nice.okinawa/"
 # Secret required: GSC_SERVICE_ACCOUNT_JSON.
-GSC_WEEKLY_REPORT_EMAIL = "info@nice.okinawa"
 # Preview uses the same Resend alert contract as production.
 # Secret required: RESEND_API_KEY. Preview test mail subjects are prefixed with [TEST].
-WAN_ALERT_EMAIL = "info@nice.okinawa"
-ALERT_EMAIL_ALLOWLIST = "aboutokinawa@gmail.com,info@nice.okinawa"
+ALERT_RECIPIENTS = "aboutokinawa@gmail.com"
 ALERT_FROM_EMAIL = "Nice Okinawa Inquiry <noreply@nice.okinawa>"
 ALERT_SUBJECT_PREFIX = "[TEST] "
 PATH_CHECK_ALERTS_ENABLED = "0"
 DASHBOARD_ALERTS_ENABLED = "0"
-# Preview uses the same recipient with [TEST] subjects.
-ALERT_CHANNEL_SELF_CHECK_EMAIL = "info@nice.okinawa"

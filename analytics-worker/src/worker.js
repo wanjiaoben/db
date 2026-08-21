@@ -1439,8 +1439,7 @@ async function sendSearchConsoleWeeklyReport(env, now = new Date(), options = {}
     return { configured: false, sent: false, error: 'missing_search_console_config' };
   }
   const report = await searchConsoleWeeklyReportData(env.DB, now);
-  const recipient = normalizeEmailForAlert(env.GSC_WEEKLY_REPORT_EMAIL || 'info@nice.okinawa');
-  const config = getAlertConfig(env, recipient);
+  const config = getAlertConfig(env);
   const prefix = env.ALERT_SUBJECT_PREFIX || '';
   const subject = `${prefix}[Nice Dashboard] Google search weekly summary ${report.current.start_date}..${report.current.end_date}`;
   const text = buildSearchConsoleWeeklyEmailText(report);
@@ -1448,7 +1447,7 @@ async function sendSearchConsoleWeeklyReport(env, now = new Date(), options = {}
   return {
     configured: true,
     sent: true,
-    recipient,
+    recipient: config.to,
     subject,
     current: report.current,
     previous: report.previous,
@@ -3144,8 +3143,8 @@ async function sendManualTestAlert(env, options = {}) {
     return { sent: false, dry_run: true, ...preview };
   }
   const result = await sendDashboardAlert(env, 'red', [item]);
-  const to = normalizeEmailForAlert(env.WAN_ALERT_EMAIL || '');
-  return { sent: true, to, result };
+  const config = getAlertConfig(env);
+  return { sent: true, to: config.to, result };
 }
 
 async function sendMonthlyAlertChannelSelfCheck(env, scheduledAt, reason = MONTHLY_ALERT_SELF_CHECK_CRON, options = {}) {
@@ -3156,7 +3155,7 @@ async function sendMonthlyAlertChannelSelfCheck(env, scheduledAt, reason = MONTH
     return { skipped: true, month_key: monthKey, sent_at: previous.sent_at };
   }
 
-  const recipient = normalizeEmailForAlert(env.ALERT_CHANNEL_SELF_CHECK_EMAIL || env.WAN_ALERT_EMAIL || '');
+  const recipient = getAlertRecipient(env);
   const prefix = env.ALERT_SUBJECT_PREFIX || '';
   const subject = `${prefix}[Nice Dashboard] 通道自检 ${monthKey}`;
   const scheduledIso = scheduledAt.toISOString();
@@ -3375,7 +3374,7 @@ export function buildAlertEmailPreview(env, status, redItems) {
       `Time: ${new Date().toISOString()}`
     ].join('\n');
 
-  return { subject, text, recipient: normalizeEmailForAlert(env.WAN_ALERT_EMAIL || '') };
+  return { subject, text, recipient: getAlertRecipient(env) };
 }
 
 async function sendAlertEmail(config, subject, text) {
@@ -3399,21 +3398,23 @@ async function sendAlertEmail(config, subject, text) {
   return data;
 }
 
-function getAlertConfig(env, recipient) {
+function getAlertConfig(env) {
   const apiKey = env.RESEND_API_KEY || '';
-  const to = normalizeEmailForAlert(recipient || env.WAN_ALERT_EMAIL || '');
+  const to = getAlertRecipient(env);
   const from = env.ALERT_FROM_EMAIL || '';
-  const allowlist = parseAlertAllowlist(env.ALERT_EMAIL_ALLOWLIST || '');
   if (!apiKey) throw new Error('missing_RESEND_API_KEY');
-  if (!to) throw new Error('missing_WAN_ALERT_EMAIL');
   if (!from) throw new Error('missing_ALERT_FROM_EMAIL');
-  if (!allowlist.includes(to)) {
-    throw new Error('invalid_alert_email_allowlist');
-  }
   return { apiKey, to, from };
 }
 
-function parseAlertAllowlist(value) {
+function getAlertRecipient(env) {
+  const recipients = parseAlertRecipients(env.ALERT_RECIPIENTS || '');
+  if (!recipients.length) throw new Error('missing_ALERT_RECIPIENTS');
+  if (recipients.length !== 1) throw new Error('invalid_ALERT_RECIPIENTS_count');
+  return recipients[0];
+}
+
+function parseAlertRecipients(value) {
   return String(value || '')
     .split(',')
     .map((item) => normalizeEmailForAlert(item))

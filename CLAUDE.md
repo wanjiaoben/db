@@ -1,8 +1,8 @@
-<!--WAN-CONSTITUTION-START version=v1.16-->
-# WAN Constitution v1.16
+<!--WAN-CONSTITUTION-START version=v1.17-->
+# WAN Constitution v1.17
 
 更新日期:2026-08-22
-Changelog:v1.16 补“自动邮件与测试发信附则”,划清 CC 代理发信禁令与系统自动邮件验收边界。
+Changelog:v1.17 系统通知统一收件人为 aboutokinawa@gmail.com; info@nice.okinawa 只留客人往来。
 
 唯一源头:wan-rules 仓库。各 repo CLAUDE.md 中的宪法区间由脚本同步生成,禁止手改。修改仅限 Wan 本人确认,每次修改版本号 +1 并同步全部 repo。
 设计背景参考:docs/REVIEW_2026-0707_SYSTEM_DESIGN.md;CC 开工前必读 rules/ANTI_PATTERNS.md。该引用为 v1.8 设计背景与执法清单,非新增宪法条文。
@@ -33,7 +33,7 @@ Needs pool 门禁:新条目必填 reuse/auto/compound 三布尔 + platform|produ
 1. “CC 不得代理发送邮件/消息”指:CC 不得以 Wan、公司或任何品牌名义,向真实客人、学员、合作方或任何真人发送任何消息(邮件/LINE/WhatsApp/SNS 私信/评论均含)。
 2. 下列情形不在禁令内,属于验收被测系统,CC 应当执行而非推回 Wan:
    - 系统在 Sandbox / preview / 测试环境触发的自动交易邮件(授权确认、告警、摘要等),收件人为 CC 自己控制的测试邮箱或 Resend 测试域地址;
-   - 发往 info@nice.okinawa 的系统告警/失败通知/测试通知(主题前缀 [TEST]);
+   - 发往 aboutokinawa@gmail.com 的系统告警/失败通知/测试通知(主题前缀 [TEST]);
    - 生产环境的定时巡检邮件、备份告警、空队列预警等无真实客人收件人的系统邮件。
 3. 任何情况下,收件人字段出现真实客人地址即属禁令范围;测试时不得借用真实订单的 guest_email。
 4. 生产环境发往真实客人的邮件,只能由客人自身行为触发(如完成预授权),CC 不得手动补发、重发、代发;需要补发的由 Wan 亲自操作或明确逐条授权。

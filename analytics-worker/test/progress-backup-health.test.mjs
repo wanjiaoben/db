@@ -104,7 +104,7 @@ test('daily Progress manifests expose the failed stage and escalation metadata',
   const [item] = collectAlertItems({ items: [{ ...failed, consecutive_failures: 2, failure_date: '2026-07-18', failure_stage: 'd1-export' }] }, { items: [] }, { targets: [] });
   assert.equal(item.alert_kind, 'escalation');
   assert.equal(item.failure_stage, 'd1-export');
-  const preview = buildAlertEmailPreview({ ALERT_SUBJECT_PREFIX: '' }, 'red', [item]);
+  const preview = buildAlertEmailPreview({ ALERT_SUBJECT_PREFIX: '', ALERT_RECIPIENTS: 'aboutokinawa@gmail.com' }, 'red', [item]);
   assert.match(preview.subject, /^\[P0\] Backup failure: progress-production 2026-07-18 d1-export/);
 });
 
@@ -135,7 +135,7 @@ test('backup failure alert subject identifies a silent same-day gap', () => {
     failure_date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' }).format(new Date())
   }] }, { items: [] }, { targets: [] });
   item.alert_kind = 'silent';
-  const preview = buildAlertEmailPreview({ ALERT_SUBJECT_PREFIX: '[TEST] ' }, 'red', [item]);
+  const preview = buildAlertEmailPreview({ ALERT_SUBJECT_PREFIX: '[TEST] ', ALERT_RECIPIENTS: 'aboutokinawa@gmail.com' }, 'red', [item]);
   assert.match(preview.subject, /^\[TEST\] \[P0\] Backup silent:/);
 });
 

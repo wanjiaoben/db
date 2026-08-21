@@ -72,6 +72,8 @@ test('Search Console cron and email configuration are explicit', () => {
   assert.match(worker, /const GSC_DAILY_SYNC_CRON = '0 0 \* \* \*'/);
   assert.match(worker, /sendSearchConsoleWeeklyReport\(env, scheduledAt/);
   assert.match(wrangler, /GSC_SERVICE_ACCOUNT_JSON/);
-  assert.match(wrangler, /GSC_WEEKLY_REPORT_EMAIL = "info@nice\.okinawa"/);
-  assert.match(wrangler, /ALERT_EMAIL_ALLOWLIST = "aboutokinawa@gmail\.com,info@nice\.okinawa"/);
+  assert.match(wrangler, /ALERT_RECIPIENTS = "aboutokinawa@gmail\.com"/);
+  assert.doesNotMatch(wrangler, /GSC_WEEKLY_REPORT_EMAIL/);
+  assert.doesNotMatch(wrangler, /ALERT_EMAIL_ALLOWLIST/);
+  assert.doesNotMatch(wrangler, /WAN_ALERT_EMAIL/);
 });

@@ -27,11 +27,10 @@ stores them in Cloudflare D1, and serves dashboard summaries to `db.nice.okinawa
 
 ## Alert Channel Self-Check
 
-The Worker sends a monthly alert-channel self-check email via Resend on the
-first day of each month at 09:00 JST (`0 0 1 * *` UTC). The email is sent to
-`ALERT_CHANNEL_SELF_CHECK_EMAIL`, currently `aboutokinawa@gmail.com`, with a
-`[Nice Dashboard] 通道自检 YYYY-MM` subject. If the message is missing on the
-first day of a month, investigate the alerting system itself.
+The monthly alert-channel self-check records status only and does not send a
+green email. System notification recipients are configured only through
+`ALERT_RECIPIENTS`; production and preview currently use
+`aboutokinawa@gmail.com`.
 
 Admins can force a channel self-check with `POST /alerts/self-check?force=1`.
 
@@ -91,16 +90,15 @@ Then Wan sets the generated value with `wrangler secret put DASHBOARD_KEY` in
 
 The dashboard can show Google search queries, clicks, impressions, CTR, and
 average position after a Google service account is connected. It syncs the
-latest 28 days daily at 09:00 JST and sends a Monday 09:00 JST summary to
-`info@nice.okinawa`.
+latest 28 days daily at 09:00 JST and sends a Monday 09:00 JST summary to the
+configured `ALERT_RECIPIENTS` address.
 
 1. In Google Cloud, create a service account and download a JSON key.
 2. In Google Search Console, add the service account email as a user for each
    property listed in `GSC_SITE_URLS`.
 3. Set this Worker secret:
    - `GSC_SERVICE_ACCOUNT_JSON`
-4. Keep `GSC_WEEKLY_REPORT_EMAIL` and `ALERT_EMAIL_ALLOWLIST` aligned if the
-   recipient changes.
+4. Keep `ALERT_RECIPIENTS` set to exactly one system-notification mailbox.
 5. Run `schema.sql` on the D1 database again to create `search_console_daily`.
 6. Deploy the Worker. The cron sync runs daily, and the dashboard button can
    manually sync the latest 28 days.
