@@ -201,6 +201,20 @@ export default {
       return json({ ok: true, ...result }, request);
     }
 
+    if (url.pathname === '/alerts/test' && request.method === 'GET') {
+      if (!requireDashboard(request, env)) {
+        return json({
+          ok: false,
+          error: 'missing_dashboard_key',
+          message: '发测试告警需要 Dashboard key；请在 db.nice.okinawa 登录后点击“发测试告警”。'
+        }, request);
+      }
+      return json({
+        ok: true,
+        message: '此端点用于发送测试告警；请用 POST /alerts/test。'
+      }, request);
+    }
+
     if (url.pathname === '/alerts/test' && request.method === 'POST') {
       if (!requireDashboard(request, env)) {
         return json({ ok: false, error: 'unauthorized' }, request, 403);
@@ -3140,11 +3154,20 @@ async function sendManualTestAlert(env, options = {}) {
   };
   if (options.dryRun) {
     const preview = buildAlertEmailPreview(env, 'red', [item]);
-    return { sent: false, dry_run: true, ...preview };
+    return { sent: false, dry_run: true, ...withTestAlertSubject(preview) };
   }
-  const result = await sendDashboardAlert(env, 'red', [item]);
+  const preview = withTestAlertSubject(buildAlertEmailPreview(env, 'red', [item]));
   const config = getAlertConfig(env);
-  return { sent: true, to: config.to, result };
+  const result = await sendAlertEmail(config, preview.subject, preview.text);
+  return { sent: true, to: config.to, subject: preview.subject, result };
+}
+
+function withTestAlertSubject(preview) {
+  const subject = String(preview.subject || '');
+  return {
+    ...preview,
+    subject: subject.startsWith('[TEST]') ? subject : `[TEST] ${subject}`
+  };
 }
 
 async function sendMonthlyAlertChannelSelfCheck(env, scheduledAt, reason = MONTHLY_ALERT_SELF_CHECK_CRON, options = {}) {
