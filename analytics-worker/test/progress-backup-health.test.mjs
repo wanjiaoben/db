@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { backupItem, collectAlertItems, d1BackupItem, progressBackupItem, selectDeploymentWorkflowRun } from '../src/worker.js';
+import { attachBackupHistory, backupItem, buildAlertEmailPreview, collectAlertItems, dailyD1BackupItem, d1BackupItem, progressBackupItem, selectDeploymentWorkflowRun } from '../src/worker.js';
 
 const now = new Date('2026-07-18T21:00:00.000Z');
 
@@ -70,6 +70,61 @@ test('BJT and Progress rolling freshness alert only for 28h manifests, not 26h m
   assert.equal(staleProgress.ok, false);
   assert.equal(noAlert.length, 0);
   assert.deepEqual(alert.map((item) => item.key), ['bjt', 'progress-production']);
+});
+
+test('daily Progress manifests expose the failed stage and escalation metadata', () => {
+  const failed = dailyD1BackupItem(
+    'progress-production',
+    'Progress production',
+    {
+      ok: true,
+      status: 'ok',
+      key: 'd1/latest/manifest.json',
+      data: {
+        kind: 'progress-d1-r2-daily-backup',
+        status: 'failed',
+        generated_at: '2026-07-18T19:00:00.000Z',
+        failures: [{ stage: 'd1-export', error: 'Authentication error [code: 10000]' }]
+      }
+    },
+    now
+  );
+  const [item] = collectAlertItems({ items: [{ ...failed, consecutive_failures: 2, failure_date: '2026-07-18', failure_stage: 'd1-export' }] }, { items: [] }, { targets: [] });
+  assert.equal(item.alert_kind, 'escalation');
+  assert.equal(item.failure_stage, 'd1-export');
+  const preview = buildAlertEmailPreview({ ALERT_SUBJECT_PREFIX: '' }, 'red', [item]);
+  assert.match(preview.subject, /^\[P0\] Backup failure: progress-production 2026-07-18 d1-export/);
+});
+
+test('backup health reports the latest successful artifact and seven-day success rate', () => {
+  const item = attachBackupHistory({ key: 'progress-production', ok: false, latest_at: '' }, [
+    { date: '2026-07-18', ok: false, error: 'd1-export: auth' },
+    { date: '2026-07-17', ok: false, error: 'd1-export: auth' },
+    { date: '2026-07-16', ok: true, latest_at: '2026-07-16T09:00:00.000Z' },
+    { date: '2026-07-15', ok: true, latest_at: '2026-07-15T09:00:00.000Z' },
+    { date: '2026-07-14', ok: true, latest_at: '2026-07-14T09:00:00.000Z' },
+    { date: '2026-07-13', ok: true, latest_at: '2026-07-13T09:00:00.000Z' },
+    { date: '2026-07-12', ok: true, latest_at: '2026-07-12T09:00:00.000Z' }
+  ]);
+  assert.equal(item.success_days_7d, 5);
+  assert.equal(item.success_rate_7d, 5 / 7);
+  assert.equal(item.last_success_at, '2026-07-16T09:00:00.000Z');
+  assert.equal(item.consecutive_failures, 2);
+});
+
+test('backup failure alert subject identifies a silent same-day gap', () => {
+  const [item] = collectAlertItems({ items: [{
+    key: 'progress-production',
+    label: 'Progress production',
+    ok: false,
+    status: 'missing',
+    latest_at: '',
+    success_rate_7d: 0,
+    failure_date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' }).format(new Date())
+  }] }, { items: [] }, { targets: [] });
+  item.alert_kind = 'silent';
+  const preview = buildAlertEmailPreview({ ALERT_SUBJECT_PREFIX: '[TEST] ' }, 'red', [item]);
+  assert.match(preview.subject, /^\[TEST\] \[P0\] Backup silent:/);
 });
 
 test('cross-environment latest is red even when fresh', () => {
