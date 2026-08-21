@@ -1218,11 +1218,13 @@ async function summary(request, env) {
     LIMIT 50
   `, [since, ...filterParams]);
 
-  const searchConsole = await searchConsoleSummary(env.DB, {
-    since: range === 'today' ? dateOnly(Date.now()) : dateOnly(Date.now() - days * 86400000),
-    site: selectedSearchSite,
-    path: selectedPath
-  });
+  const searchConsole = hasSearchConsoleConfig(env)
+    ? await searchConsoleSummary(env.DB, {
+      since: range === 'today' ? dateOnly(Date.now()) : dateOnly(Date.now() - days * 86400000),
+      site: selectedSearchSite,
+      path: selectedPath
+    })
+    : unconfiguredSearchConsoleSummary(range === 'today' ? dateOnly(Date.now()) : dateOnly(Date.now() - days * 86400000), selectedSearchSite, selectedPath);
 
   return json({
     ok: true,
@@ -1352,6 +1354,24 @@ async function searchConsoleSummary(db, filters) {
   } catch (e) {
     return { ok: false, error: 'search_console_not_ready' };
   }
+}
+
+function unconfiguredSearchConsoleSummary(since, site = '', path = '') {
+  return {
+    ok: false,
+    configured: false,
+    error: 'missing_search_console_config',
+    message: '未接入 Search Console',
+    range_start: since,
+    selected_site: site || '',
+    selected_path: path || '',
+    totals: { clicks: 0, impressions: 0, ctr: 0, position: 0, imported_at: '' },
+    sites: [],
+    queries: [],
+    no_click: [],
+    striking_distance: [],
+    pages: []
+  };
 }
 
 async function searchConsoleStatus(request, env) {
@@ -2546,6 +2566,7 @@ async function getProbeSummary(env) {
 }
 
 async function getBackupStatus(env) {
+  const now = new Date();
   const [bjt, progressProduction, progressPreview, niceAnalyticsProduction] = await Promise.all([
     readR2Json(env.BJT_BACKUPS, 'kv-snapshots/latest/manifest.json'),
     readR2Json(env.PROGRESS_BACKUP, 'd1/progress/production/latest.json'),
@@ -2553,12 +2574,12 @@ async function getBackupStatus(env) {
     readR2Json(env.PROGRESS_BACKUP, 'd1/nice_analytics/production/latest.json')
   ]);
   return {
-    generated_at: new Date().toISOString(),
+    generated_at: now.toISOString(),
     items: [
-      backupItem('bjt', 'BJT R2 latest manifest', bjt, ['generatedAt', 'generated_at', 'created_at', 'date']),
-      progressBackupItem('progress-production', 'Progress production D1 export', progressProduction, 'production', 'progress'),
-      progressBackupItem('progress-preview', 'Progress preview D1 export', progressPreview, 'preview', 'progress-otp-preview'),
-      d1BackupItem('nice-analytics-production', 'nice_analytics production D1 export', niceAnalyticsProduction, 'production', 'nice_analytics', 'd1/nice_analytics/production/')
+      backupItem('bjt', 'BJT R2 latest manifest', bjt, ['generatedAt', 'generated_at', 'created_at', 'date'], now, { maxAgeHours: BJT_BACKUP_MAX_AGE_HOURS }),
+      progressBackupItem('progress-production', 'Progress production D1 export', progressProduction, 'production', 'progress', now),
+      progressBackupItem('progress-preview', 'Progress preview D1 export', progressPreview, 'preview', 'progress-otp-preview', now),
+      d1BackupItem('nice-analytics-production', 'nice_analytics production D1 export', niceAnalyticsProduction, 'production', 'nice_analytics', 'd1/nice_analytics/production/', now)
     ]
   };
 }
@@ -2581,20 +2602,22 @@ async function readR2Json(bucket, key) {
   }
 }
 
-const BACKUP_MAX_AGE_HOURS = 27;
-const BACKUP_MAX_AGE_MS = BACKUP_MAX_AGE_HOURS * 60 * 60 * 1000;
+const DAILY_BACKUP_MAX_AGE_HOURS = 27;
+const BJT_BACKUP_MAX_AGE_HOURS = 51;
 
-function backupAge(dateValue, now) {
+function backupAge(dateValue, now, maxAgeHours) {
   const parsed = parseDateSafe(dateValue);
   if (!parsed) return { ageMs: Number.POSITIVE_INFINITY, fresh: false };
   const ageMs = now.getTime() - parsed.getTime();
-  return { ageMs, fresh: ageMs >= 0 && ageMs <= BACKUP_MAX_AGE_MS };
+  const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
+  return { ageMs, fresh: ageMs >= 0 && ageMs <= maxAgeMs };
 }
 
-export function backupItem(key, label, result, dateFields, now = new Date()) {
+export function backupItem(key, label, result, dateFields, now = new Date(), options = {}) {
+  const maxAgeHours = options.maxAgeHours || DAILY_BACKUP_MAX_AGE_HOURS;
   const data = result.data || {};
   const dateValue = firstDateValue(data, dateFields) || result.updated_at || '';
-  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now);
+  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now, maxAgeHours);
   const fresh = result.ok && ageFresh;
   return {
     key,
@@ -2603,9 +2626,9 @@ export function backupItem(key, label, result, dateFields, now = new Date()) {
     status: fresh ? result.status : (result.ok ? 'stale' : result.status),
     ok: fresh,
     latest_at: dateValue,
-    max_age_hours: BACKUP_MAX_AGE_HOURS,
+    max_age_hours: maxAgeHours,
     age_hours: Number.isFinite(ageMs) ? Math.round(ageMs / 36000) / 100 : null,
-    error: result.error || (!fresh && result.ok ? `latest manifest is outside 27h freshness window: ${dateValue || '<missing>'}` : ''),
+    error: result.error || (!fresh && result.ok ? `latest manifest is outside ${maxAgeHours}h freshness window: ${dateValue || '<missing>'}` : ''),
     source: 'R2'
   };
 }
@@ -2617,7 +2640,7 @@ export function progressBackupItem(key, label, result, expectedEnvironment, expe
 export function d1BackupItem(key, label, result, expectedEnvironment, expectedDatabase, expectedPrefix, now = new Date()) {
   const data = result.data || {};
   const dateValue = firstDateValue(data, ['generated_at', 'generatedAt', 'created_at', 'date']) || result.updated_at || '';
-  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now);
+  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now, DAILY_BACKUP_MAX_AGE_HOURS);
   let validationError = '';
   if (result.ok && data.environment !== expectedEnvironment) {
     validationError = `manifest environment mismatch: expected ${expectedEnvironment}, got ${data.environment || '<missing>'}`;
@@ -2638,7 +2661,7 @@ export function d1BackupItem(key, label, result, expectedEnvironment, expectedDa
     status: ok ? 'ok' : (validationError ? 'environment_mismatch' : (result.ok ? 'stale' : result.status)),
     ok,
     latest_at: dateValue,
-    max_age_hours: BACKUP_MAX_AGE_HOURS,
+    max_age_hours: DAILY_BACKUP_MAX_AGE_HOURS,
     age_hours: Number.isFinite(ageMs) ? Math.round(ageMs / 36000) / 100 : null,
     error: result.error || validationError || (!fresh && result.ok ? `latest manifest is older than 27h: ${dateValue || '<missing>'}` : ''),
     source: 'R2'
@@ -2666,13 +2689,26 @@ async function getDeploymentStatus(env) {
 
 async function getRepoDeploymentStatus(env, repo) {
   const token = env.GITHUB_TOKEN || '';
+  if (!token) {
+    return {
+      repo,
+      ok: false,
+      status: 'manual',
+      conclusion: '',
+      updated_at: '',
+      url: '',
+      error: 'missing_GITHUB_TOKEN',
+      manual: true,
+      note: '未配 token'
+    };
+  }
   const url = `https://api.github.com/repos/wanjiaoben/${repo}/actions/runs?branch=main&per_page=10`;
   const headers = {
     accept: 'application/vnd.github+json',
     'user-agent': 'nice-analytics-dashboard',
     'x-github-api-version': '2022-11-28'
   };
-  if (token) headers.authorization = `Bearer ${token}`;
+  headers.authorization = `Bearer ${token}`;
   try {
     const res = await fetch(url, { headers });
     const data = await res.json().catch(() => ({}));

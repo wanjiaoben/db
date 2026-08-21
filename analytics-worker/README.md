@@ -37,10 +37,11 @@ Admins can force a channel self-check with `POST /alerts/self-check?force=1`.
 
 ## Backup Freshness and Alert Ownership
 
-Nice Dashboard treats the latest BJT manifest and both Progress manifests as
-fresh while their age is between 0 and 27 hours, inclusive. Freshness is a
-rolling duration and does not reset at midnight JST. A date change by itself
-must not turn a backup red or send a recovery email later that morning.
+Nice Dashboard treats the latest BJT manifest as fresh for 51 hours because the
+BJT KV backup cron runs every other day. Daily D1 backups stay on the 27-hour
+freshness window. Freshness is a rolling duration and does not reset at midnight
+JST. A date change by itself must not turn a backup red or send a recovery email
+later that morning.
 
 The two alert layers have separate responsibilities:
 
@@ -60,9 +61,9 @@ source of truth; use Nice Dashboard for the cross-system summary.
 
 After a freshness-rule release, observe two complete JST midnight crossings
 (48 hours). Expected behavior: no red or recovery email caused only by the date
-change. Mail is expected only when a manifest is actually older than 27 hours,
-has an invalid/future timestamp, crosses a Progress environment boundary, or
-another monitored deployment/probe is red.
+change. Mail is expected only when a manifest is actually older than its
+configured freshness window, has an invalid/future timestamp, crosses a
+Progress environment boundary, or another monitored deployment/probe is red.
 
 ## Dashboard
 
@@ -110,8 +111,9 @@ older preview environments, but production should use the JSON secret above.
 ## GitHub Deployment Status
 
 The dashboard reads GitHub Actions through `GITHUB_TOKEN` when present. Set a
-read-only repo-status token as a Worker secret named `GITHUB_TOKEN` so the four
-deployment status cells avoid unauthenticated GitHub API rate limits.
+read-only repo-status token as a Worker secret named `GITHUB_TOKEN`. When it is
+absent, the four deployment status cells show `未配 token` and do not call the
+GitHub API.
 
 ## Events
 

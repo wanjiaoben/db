@@ -1946,7 +1946,7 @@ async function loadControl() {
     const deployments = ((data.deployments || {}).items || []);
     renderRows('deployTable', deployments, (r) => row([
       escapeHtml(r.repo || '-'),
-      { html: statusDot(r.ok, r.manual) + escapeHtml(r.ok ? '成功' : (r.manual ? '需 token' : (r.conclusion || r.status || '异常'))) },
+      { html: statusDot(r.ok, r.manual) + escapeHtml(r.ok ? '成功' : (r.manual ? (r.note || '未配 token') : (r.conclusion || r.status || '异常'))) },
       escapeHtml(timeText(r.updated_at)),
       r.url ? '<a href="' + escapeHtml(r.url) + '" target="_blank">' + escapeHtml(r.workflow || 'workflow') + '</a>' : escapeHtml(r.error || r.workflow || '-')
     ]));
@@ -2152,9 +2152,10 @@ async function load() {
     ]));
     const searchConsole = data.search_console || {};
     if (!searchConsole.ok) {
-      $('queryTable').innerHTML = '<tr><td colspan="7" class="empty">Search Console 尚未配置或还没有同步数据</td></tr>';
-      $('gscNoClickTable').innerHTML = '<tr><td colspan="5" class="empty">Search Console 尚未配置或还没有同步数据</td></tr>';
-      $('gscStrikingTable').innerHTML = '<tr><td colspan="5" class="empty">Search Console 尚未配置或还没有同步数据</td></tr>';
+      const gscEmptyText = searchConsole.configured === false ? '未接入 Search Console' : 'Search Console 尚未配置或还没有同步数据';
+      $('queryTable').innerHTML = '<tr><td colspan="7" class="empty">' + escapeHtml(gscEmptyText) + '</td></tr>';
+      $('gscNoClickTable').innerHTML = '<tr><td colspan="5" class="empty">' + escapeHtml(gscEmptyText) + '</td></tr>';
+      $('gscStrikingTable').innerHTML = '<tr><td colspan="5" class="empty">' + escapeHtml(gscEmptyText) + '</td></tr>';
       $('gscUpdated').textContent = '';
     } else {
       updateGscSiteOptions(searchConsole.sites);
