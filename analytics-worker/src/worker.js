@@ -200,7 +200,7 @@ export default {
         return json({ ok: false, error: 'unauthorized' }, request, 403);
       }
       try {
-        const result = await sendManualTestAlert(env);
+        const result = await sendManualTestAlert(env, { dryRun: url.searchParams.get('dry_run') === '1' });
         return json({ ok: true, ...result }, request);
       } catch (error) {
         return json({ ok: false, error: clean(error.message || String(error), 300) }, request, 502);
@@ -2281,21 +2281,118 @@ async function getProbeSummary(env) {
 }
 
 async function getBackupStatus(env) {
-  const [bjt, progressProduction, progressPreview, niceAnalyticsProduction] = await Promise.all([
+  const now = new Date();
+  const [bjt, progressProduction, progressPreview, niceAnalyticsProduction, bjtHistory, progressHistory, niceAnalyticsIndex] = await Promise.all([
     readR2Json(env.BJT_BACKUPS, 'kv-snapshots/latest/manifest.json'),
-    readR2Json(env.PROGRESS_BACKUP, 'd1/progress/production/latest.json'),
+    readR2JsonFallback(env.PROGRESS_BACKUP, ['d1/latest/manifest.json', 'd1/progress/production/latest.json']),
     readR2Json(env.PROGRESS_BACKUP, 'd1/progress/preview/latest.json'),
-    readR2Json(env.PROGRESS_BACKUP, 'd1/nice_analytics/production/latest.json')
+    readR2Json(env.PROGRESS_BACKUP, 'd1/nice_analytics/production/latest.json'),
+    readDailyBackupHistory(env.BJT_BACKUPS, 'kv-snapshots', now),
+    readDailyBackupHistory(env.PROGRESS_BACKUP, 'd1/daily', now),
+    readR2Json(env.PROGRESS_BACKUP, 'd1/nice_analytics/production/index.json')
   ]);
+  const niceAnalyticsHistory = backupHistoryFromIndex(niceAnalyticsIndex, now);
+  const bjtItem = attachBackupHistory(backupItem('bjt', 'BJT R2 latest manifest', bjt, ['generatedAt', 'generated_at', 'created_at', 'date'], now, {
+    maxAgeHours: BJT_BACKUP_MAX_AGE_HOURS
+  }), bjtHistory);
+  const progressItem = attachBackupHistory(progressBackupItem('progress-production', 'Progress production D1 export', progressProduction, 'production', 'progress', now), progressHistory);
+  const previewItem = progressBackupItem('progress-preview', 'Progress preview D1 export', progressPreview, 'preview', 'progress-otp-preview', now);
+  const niceItem = attachBackupHistory(d1BackupItem('nice-analytics-production', 'nice_analytics production D1 export', niceAnalyticsProduction, 'production', 'nice_analytics', 'd1/nice_analytics/production/', now), niceAnalyticsHistory);
   return {
     generated_at: new Date().toISOString(),
     items: [
-      backupItem('bjt', 'BJT R2 latest manifest', bjt, ['generatedAt', 'generated_at', 'created_at', 'date']),
-      progressBackupItem('progress-production', 'Progress production D1 export', progressProduction, 'production', 'progress'),
-      progressBackupItem('progress-preview', 'Progress preview D1 export', progressPreview, 'preview', 'progress-otp-preview'),
-      d1BackupItem('nice-analytics-production', 'nice_analytics production D1 export', niceAnalyticsProduction, 'production', 'nice_analytics', 'd1/nice_analytics/production/')
+      bjtItem,
+      progressItem,
+      previewItem,
+      niceItem
     ]
   };
+}
+
+async function readR2JsonFallback(bucket, keys) {
+  for (const key of keys) {
+    const result = await readR2Json(bucket, key);
+    if (result.ok) return result;
+  }
+  return readR2Json(bucket, keys[0] || '');
+}
+
+async function readDailyBackupHistory(bucket, prefix, now, days = 7) {
+  const entries = [];
+  for (let offset = 0; offset < days; offset += 1) {
+    const date = shiftDateKey(jstDateKey(now), -offset);
+    const result = await readR2Json(bucket, `${prefix}/${date}/manifest.json`);
+    const data = result.data || {};
+    const ok = result.ok && data.status === 'complete' && !(data.failures || []).length;
+    entries.push({
+      date,
+      ok,
+      status: result.ok ? (data.status || result.status) : result.status,
+      latest_at: firstDateValue(data, ['generated_at', 'generatedAt', 'created_at', 'date']) || result.updated_at || '',
+      error: result.error || (ok ? '' : (data.failures || []).map((item) => `${item.stage || 'backup'}: ${item.error || ''}`).join('; '))
+    });
+  }
+  return entries;
+}
+
+function backupHistoryFromIndex(result, now, days = 7) {
+  if (!result?.ok) return [];
+  const backups = Array.isArray(result?.data?.backups) ? result.data.backups : [];
+  const byDate = new Map();
+  for (const item of backups) {
+    const date = jstDateKey(item.generated_at || item.created_at || '');
+    if (date && !byDate.has(date)) byDate.set(date, item);
+  }
+  return Array.from({ length: days }, (_, offset) => {
+    const date = shiftDateKey(jstDateKey(now), -offset);
+    const item = byDate.get(date);
+    return {
+      date,
+      ok: Boolean(item),
+      status: item ? 'complete' : 'missing',
+      latest_at: item?.generated_at || '',
+      error: item ? '' : 'no successful manifest for date'
+    };
+  });
+}
+
+export function attachBackupHistory(item, history) {
+  const rows = Array.isArray(history) ? history : [];
+  const successful = rows.filter((row) => row.ok).length;
+  let consecutiveFailures = 0;
+  for (const row of rows) {
+    if (row.ok) break;
+    consecutiveFailures += 1;
+  }
+  const latestFailure = rows.find((row) => !row.ok);
+  const today = jstDateKey(new Date());
+  const silentToday = rows[0]?.date === today && !rows[0]?.ok && jstHour(new Date()) >= 12;
+  return {
+    ...item,
+    ...(silentToday ? {
+      ok: false,
+      status: 'silent',
+      error: rows[0]?.error || 'no successful backup artifact by JST 12:00'
+    } : {}),
+    history_7d: rows,
+    success_days_7d: successful,
+    success_rate_7d: rows.length ? successful / rows.length : null,
+    last_success_at: rows.find((row) => row.ok)?.latest_at || (item.ok ? item.latest_at : ''),
+    consecutive_failures: consecutiveFailures,
+    failure_date: latestFailure?.date || '',
+    failure_stage: failureStage(latestFailure?.error || '')
+  };
+}
+
+function failureStage(error) {
+  const match = /^([^:;]+):/.exec(String(error || ''));
+  return match?.[1] || '';
+}
+
+function shiftDateKey(value, delta) {
+  const date = new Date(`${value}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + Number(delta || 0));
+  return date.toISOString().slice(0, 10);
 }
 
 async function readR2Json(bucket, key) {
@@ -2346,7 +2443,34 @@ export function backupItem(key, label, result, dateFields, now = new Date()) {
 }
 
 export function progressBackupItem(key, label, result, expectedEnvironment, expectedDatabase, now = new Date()) {
+  if (result?.ok && result.data?.kind === 'progress-d1-r2-daily-backup') {
+    return dailyD1BackupItem(key, label, result, now);
+  }
   return d1BackupItem(key, label, result, expectedEnvironment, expectedDatabase, `d1/progress/${expectedEnvironment}/`, now);
+}
+
+export function dailyD1BackupItem(key, label, result, now = new Date()) {
+  const data = result.data || {};
+  const dateValue = firstDateValue(data, ['generated_at', 'generatedAt', 'created_at', 'date']) || result.updated_at || '';
+  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now);
+  const complete = data.status === 'complete' && !(data.failures || []).length;
+  const fresh = result.ok && complete && ageFresh;
+  const failureDetail = (data.failures || []).map((item) => `${item.stage || 'backup'}: ${item.error || ''}`).join('; ');
+  return {
+    key,
+    label,
+    environment: 'production',
+    database: data.database?.name || data.database || 'progress',
+    object_key: result.key,
+    backup_object_key: data.objects?.sql || '',
+    status: fresh ? 'ok' : (result.ok ? (complete ? 'stale' : (data.status || 'failed')) : result.status),
+    ok: fresh,
+    latest_at: dateValue,
+    max_age_hours: BACKUP_MAX_AGE_HOURS,
+    age_hours: Number.isFinite(ageMs) ? Math.round(ageMs / 36000) / 100 : null,
+    error: result.error || failureDetail || (!fresh && result.ok ? `latest manifest is older than ${BACKUP_MAX_AGE_HOURS}h: ${dateValue || '<missing>'}` : ''),
+    source: 'R2'
+  };
 }
 
 export function d1BackupItem(key, label, result, expectedEnvironment, expectedDatabase, expectedPrefix, now = new Date()) {
@@ -2654,7 +2778,7 @@ async function evaluateDashboardAlerts(env, reason = 'cron', options = {}) {
   ]);
   const redItems = collectAlertItems(backups, deployments, probes);
   const status = redItems.length ? 'red' : 'green';
-  const fingerprint = redItems.map((item) => `${item.type}:${item.key}`).sort().join('|');
+  const fingerprint = redItems.map((item) => item.fingerprint || `${item.type}:${item.key}`).sort().join('|');
   const key = 'dashboard-control';
   const previous = await first(env.DB, 'SELECT key, status, fingerprint FROM alert_state WHERE key = ?', [key]);
   const shouldNotify = status === 'red'
@@ -2706,7 +2830,7 @@ async function trySendDashboardAlert(env, status, redItems) {
   }
 }
 
-async function sendManualTestAlert(env) {
+async function sendManualTestAlert(env, options = {}) {
   const item = {
     type: 'manual',
     key: 'health_alert_channel_test',
@@ -2715,6 +2839,10 @@ async function sendManualTestAlert(env) {
     detail: 'Manual test alert from db dashboard admin endpoint.',
     latest_at: new Date().toISOString()
   };
+  if (options.dryRun) {
+    const preview = buildAlertEmailPreview(env, 'red', [item]);
+    return { sent: false, dry_run: true, ...preview };
+  }
   const result = await sendDashboardAlert(env, 'red', [item]);
   const to = normalizeEmailForAlert(env.WAN_ALERT_EMAIL || '');
   return { sent: true, to, result };
@@ -2760,13 +2888,21 @@ export function collectAlertItems(backups, deployments, probes) {
   const items = [];
   for (const item of backups?.items || []) {
     if (!item.ok && !item.manual) {
+      const failureDate = item.failure_date || jstDateKey(new Date());
+      const consecutiveFailures = Number(item.consecutive_failures || 0);
+      const silent = item.status === 'silent' || (jstHour(new Date()) >= 12 && item.success_rate_7d < 1 && item.failure_date === jstDateKey(new Date()));
       items.push({
         type: 'backup',
         key: item.key || item.label || 'backup',
         label: item.label || item.key || 'Backup',
-        status: item.status || 'red',
+        status: silent ? 'silent' : (item.status || 'red'),
+        alert_kind: silent ? 'silent' : (consecutiveFailures >= 2 ? 'escalation' : 'failure'),
         detail: item.error || item.latest_at || item.object_key || '',
-        latest_at: item.latest_at || ''
+        latest_at: item.latest_at || '',
+        failure_date: failureDate,
+        failure_stage: item.failure_stage || 'backup',
+        consecutive_failures: consecutiveFailures,
+        fingerprint: `backup:${item.key || item.label}:${failureDate}:${silent ? 'silent' : consecutiveFailures}`
       });
     }
   }
@@ -2795,6 +2931,13 @@ export function collectAlertItems(backups, deployments, probes) {
     }
   }
   return items;
+}
+
+function jstHour(date) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Tokyo', hour: '2-digit', hour12: false
+  }).formatToParts(date);
+  return Number(parts.find((part) => part.type === 'hour')?.value || 0);
 }
 
 async function upsertAlertState(env, key, status, fingerprint, detail, notified) {
@@ -2891,9 +3034,21 @@ function buildAlertDetail({ reason, generatedAt, redItems, sendLock, sendHistory
 }
 
 async function sendDashboardAlert(env, status, redItems) {
+  const preview = buildAlertEmailPreview(env, status, redItems);
   const config = getAlertConfig(env);
+  return sendAlertEmail(config, preview.subject, preview.text);
+}
+
+export function buildAlertEmailPreview(env, status, redItems) {
   const prefix = env.ALERT_SUBJECT_PREFIX || '';
-  const subject = status === 'red'
+  const backupItem = redItems.find((item) => item.type === 'backup');
+  const subject = status === 'red' && backupItem?.alert_kind === 'silent'
+    ? `${prefix}[P0] Backup silent: ${backupItem.key} ${backupItem.failure_date} (no artifact by JST 12:00)`
+    : status === 'red' && backupItem?.alert_kind === 'escalation'
+      ? `${prefix}[P0] Backup failure: ${backupItem.key} ${backupItem.failure_date} ${backupItem.failure_stage || 'backup'} (day ${backupItem.consecutive_failures})`
+      : status === 'red' && backupItem
+        ? `${prefix}Backup failure: ${backupItem.key} ${backupItem.failure_date} ${backupItem.failure_stage || 'backup'}`
+        : status === 'red'
     ? `${prefix}[Nice Dashboard] ALERT: ${redItems.length} red item(s)`
     : `${prefix}[Nice Dashboard] RECOVERY: all monitored items green`;
   const text = status === 'red'
@@ -2903,6 +3058,11 @@ async function sendDashboardAlert(env, status, redItems) {
       ...redItems.map((item) => [
         `- ${item.type}/${item.label}`,
         `  status: ${item.status || 'red'}`,
+        ...(item.type === 'backup' ? [
+          `  failure_date: ${item.failure_date || '-'}`,
+          `  failure_stage: ${item.failure_stage || '-'}`,
+          `  consecutive_failures: ${item.consecutive_failures || 0}`
+        ] : []),
         `  latest_at: ${item.latest_at || '-'}`,
         `  detail: ${item.detail || '-'}`,
       ].join('\n')),
@@ -2915,7 +3075,7 @@ async function sendDashboardAlert(env, status, redItems) {
       `Time: ${new Date().toISOString()}`
     ].join('\n');
 
-  return sendAlertEmail(config, subject, text);
+  return { subject, text, recipient: normalizeEmailForAlert(env.WAN_ALERT_EMAIL || '') };
 }
 
 async function sendAlertEmail(config, subject, text) {
