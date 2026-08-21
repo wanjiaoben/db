@@ -1,5 +1,7 @@
 # db.nice.okinawa Progress
 
+ALERT-0822-01 centralizes all system notification recipients into `ALERT_RECIPIENTS=aboutokinawa@gmail.com`, removes the old info@ recipient paths, and updates CLAUDE.md to WAN Constitution v1.17.
+
 DB-0822-01 adds the draft Search Console dashboard integration: 28-day daily sync via service-account JSON, site/query/page D1 aggregation, Top20/CTR-opportunity/4-15 ranking views, Monday weekly summary email plumbing, and documents missing production secrets blocking live GSC/email validation.
 
 M0731-34 aligns the db-private `/orders` dashboard auth path with proxied dashboard APIs so Basic-authenticated dashboard users can load monthly order exports without a browser-stored dashboard key.
