@@ -86,7 +86,8 @@ function isAnalyticsProxyPath(pathname) {
     || pathname === '/alerts/self-check'
     || pathname === '/path-checks/status'
     || pathname === '/search-console/status'
-    || pathname === '/search-console/sync';
+    || pathname === '/search-console/sync'
+    || pathname === '/search-console/weekly-report';
 }
 
 async function proxyAnalytics(request, env, url) {
