@@ -39,12 +39,11 @@ test('dashboard exposes a path-check test alert button', () => {
   assert.match(html, /API_ROOT \+ '\/alerts\/test'/);
 });
 
-test('dashboard key controls are visible on proxied production dashboard', () => {
+test('dashboard no longer exposes browser dashboard key controls', () => {
   const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
-  assert.match(html, /id="keyStatus">需要 Dashboard key/);
-  assert.match(html, /id="key" type="password"/);
-  assert.match(html, /id="saveKey">保存/);
-  assert.doesNotMatch(html, /\.proxied-dashboard \.auth-controls\s*\{\s*display:\s*none/);
-  assert.match(html, /localStorage\.setItem\('nice_dashboard_key', \$\('key'\)\.value\.trim\(\)\)/);
-  assert.match(html, /loadPathCheckStatus\(\);/);
+  assert.doesNotMatch(html, /id="keyStatus"/);
+  assert.doesNotMatch(html, /id="key" type="password"/);
+  assert.doesNotMatch(html, /id="saveKey"/);
+  assert.doesNotMatch(html, /nice_dashboard_key/);
+  assert.doesNotMatch(html, /x-dashboard-key/);
 });
