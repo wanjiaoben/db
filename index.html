@@ -67,8 +67,14 @@ h1 {
   gap: 8px;
   min-width: 0;
 }
-.proxied-dashboard .auth-controls {
-  display: none;
+.key-status {
+  color: var(--red);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.key-status.ok {
+  color: var(--green);
 }
 button, input, select {
   height: 30px;
@@ -1135,6 +1141,7 @@ td.num, th.num { text-align: right; }
       <option value="">全部页面</option>
     </select>
     <div class="auth-controls">
+      <span class="key-status" id="keyStatus">需要 Dashboard key</span>
       <input id="key" type="password" placeholder="Dashboard key">
       <button id="saveKey">保存</button>
     </div>
@@ -1329,6 +1336,15 @@ const hash = new URLSearchParams((location.hash || '').replace(/^#/, ''));
 if (hash.get('key')) {
   localStorage.setItem('nice_dashboard_key', hash.get('key'));
   history.replaceState(null, '', location.pathname + location.search);
+}
+
+function updateKeyStatus(ok) {
+  const el = $('keyStatus');
+  if (!el) return;
+  const hasKey = !!(localStorage.getItem('nice_dashboard_key') || '').trim();
+  const ready = ok === true || hasKey;
+  el.className = 'key-status' + (ready ? ' ok' : '');
+  el.textContent = ready ? 'Dashboard key 已保存' : '需要 Dashboard key';
 }
 
 function n(value) {
@@ -2182,6 +2198,7 @@ async function load() {
     $('duration').textContent = seconds(totals.avg_duration_ms);
     $('scroll').textContent = totals.avg_scroll ? Math.round(totals.avg_scroll) + '%' : '-';
     $('status').textContent = (site ? site + ' · ' : '') + (path ? path + ' · ' : '') + '已更新 ' + new Date(data.generated_at).toLocaleTimeString();
+    updateKeyStatus(true);
     updateSiteOptions(data.sites);
     updatePageOptions(data.pages);
 
@@ -2211,6 +2228,7 @@ async function load() {
     }
   } catch (e) {
     $('status').textContent = e.message === 'unauthorized' ? '需要 Dashboard key' : '连接失败';
+    if (e.message === 'unauthorized') updateKeyStatus(false);
     $('error').textContent = e.message === 'unauthorized'
       ? '手机浏览器还没有保存 Dashboard key，或保存的是旧 key。请在上方输入最新 key 后点保存。'
       : e.message + '。确认 Worker 已部署，DASHBOARD_KEY 正确。';
@@ -2219,9 +2237,11 @@ async function load() {
 }
 
 $('saveKey').addEventListener('click', () => {
-  localStorage.setItem('nice_dashboard_key', $('key').value);
+  localStorage.setItem('nice_dashboard_key', $('key').value.trim());
+  updateKeyStatus(true);
   load();
   loadControl();
+  loadPathCheckStatus();
   loadVisitors();
   loadOrders();
 });
@@ -2325,6 +2345,7 @@ $('pageTable').addEventListener('click', (event) => {
 });
 $('sendTestAlert').addEventListener('click', sendTestAlert);
 $('key').value = localStorage.getItem('nice_dashboard_key') || '';
+updateKeyStatus();
 $('orderMonth').value = defaultOrderMonth();
 syncRangeTabs();
 load();
