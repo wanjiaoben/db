@@ -1,4 +1,3 @@
-const REALM = 'Nice Okinawa Dashboard';
 const DEFAULT_ANALYTICS_ORIGIN = 'https://analytics.nice.okinawa';
 const ORDER_META_PREFIX = 'paypal_order_meta:';
 const ORDER_DAY_OPTIONS = new Set([1, 7, 30, 180]);
@@ -34,17 +33,6 @@ export default {
       return new Response('User-agent: *\nDisallow: /\n', {
         headers: {
           'content-type': 'text/plain; charset=utf-8',
-          'x-robots-tag': 'noindex, nofollow'
-        }
-      });
-    }
-
-    if (!isAuthorized(request, env)) {
-      return new Response('Authentication required', {
-        status: 401,
-        headers: {
-          'www-authenticate': `Basic realm="${REALM}", charset="UTF-8"`,
-          'cache-control': 'no-store',
           'x-robots-tag': 'noindex, nofollow'
         }
       });
@@ -364,20 +352,4 @@ function contentTypeFor(target) {
   if (pathname.endsWith('.jpg') || pathname.endsWith('.jpeg')) return 'image/jpeg';
   if (pathname.endsWith('.webp')) return 'image/webp';
   return 'application/octet-stream';
-}
-
-function isAuthorized(request, env) {
-  const header = request.headers.get('authorization') || '';
-  if (!header.startsWith('Basic ')) return false;
-  let decoded = '';
-  try {
-    decoded = atob(header.slice(6));
-  } catch (e) {
-    return false;
-  }
-  const index = decoded.indexOf(':');
-  if (index < 0) return false;
-  const user = decoded.slice(0, index);
-  const pass = decoded.slice(index + 1);
-  return user === env.BASIC_USER && pass === env.BASIC_PASS;
 }

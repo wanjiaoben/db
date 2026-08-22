@@ -3,12 +3,8 @@ import test from 'node:test';
 
 import worker from '../src/worker.js';
 
-const AUTH = 'Basic ' + btoa('wan:pass');
-
 function envWithKv(records, extra = {}) {
   return {
-    BASIC_USER: 'wan',
-    BASIC_PASS: 'pass',
     DASHBOARD_KEY: 'dash',
     BJT_KV: {
       async list(options) {
@@ -25,20 +21,12 @@ function envWithKv(records, extra = {}) {
 
 function request(headers = {}) {
   return new Request('https://db.nice.okinawa/orders?days=180', {
-    headers: {
-      authorization: AUTH,
-      ...headers
-    }
+    headers
   });
 }
 
-test('/orders keeps Basic protection before dashboard key checks', async () => {
+test('/orders allows Access-authenticated dashboard requests without browser dashboard key', async () => {
   const res = await worker.fetch(new Request('https://db.nice.okinawa/orders'), envWithKv({}), {});
-  assert.equal(res.status, 401);
-});
-
-test('/orders allows Basic-authenticated dashboard requests without x-dashboard-key', async () => {
-  const res = await worker.fetch(request(), envWithKv({}), {});
   const data = await res.json();
   assert.equal(res.status, 200);
   assert.equal(data.ok, true);
@@ -207,9 +195,7 @@ test('/orders month mode uses JST boundaries and separates captured from exclude
     })
   };
 
-  const res = await worker.fetch(new Request('https://db.nice.okinawa/orders?month=2026-07', {
-    headers: { authorization: AUTH, 'x-dashboard-key': 'dash' }
-  }), envWithKv(records), {});
+  const res = await worker.fetch(new Request('https://db.nice.okinawa/orders?month=2026-07'), envWithKv(records), {});
   const data = await res.json();
 
   assert.equal(res.status, 200);
@@ -244,9 +230,7 @@ test('/orders month mode uses JST boundaries and separates captured from exclude
 });
 
 test('/orders empty month keeps exportable response shape', async () => {
-  const res = await worker.fetch(new Request('https://db.nice.okinawa/orders?month=2026-05', {
-    headers: { authorization: AUTH, 'x-dashboard-key': 'dash' }
-  }), envWithKv({}), {});
+  const res = await worker.fetch(new Request('https://db.nice.okinawa/orders?month=2026-05'), envWithKv({}), {});
   const data = await res.json();
 
   assert.equal(res.status, 200);

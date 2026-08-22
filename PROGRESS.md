@@ -1,5 +1,7 @@
 # db.nice.okinawa Progress
 
+UX-0823-01 replaces the db dashboard browser-side Basic + Dashboard-key flow with Cloudflare Access at the edge plus db-private server-side DASHBOARD_KEY injection, removing the key input/localStorage/header path from the panel.
+
 ALERT-0822-02 adds a dashboard "发测试告警" button wired to `/alerts/test`, makes GET `/alerts/test` return a friendly Dashboard-key hint, and forces manual test alert subjects to include `[TEST]`.
 
 ALERT-0822-01 centralizes all system notification recipients into `ALERT_RECIPIENTS=aboutokinawa@gmail.com`, removes the old info@ recipient paths, and updates CLAUDE.md to WAN Constitution v1.17.

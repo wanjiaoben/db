@@ -61,21 +61,6 @@ h1 {
   justify-content: flex-end;
   min-width: 0;
 }
-.auth-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.key-status {
-  color: var(--red);
-  font-size: 11px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-.key-status.ok {
-  color: var(--green);
-}
 button, input, select {
   height: 30px;
   border: 1px solid var(--line);
@@ -938,14 +923,6 @@ td.num, th.num { text-align: right; }
     justify-content: flex-start;
     width: 100%;
   }
-  .auth-controls {
-    order: -1;
-    width: 100%;
-  }
-  #key {
-    flex: 1;
-    min-width: 0;
-  }
   main { grid-template-columns: 1fr; }
   .card { max-height: none; }
   .control-grid { grid-template-columns: 1fr; }
@@ -975,7 +952,6 @@ td.num, th.num { text-align: right; }
     gap: 6px;
   }
   .controls > * { min-width: 0; }
-  .auth-controls { grid-column: 1 / -1; }
   .pill,
   #days,
   #siteFilter,
@@ -1140,11 +1116,6 @@ td.num, th.num { text-align: right; }
     <select id="pageFilter">
       <option value="">全部页面</option>
     </select>
-    <div class="auth-controls">
-      <span class="key-status" id="keyStatus">需要 Dashboard key</span>
-      <input id="key" type="password" placeholder="Dashboard key">
-      <button id="saveKey">保存</button>
-    </div>
     <button id="syncGsc">同步搜索词</button>
     <button id="refresh">刷新</button>
   </div>
@@ -1331,21 +1302,6 @@ let selectedGscSite = '';
 let visitorDays = 7;
 let orderMode = 'month';
 let lastOrderData = null;
-
-const hash = new URLSearchParams((location.hash || '').replace(/^#/, ''));
-if (hash.get('key')) {
-  localStorage.setItem('nice_dashboard_key', hash.get('key'));
-  history.replaceState(null, '', location.pathname + location.search);
-}
-
-function updateKeyStatus(ok) {
-  const el = $('keyStatus');
-  if (!el) return;
-  const hasKey = !!(localStorage.getItem('nice_dashboard_key') || '').trim();
-  const ready = ok === true || hasKey;
-  el.className = 'key-status' + (ready ? ' ok' : '');
-  el.textContent = ready ? 'Dashboard key 已保存' : '需要 Dashboard key';
-}
 
 function n(value) {
   return fmt.format(Number(value || 0));
@@ -1956,13 +1912,11 @@ async function loadSnsMetrics() {
 }
 
 async function loadControl() {
-  const key = localStorage.getItem('nice_dashboard_key') || '';
   try {
     const res = await fetch(API_ROOT + '/control', {
       credentials: 'include',
       headers: {
-        accept: 'application/json',
-        ...(key ? { 'x-dashboard-key': key } : {})
+        accept: 'application/json'
       }
     });
     const data = await readJsonResponse(res);
@@ -2048,13 +2002,11 @@ function renderPathCheckStatus(data) {
 }
 
 async function loadPathCheckStatus() {
-  const key = localStorage.getItem('nice_dashboard_key') || '';
   try {
     const res = await fetch(PATH_CHECK_API, {
       credentials: 'include',
       headers: {
-        accept: 'application/json',
-        ...(key ? { 'x-dashboard-key': key } : {})
+        accept: 'application/json'
       }
     });
     const data = await readJsonResponse(res);
@@ -2082,7 +2034,6 @@ async function loadPathCheckStatus() {
 async function sendTestAlert() {
   const button = $('sendTestAlert');
   const status = $('testAlertStatus');
-  const key = localStorage.getItem('nice_dashboard_key') || '';
   button.disabled = true;
   status.textContent = '发送中...';
   try {
@@ -2090,8 +2041,7 @@ async function sendTestAlert() {
       method: 'POST',
       credentials: 'include',
       headers: {
-        accept: 'application/json',
-        ...(key ? { 'x-dashboard-key': key } : {})
+        accept: 'application/json'
       }
     });
     const data = await readJsonResponse(res);
@@ -2105,14 +2055,12 @@ async function sendTestAlert() {
 }
 
 async function loadVisitors() {
-  const key = localStorage.getItem('nice_dashboard_key') || '';
   visitorDays = visitorDaysFromControl();
   try {
     const res = await fetch(VISITOR_API + '?days=' + encodeURIComponent(visitorDays), {
       credentials: 'include',
       headers: {
-        accept: 'application/json',
-        ...(key ? { 'x-dashboard-key': key } : {})
+        accept: 'application/json'
       }
     });
     const data = await readJsonResponse(res);
@@ -2130,7 +2078,6 @@ async function loadVisitors() {
 }
 
 async function loadOrders() {
-  const key = localStorage.getItem('nice_dashboard_key') || '';
   const days = visitorDaysFromControl();
   const query = new URLSearchParams();
   if (orderMode === 'month') {
@@ -2142,8 +2089,7 @@ async function loadOrders() {
     const res = await fetch(ORDER_API + '?' + query.toString(), {
       credentials: 'include',
       headers: {
-        accept: 'application/json',
-        ...(key ? { 'x-dashboard-key': key } : {})
+        accept: 'application/json'
       }
     });
     const data = await readJsonResponse(res);
@@ -2170,7 +2116,6 @@ async function loadOrders() {
 async function load() {
   $('error').style.display = 'none';
   $('status').textContent = '连接中';
-  const key = localStorage.getItem('nice_dashboard_key') || '';
   const range = $('days').value || '7';
   const site = $('siteFilter').value || '';
   const gscSite = $('gscSiteFilter').value || '';
@@ -2183,8 +2128,7 @@ async function load() {
     const res = await fetch(API + '?' + qs.toString(), {
       credentials: 'include',
       headers: {
-        accept: 'application/json',
-        ...(key ? { 'x-dashboard-key': key } : {})
+        accept: 'application/json'
       }
     });
     const data = await readJsonResponse(res);
@@ -2198,7 +2142,6 @@ async function load() {
     $('duration').textContent = seconds(totals.avg_duration_ms);
     $('scroll').textContent = totals.avg_scroll ? Math.round(totals.avg_scroll) + '%' : '-';
     $('status').textContent = (site ? site + ' · ' : '') + (path ? path + ' · ' : '') + '已更新 ' + new Date(data.generated_at).toLocaleTimeString();
-    updateKeyStatus(true);
     updateSiteOptions(data.sites);
     updatePageOptions(data.pages);
 
@@ -2227,29 +2170,16 @@ async function load() {
       renderSearchConsoleRows('gscStrikingTable', searchConsole.striking_distance, true);
     }
   } catch (e) {
-    $('status').textContent = e.message === 'unauthorized' ? '需要 Dashboard key' : '连接失败';
-    if (e.message === 'unauthorized') updateKeyStatus(false);
-    $('error').textContent = e.message === 'unauthorized'
-      ? '手机浏览器还没有保存 Dashboard key，或保存的是旧 key。请在上方输入最新 key 后点保存。'
-      : e.message + '。确认 Worker 已部署，DASHBOARD_KEY 正确。';
+    $('status').textContent = '连接失败';
+    $('error').textContent = e.message + '。确认 Cloudflare Access 登录态与 Worker 配置。';
     $('error').style.display = 'block';
   }
 }
 
-$('saveKey').addEventListener('click', () => {
-  localStorage.setItem('nice_dashboard_key', $('key').value.trim());
-  updateKeyStatus(true);
-  load();
-  loadControl();
-  loadPathCheckStatus();
-  loadVisitors();
-  loadOrders();
-});
 $('refresh').addEventListener('click', () => { load(); loadControl(); loadVisitors(); loadOrders(); loadSnsMetrics(); loadContentStats(); });
 $('syncGsc').addEventListener('click', async () => {
   $('error').style.display = 'none';
   $('status').textContent = '同步搜索词中';
-  const key = localStorage.getItem('nice_dashboard_key') || '';
   const range = $('days').value || '7';
   const syncDays = range === 'today' ? '1' : '28';
   try {
@@ -2257,8 +2187,7 @@ $('syncGsc').addEventListener('click', async () => {
       method: 'POST',
       credentials: 'include',
       headers: {
-        accept: 'application/json',
-        ...(key ? { 'x-dashboard-key': key } : {})
+        accept: 'application/json'
       }
     });
     const data = await readJsonResponse(res);
@@ -2276,14 +2205,12 @@ $('syncGsc').addEventListener('click', async () => {
 $('sendGscWeekly').addEventListener('click', async () => {
   $('error').style.display = 'none';
   $('status').textContent = '发送搜索周报中';
-  const key = localStorage.getItem('nice_dashboard_key') || '';
   try {
     const res = await fetch(API_ROOT + '/search-console/weekly-report', {
       method: 'POST',
       credentials: 'include',
       headers: {
-        accept: 'application/json',
-        ...(key ? { 'x-dashboard-key': key } : {})
+        accept: 'application/json'
       }
     });
     const data = await readJsonResponse(res);
@@ -2344,8 +2271,6 @@ $('pageTable').addEventListener('click', (event) => {
   load();
 });
 $('sendTestAlert').addEventListener('click', sendTestAlert);
-$('key').value = localStorage.getItem('nice_dashboard_key') || '';
-updateKeyStatus();
 $('orderMonth').value = defaultOrderMonth();
 syncRangeTabs();
 load();
