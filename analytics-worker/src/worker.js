@@ -2882,7 +2882,7 @@ export function attachBackupHistory(item, history) {
   }
   const latestFailure = rows.find((row) => !row.ok);
   const today = jstDateKey(new Date());
-  const silentToday = rows[0]?.date === today && !rows[0]?.ok && jstHour(new Date()) >= 12;
+  const silentToday = !item.ok && rows[0]?.date === today && !rows[0]?.ok && jstHour(new Date()) >= 12;
   return {
     ...item,
     ...(silentToday ? {

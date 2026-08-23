@@ -1,5 +1,7 @@
 # db.nice.okinawa Progress
 
+BACKUP-0823-01 keeps fresh R2 latest manifests from being overridden by missing same-day daily history, preserving BJT/progress green status while leaving true nice_analytics token 9109 backup failures visible.
+
 ALERT-0822-02 adds a dashboard "发测试告警" button wired to `/alerts/test`, makes GET `/alerts/test` return a friendly Dashboard-key hint, and forces manual test alert subjects to include `[TEST]`.
 
 ALERT-0822-01 centralizes all system notification recipients into `ALERT_RECIPIENTS=aboutokinawa@gmail.com`, removes the old info@ recipient paths, and updates CLAUDE.md to WAN Constitution v1.17.
