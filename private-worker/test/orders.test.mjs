@@ -93,6 +93,11 @@ test('/orders returns sorted masked order source rows and distributions', async 
       updated_at: '2026-07-02T00:00:00.000Z',
       status: 'captured',
       source: 'paypal',
+      first_ref: 'https://www.google.com/',
+      first_landing: '/pro/buy/',
+      first_utm: '{"utm_source":"google"}',
+      first_seen: '2026-07-01T23:00:00.000Z',
+      ui_lang: 'ja',
       paypal_payer_country: 'TW',
       captured_at: '2026-07-02T00:01:00.000Z',
       business_record_key: 'business:newer'
@@ -105,10 +110,14 @@ test('/orders returns sorted masked order source rows and distributions', async 
   assert.equal(res.status, 200);
   assert.equal(data.ok, true);
   assert.equal(data.total_orders, 2);
+  assert.deepEqual(Object.keys(data.range_counts).sort(), ['days_30', 'days_7', 'today']);
+  assert.deepEqual(data.recent_orders.map((order) => order.order_id), ['newer-order-ABCDEF', 'older-order-123456']);
   assert.deepEqual(data.orders.map((order) => order.order_id), ['newer-order-ABCDEF', 'older-order-123456']);
   assert.equal(data.orders[0].order_short, 'ABCDEF');
   assert.equal(data.orders[0].email_masked, 'b***@example.net');
   assert.equal(data.orders[0].ip, '198.51.100.9');
+  assert.equal(data.orders[0].first_ref, 'https://www.google.com/');
+  assert.equal(data.orders[0].first_landing, '/pro/buy/');
   assert.equal(data.orders[0].location_mismatch, true);
   assert.equal(data.orders[1].overseas_region, '');
   assert.equal(data.orders[1].location_mismatch, false);
