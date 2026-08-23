@@ -1,5 +1,7 @@
 # db.nice.okinawa Progress
 
+UX-0823-03 fixes the orders dashboard counts and recent list to use paid, deduped, non-test order rows only while keeping attribution blank until upstream first-touch fields arrive.
+
 BACKUP-0823-01 keeps fresh R2 latest manifests from being overridden by missing same-day daily history, preserving BJT/progress green status while leaving true nice_analytics token 9109 backup failures visible.
 
 ALERT-0822-02 adds a dashboard "发测试告警" button wired to `/alerts/test`, makes GET `/alerts/test` return a friendly Dashboard-key hint, and forces manual test alert subjects to include `[TEST]`.
