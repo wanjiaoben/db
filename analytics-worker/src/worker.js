@@ -2818,16 +2818,37 @@ async function readDailyBackupHistory(bucket, prefix, now, days = 7) {
   return entries;
 }
 
-function backupHistoryFromIndex(result, now, days = 7) {
-  if (!result?.ok) return [];
+export function backupHistoryFromIndex(result, now, days = 7) {
+  const today = jstDateKey(now);
+  if (!today) {
+    const rows = [];
+    rows.skipped = 0;
+    rows.status = 'unknown';
+    return rows;
+  }
+  if (!result?.ok) {
+    const rows = unknownBackupHistory(today, days, result?.error || 'backup history index unavailable');
+    rows.skipped = 0;
+    return rows;
+  }
   const backups = Array.isArray(result?.data?.backups) ? result.data.backups : [];
   const byDate = new Map();
+  let skipped = 0;
   for (const item of backups) {
     const date = jstDateKey(item.generated_at || item.created_at || '');
-    if (date && !byDate.has(date)) byDate.set(date, item);
+    if (!date) {
+      skipped += 1;
+      continue;
+    }
+    if (!byDate.has(date)) byDate.set(date, item);
   }
-  return Array.from({ length: days }, (_, offset) => {
-    const date = shiftDateKey(jstDateKey(now), -offset);
+  if (!byDate.size) {
+    const rows = unknownBackupHistory(today, days, backups.length ? 'backup history has no valid timestamps' : 'backup history is empty');
+    rows.skipped = skipped;
+    return rows;
+  }
+  const rows = Array.from({ length: days }, (_, offset) => {
+    const date = shiftDateKey(today, -offset);
     const item = byDate.get(date);
     return {
       date,
@@ -2837,6 +2858,18 @@ function backupHistoryFromIndex(result, now, days = 7) {
       error: item ? '' : 'no successful manifest for date'
     };
   });
+  rows.skipped = skipped;
+  return rows;
+}
+
+function unknownBackupHistory(today, days, error) {
+  return Array.from({ length: days }, (_, offset) => ({
+    date: shiftDateKey(today, -offset),
+    ok: false,
+    status: 'unknown',
+    latest_at: '',
+    error
+  }));
 }
 
 export function attachBackupHistory(item, history) {
@@ -2860,6 +2893,7 @@ export function attachBackupHistory(item, history) {
     history_7d: rows,
     success_days_7d: successful,
     success_rate_7d: rows.length ? successful / rows.length : null,
+    history_skipped: Number(rows.skipped || 0),
     last_success_at: rows.find((row) => row.ok)?.latest_at || (item.ok ? item.latest_at : ''),
     consecutive_failures: consecutiveFailures,
     failure_date: latestFailure?.date || '',
@@ -3202,12 +3236,14 @@ function parseDateSafe(value) {
 
 function jstDateKey(date) {
   if (!date) return '';
+  const parsed = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(parsed.getTime())) return '';
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Tokyo',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
-  }).format(date);
+  }).format(parsed);
 }
 
 async function ensureAlertTable(env) {
