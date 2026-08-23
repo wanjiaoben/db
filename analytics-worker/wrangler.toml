@@ -36,6 +36,8 @@ ALLOWED_ORIGIN = "https://translation.nice.okinawa"
 DASHBOARD_ORIGIN = "https://db.nice.okinawa"
 GSC_SITE_URLS = "https://bjt.nice.okinawa/,https://kiso.nice.okinawa/,https://progress.nice.okinawa/,https://fishing.nice.okinawa/,https://snorkel.nice.okinawa/,https://nice.okinawa/,https://activity.nice.okinawa/,https://translation.nice.okinawa/,https://rental.nice.okinawa/,https://golf.nice.okinawa/,https://japanusedcars.nice.okinawa/"
 # Secret required: GSC_SERVICE_ACCOUNT_JSON.
+BING_SITE_URLS = "https://bjt.nice.okinawa/,https://kiso.nice.okinawa/,https://snorkel.nice.okinawa/,https://progress.nice.okinawa/,https://nice.okinawa/,https://translation.nice.okinawa/"
+# Secret required: BING_API_KEY.
 # Alert mail is sent via Resend only on red states or manual admin tests.
 # Secret required: RESEND_API_KEY.
 ALERT_RECIPIENTS = "aboutokinawa@gmail.com"
@@ -80,6 +82,8 @@ ALLOWED_ORIGIN = "https://db-t0705-12.nice.okinawa"
 DASHBOARD_ORIGIN = "https://db-t0705-12.nice.okinawa"
 GSC_SITE_URLS = "https://bjt.nice.okinawa/,https://kiso.nice.okinawa/,https://progress.nice.okinawa/,https://fishing.nice.okinawa/,https://snorkel.nice.okinawa/,https://nice.okinawa/,https://activity.nice.okinawa/,https://translation.nice.okinawa/,https://rental.nice.okinawa/,https://golf.nice.okinawa/,https://japanusedcars.nice.okinawa/"
 # Secret required: GSC_SERVICE_ACCOUNT_JSON.
+BING_SITE_URLS = "https://bjt.nice.okinawa/,https://kiso.nice.okinawa/,https://snorkel.nice.okinawa/,https://progress.nice.okinawa/,https://nice.okinawa/,https://translation.nice.okinawa/"
+# Secret required: BING_API_KEY.
 # Preview uses the same Resend alert contract as production.
 # Secret required: RESEND_API_KEY. Preview test mail subjects are prefixed with [TEST].
 ALERT_RECIPIENTS = "aboutokinawa@gmail.com"

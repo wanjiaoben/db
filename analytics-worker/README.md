@@ -86,25 +86,32 @@ Then Wan sets the generated value with `wrangler secret put DASHBOARD_KEY` in
 `analytics-worker` and `private-worker`, and stores it in the GitHub Actions
 `production-worker` environment if future release preflight requires it.
 
-## Google Search Console
+## Search Terms
 
-The dashboard can show Google search queries, clicks, impressions, CTR, and
-average position after a Google service account is connected. It syncs the
-latest 28 days daily at 09:00 JST and sends a Monday 09:00 JST summary to the
-configured `ALERT_RECIPIENTS` address.
+The dashboard can show Google and Bing search queries, clicks, impressions, CTR,
+and average position after the search provider credentials are connected. It
+syncs daily at 09:00 JST. Google syncs the latest 28 days and sends a Monday
+09:00 JST summary to the configured `ALERT_RECIPIENTS` address. Bing syncs the
+latest 7 days into the same `search_terms` table with `source='bing'`.
 
 1. In Google Cloud, create a service account and download a JSON key.
 2. In Google Search Console, add the service account email as a user for each
    property listed in `GSC_SITE_URLS`.
-3. Set this Worker secret:
+3. Set these Worker secrets:
    - `GSC_SERVICE_ACCOUNT_JSON`
-4. Keep `ALERT_RECIPIENTS` set to exactly one system-notification mailbox.
-5. Run `schema.sql` on the D1 database again to create `search_console_daily`.
-6. Deploy the Worker. The cron sync runs daily, and the dashboard button can
-   manually sync the latest 28 days.
+   - `BING_API_KEY`
+4. Keep `BING_SITE_URLS` to the Bing-connected sites that should be pulled.
+5. Keep `ALERT_RECIPIENTS` set to exactly one system-notification mailbox.
+6. Run `schema.sql` on the D1 database again to create `search_terms`.
+7. Deploy the Worker. The cron sync runs daily, and the dashboard button can
+   manually sync search terms.
 
 `GSC_CLIENT_EMAIL` and `GSC_PRIVATE_KEY` are still accepted as a fallback for
 older preview environments, but production should use the JSON secret above.
+
+Bing Webmaster `GetQueryStats` is a legacy API and Microsoft documents its
+retirement date as 2026-08-31. Replace it with the successor REST API before
+that date if Microsoft does not extend compatibility.
 
 ## GitHub Deployment Status
 

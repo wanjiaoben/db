@@ -7,6 +7,9 @@ const PATH_CHECK_PREVIEW_TEST_EMAIL_CRON = '12 29 7 29 *';
 const GSC_DAILY_SYNC_CRON = '0 0 * * *';
 const GSC_DEFAULT_SYNC_DAYS = 28;
 const GSC_REPORT_WINDOW_DAYS = 7;
+const BING_SYNC_DAYS = 7;
+const SEARCH_TERM_SOURCES = new Set(['google', 'bing', 'all']);
+const DEFAULT_BING_SITE_URLS = 'https://bjt.nice.okinawa/,https://kiso.nice.okinawa/,https://snorkel.nice.okinawa/,https://progress.nice.okinawa/,https://nice.okinawa/,https://translation.nice.okinawa/';
 const VISITOR_EVENT_PATH = '/events';
 const VISITOR_DASHBOARD_PATH = '/visitors';
 const VISITOR_EVENT_RATE_LIMIT_PER_MINUTE = 30;
@@ -1027,6 +1030,11 @@ async function runScheduledTasks(event, env) {
     } catch (e) {
       errors.push(`gsc:${e.message}`);
     }
+    try {
+      await syncBingSearchTermsRange(env);
+    } catch (e) {
+      errors.push(`bing:${e.message}`);
+    }
     if (isJstMonday(scheduledAt)) {
       try {
         const report = await sendSearchConsoleWeeklyReport(env, scheduledAt, { reason: cron });
@@ -1064,6 +1072,7 @@ async function summary(request, env) {
     : Math.min(Math.max(Number(url.searchParams.get('days') || 7), 1), 365);
   const selectedSite = clean(url.searchParams.get('site'), 120);
   const selectedSearchSite = clean(url.searchParams.get('gsc_site'), 120);
+  const selectedSearchSource = normalizeSearchTermSource(url.searchParams.get('search_source') || 'google');
   const selectedPath = clean(url.searchParams.get('path'), 300);
   const filterClause = `${selectedSite ? ' AND site = ?' : ''}${selectedPath ? ' AND path = ?' : ''}`;
   const filterParams = [...(selectedSite ? [selectedSite] : []), ...(selectedPath ? [selectedPath] : [])];
@@ -1232,13 +1241,20 @@ async function summary(request, env) {
     LIMIT 50
   `, [since, ...filterParams]);
 
-  const searchConsole = hasSearchConsoleConfig(env)
+  const searchConsole = hasSearchTermsConfig(env)
     ? await searchConsoleSummary(env.DB, {
       since: range === 'today' ? dateOnly(Date.now()) : dateOnly(Date.now() - days * 86400000),
       site: selectedSearchSite,
-      path: selectedPath
+      path: selectedPath,
+      source: selectedSearchSource
     })
-    : unconfiguredSearchConsoleSummary(range === 'today' ? dateOnly(Date.now()) : dateOnly(Date.now() - days * 86400000), selectedSearchSite, selectedPath);
+    : await searchConsoleSummary(env.DB, {
+      since: range === 'today' ? dateOnly(Date.now()) : dateOnly(Date.now() - days * 86400000),
+      site: selectedSearchSite,
+      path: selectedPath,
+      source: selectedSearchSource,
+      configured: false
+    });
 
   return json({
     ok: true,
@@ -1266,8 +1282,11 @@ async function summary(request, env) {
 
 async function searchConsoleSummary(db, filters) {
   try {
-    const clause = `${filters.site ? ' AND site = ?' : ''}${filters.path ? ' AND path = ?' : ''}`;
-    const params = [filters.since, ...(filters.site ? [filters.site] : []), ...(filters.path ? [filters.path] : [])];
+    await ensureSearchTermsTable({ DB: db });
+    const source = normalizeSearchTermSource(filters.source || 'google');
+    const sourceClause = source === 'all' ? '' : ' AND source = ?';
+    const clause = `${sourceClause}${filters.site ? ' AND site = ?' : ''}${filters.path ? ' AND path = ?' : ''}`;
+    const params = [filters.since, ...(source === 'all' ? [] : [source]), ...(filters.site ? [filters.site] : []), ...(filters.path ? [filters.path] : [])];
     const totals = await first(db, `
       SELECT
         COALESCE(SUM(clicks), 0) AS clicks,
@@ -1275,7 +1294,7 @@ async function searchConsoleSummary(db, filters) {
         CASE WHEN SUM(impressions) > 0 THEN SUM(clicks) * 1.0 / SUM(impressions) ELSE 0 END AS ctr,
         CASE WHEN SUM(impressions) > 0 THEN SUM(position * impressions) / SUM(impressions) ELSE 0 END AS position,
         MAX(imported_at) AS imported_at
-      FROM search_console_daily
+      FROM search_terms
       WHERE date >= ?${clause}
     `, params);
     const queries = await all(db, `
@@ -1287,7 +1306,7 @@ async function searchConsoleSummary(db, filters) {
         SUM(impressions) AS impressions,
         CASE WHEN SUM(impressions) > 0 THEN SUM(clicks) * 1.0 / SUM(impressions) ELSE 0 END AS ctr,
         CASE WHEN SUM(impressions) > 0 THEN SUM(position * impressions) / SUM(impressions) ELSE 0 END AS position
-      FROM search_console_daily
+      FROM search_terms
       WHERE date >= ?${clause}
       GROUP BY query, site, path
       ORDER BY impressions DESC, clicks DESC
@@ -1302,7 +1321,7 @@ async function searchConsoleSummary(db, filters) {
         SUM(impressions) AS impressions,
         CASE WHEN SUM(impressions) > 0 THEN SUM(clicks) * 1.0 / SUM(impressions) ELSE 0 END AS ctr,
         CASE WHEN SUM(impressions) > 0 THEN SUM(position * impressions) / SUM(impressions) ELSE 0 END AS position
-      FROM search_console_daily
+      FROM search_terms
       WHERE date >= ?${clause}
       GROUP BY query, site, path
       HAVING SUM(impressions) > 0 AND SUM(clicks) = 0
@@ -1318,7 +1337,7 @@ async function searchConsoleSummary(db, filters) {
         SUM(impressions) AS impressions,
         CASE WHEN SUM(impressions) > 0 THEN SUM(clicks) * 1.0 / SUM(impressions) ELSE 0 END AS ctr,
         CASE WHEN SUM(impressions) > 0 THEN SUM(position * impressions) / SUM(impressions) ELSE 0 END AS position
-      FROM search_console_daily
+      FROM search_terms
       WHERE date >= ?${clause}
       GROUP BY query, site, path
       HAVING SUM(impressions) > 0
@@ -1335,7 +1354,7 @@ async function searchConsoleSummary(db, filters) {
         SUM(impressions) AS impressions,
         CASE WHEN SUM(impressions) > 0 THEN SUM(clicks) * 1.0 / SUM(impressions) ELSE 0 END AS ctr,
         CASE WHEN SUM(impressions) > 0 THEN SUM(position * impressions) / SUM(impressions) ELSE 0 END AS position
-      FROM search_console_daily
+      FROM search_terms
       WHERE date >= ?${clause}
       GROUP BY site, path
       ORDER BY clicks DESC, impressions DESC
@@ -1349,13 +1368,15 @@ async function searchConsoleSummary(db, filters) {
         CASE WHEN SUM(impressions) > 0 THEN SUM(clicks) * 1.0 / SUM(impressions) ELSE 0 END AS ctr,
         CASE WHEN SUM(impressions) > 0 THEN SUM(position * impressions) / SUM(impressions) ELSE 0 END AS position,
         MAX(imported_at) AS imported_at
-      FROM search_console_daily
-      WHERE date >= ?
+      FROM search_terms
+      WHERE date >= ?${sourceClause}
       GROUP BY site
       ORDER BY impressions DESC, clicks DESC
-    `, [filters.since]);
+    `, [filters.since, ...(source === 'all' ? [] : [source])]);
     return {
       ok: true,
+      configured: filters.configured !== false,
+      source,
       range_start: filters.since,
       selected_site: filters.site || '',
       totals,
@@ -1370,24 +1391,6 @@ async function searchConsoleSummary(db, filters) {
   }
 }
 
-function unconfiguredSearchConsoleSummary(since, site = '', path = '') {
-  return {
-    ok: false,
-    configured: false,
-    error: 'missing_search_console_config',
-    message: '未接入 Search Console',
-    range_start: since,
-    selected_site: site || '',
-    selected_path: path || '',
-    totals: { clicks: 0, impressions: 0, ctr: 0, position: 0, imported_at: '' },
-    sites: [],
-    queries: [],
-    no_click: [],
-    striking_distance: [],
-    pages: []
-  };
-}
-
 async function searchConsoleStatus(request, env) {
   if (!requireDashboard(request, env)) {
     return json({ ok: false, error: 'unauthorized' }, request, 403);
@@ -1395,11 +1398,15 @@ async function searchConsoleStatus(request, env) {
   const data = await searchConsoleSummary(env.DB, {
     since: new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
     site: '',
-    path: ''
+    path: '',
+    source: normalizeSearchTermSource(new URL(request.url).searchParams.get('search_source') || 'google'),
+    configured: hasSearchTermsConfig(env)
   });
   return json({
     ok: true,
-    configured: hasSearchConsoleConfig(env),
+    configured: hasSearchTermsConfig(env),
+    google_configured: hasSearchConsoleConfig(env),
+    bing_configured: hasBingSearchConfig(env),
     sites: configuredSearchConsoleSites(env),
     search_console: data
   }, request);
@@ -1413,7 +1420,16 @@ async function syncSearchConsole(request, env) {
   const days = Math.min(Math.max(Number(url.searchParams.get('days') || GSC_DEFAULT_SYNC_DAYS), 1), 365);
   const endDate = url.searchParams.get('end') || dateOnly(Date.now() - 2 * 86400000);
   const startDate = url.searchParams.get('start') || dateOnly(Date.parse(endDate + 'T00:00:00Z') - (days - 1) * 86400000);
-  const result = await syncSearchConsoleRange(env, startDate, endDate);
+  const google = await syncSearchConsoleRange(env, startDate, endDate);
+  const bing = await syncBingSearchTermsRange(env);
+  const result = {
+    configured: Boolean(google.configured || bing.configured),
+    start_date: startDate,
+    end_date: endDate,
+    imported_rows: Number(google.imported_rows || 0) + Number(bing.imported_rows || 0),
+    google,
+    bing
+  };
   return json({ ok: true, ...result }, request);
 }
 
@@ -1430,6 +1446,7 @@ async function searchConsoleWeeklyReport(request, env) {
 }
 
 async function syncSearchConsoleRange(env, startDate, endDate) {
+  await ensureSearchTermsTable(env);
   if (!hasSearchConsoleConfig(env)) {
     return { configured: false, imported_rows: 0, error: 'missing_search_console_config' };
   }
@@ -1474,12 +1491,13 @@ async function sendSearchConsoleWeeklyReport(env, now = new Date(), options = {}
 }
 
 async function searchConsoleWeeklyReportData(db, now = new Date()) {
+  await ensureSearchTermsTable({ DB: db });
   const currentEnd = dateOnly(now.getTime() - 2 * 86400000);
   const currentStart = dateOnly(Date.parse(currentEnd + 'T00:00:00Z') - (GSC_REPORT_WINDOW_DAYS - 1) * 86400000);
   const previousEnd = dateOnly(Date.parse(currentStart + 'T00:00:00Z') - 86400000);
   const previousStart = dateOnly(Date.parse(previousEnd + 'T00:00:00Z') - (GSC_REPORT_WINDOW_DAYS - 1) * 86400000);
-  const currentSites = await searchConsoleSiteTotals(db, currentStart, currentEnd);
-  const previousSites = await searchConsoleSiteTotals(db, previousStart, previousEnd);
+  const currentSites = await searchConsoleSiteTotals(db, currentStart, currentEnd, 'google');
+  const previousSites = await searchConsoleSiteTotals(db, previousStart, previousEnd, 'google');
   const previousBySite = new Map(previousSites.map((row) => [row.site, row]));
   const sites = currentSites.map((row) => {
     const previous = previousBySite.get(row.site) || { clicks: 0, impressions: 0 };
@@ -1496,12 +1514,12 @@ async function searchConsoleWeeklyReportData(db, now = new Date()) {
     current: { start_date: currentStart, end_date: currentEnd },
     previous: { start_date: previousStart, end_date: previousEnd },
     sites,
-    no_click: await searchConsoleTopRows(db, currentStart, currentEnd, 'no_click', 5),
-    striking_distance: await searchConsoleTopRows(db, currentStart, currentEnd, 'striking_distance', 5)
+    no_click: await searchConsoleTopRows(db, currentStart, currentEnd, 'no_click', 5, 'google'),
+    striking_distance: await searchConsoleTopRows(db, currentStart, currentEnd, 'striking_distance', 5, 'google')
   };
 }
 
-async function searchConsoleSiteTotals(db, startDate, endDate) {
+async function searchConsoleSiteTotals(db, startDate, endDate, source = 'google') {
   return await all(db, `
     SELECT
       site,
@@ -1509,14 +1527,14 @@ async function searchConsoleSiteTotals(db, startDate, endDate) {
       SUM(impressions) AS impressions,
       CASE WHEN SUM(impressions) > 0 THEN SUM(clicks) * 1.0 / SUM(impressions) ELSE 0 END AS ctr,
       CASE WHEN SUM(impressions) > 0 THEN SUM(position * impressions) / SUM(impressions) ELSE 0 END AS position
-    FROM search_console_daily
-    WHERE date >= ? AND date <= ?
+    FROM search_terms
+    WHERE date >= ? AND date <= ? AND source = ?
     GROUP BY site
     ORDER BY impressions DESC, clicks DESC
-  `, [startDate, endDate]);
+  `, [startDate, endDate, source]);
 }
 
-async function searchConsoleTopRows(db, startDate, endDate, kind, limit = 20) {
+async function searchConsoleTopRows(db, startDate, endDate, kind, limit = 20, source = 'google') {
   const having = kind === 'striking_distance'
     ? `HAVING SUM(impressions) > 0
          AND (SUM(position * impressions) / SUM(impressions)) >= 4
@@ -1531,13 +1549,13 @@ async function searchConsoleTopRows(db, startDate, endDate, kind, limit = 20) {
       SUM(impressions) AS impressions,
       CASE WHEN SUM(impressions) > 0 THEN SUM(clicks) * 1.0 / SUM(impressions) ELSE 0 END AS ctr,
       CASE WHEN SUM(impressions) > 0 THEN SUM(position * impressions) / SUM(impressions) ELSE 0 END AS position
-    FROM search_console_daily
-    WHERE date >= ? AND date <= ?
+    FROM search_terms
+    WHERE date >= ? AND date <= ? AND source = ?
     GROUP BY query, site, path
     ${having}
     ORDER BY impressions DESC, position ASC
     LIMIT ?
-  `, [startDate, endDate, limit]);
+  `, [startDate, endDate, source, limit]);
 }
 
 export function buildSearchConsoleWeeklyEmailText(report) {
@@ -1587,11 +1605,31 @@ function hasSearchConsoleConfig(env) {
   return Boolean(searchConsoleCredentials(env) && configuredSearchConsoleSites(env).length);
 }
 
+function hasSearchTermsConfig(env) {
+  return hasSearchConsoleConfig(env) || hasBingSearchConfig(env);
+}
+
+function hasBingSearchConfig(env) {
+  return Boolean(clean(env.BING_API_KEY || '', 500) && configuredBingSites(env).length);
+}
+
 function configuredSearchConsoleSites(env) {
   return clean(env.GSC_SITE_URLS || '', 5000)
     .split(',')
     .map((site) => site.trim())
     .filter(Boolean);
+}
+
+function configuredBingSites(env) {
+  return clean(env.BING_SITE_URLS || DEFAULT_BING_SITE_URLS, 5000)
+    .split(',')
+    .map((site) => site.trim())
+    .filter(Boolean);
+}
+
+function normalizeSearchTermSource(value) {
+  const source = clean(value, 20).toLowerCase();
+  return SEARCH_TERM_SOURCES.has(source) ? source : 'google';
 }
 
 function dateOnly(ms) {
@@ -1731,10 +1769,10 @@ async function storeSearchConsoleRows(db, siteUrl, rows) {
     const device = clean(keys[4], 30);
     const parsed = parsePage(siteUrl, page);
     return db.prepare(`
-      INSERT INTO search_console_daily (
-        date, site_url, site, page, path, query, country, device, clicks, impressions, ctr, position, imported_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-      ON CONFLICT(date, site_url, page, query, country, device) DO UPDATE SET
+      INSERT INTO search_terms (
+        source, date, site_url, site, page, path, query, country, device, clicks, impressions, ctr, position, imported_at
+      ) VALUES ('google', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      ON CONFLICT(source, date, site_url, page, query, country, device) DO UPDATE SET
         site = excluded.site,
         path = excluded.path,
         clicks = excluded.clicks,
@@ -1757,6 +1795,135 @@ async function storeSearchConsoleRows(db, siteUrl, rows) {
       Number(row.position || 0)
     );
   });
+  await db.batch(statements);
+  return statements.length;
+}
+
+async function ensureSearchTermsTable(env) {
+  const db = env.DB;
+  await db.batch([
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS search_terms (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        imported_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        source TEXT NOT NULL DEFAULT 'google',
+        date TEXT NOT NULL,
+        site_url TEXT NOT NULL,
+        site TEXT NOT NULL,
+        page TEXT NOT NULL DEFAULT '',
+        path TEXT NOT NULL DEFAULT '',
+        query TEXT NOT NULL,
+        country TEXT,
+        device TEXT,
+        clicks INTEGER NOT NULL DEFAULT 0,
+        impressions INTEGER NOT NULL DEFAULT 0,
+        ctr REAL NOT NULL DEFAULT 0,
+        position REAL NOT NULL DEFAULT 0,
+        UNIQUE(source, date, site_url, page, query, country, device)
+      )
+    `),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_search_terms_source_date ON search_terms(source, date)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_search_terms_source_site_date ON search_terms(source, site, date)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_search_terms_source_path_date ON search_terms(source, path, date)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_search_terms_source_query_date ON search_terms(source, query, date)`)
+  ]);
+  const legacy = await first(db, `SELECT name FROM sqlite_master WHERE type='table' AND name='search_console_daily'`);
+  if (!legacy) return;
+  await db.prepare(`
+    INSERT OR IGNORE INTO search_terms (
+      source, imported_at, date, site_url, site, page, path, query, country, device,
+      clicks, impressions, ctr, position
+    )
+    SELECT
+      'google', imported_at, date, site_url, site, page, path, query, country, device,
+      clicks, impressions, ctr, position
+    FROM search_console_daily
+  `).run();
+}
+
+async function syncBingSearchTermsRange(env) {
+  await ensureSearchTermsTable(env);
+  if (!hasBingSearchConfig(env)) {
+    return { configured: false, imported_rows: 0, error: 'missing_BING_API_KEY' };
+  }
+  const end = dateOnly(Date.now());
+  const start = dateOnly(Date.parse(end + 'T00:00:00Z') - (BING_SYNC_DAYS - 1) * 86400000);
+  let imported = 0;
+  const details = [];
+  for (const siteUrl of configuredBingSites(env)) {
+    const rows = await fetchBingQueryStats(env.BING_API_KEY, siteUrl, start);
+    const count = await storeBingSearchRows(env.DB, siteUrl, rows);
+    imported += count;
+    details.push({ site_url: siteUrl, rows: count });
+  }
+  return { configured: true, start_date: start, end_date: end, imported_rows: imported, sites: details };
+}
+
+async function fetchBingQueryStats(apiKey, siteUrl, startDate) {
+  const endpoint = new URL('https://ssl.bing.com/webmaster/api.svc/json/GetQueryStats');
+  endpoint.searchParams.set('siteUrl', siteUrl);
+  endpoint.searchParams.set('apikey', apiKey);
+  const res = await fetch(endpoint.toString(), {
+    headers: { accept: 'application/json' }
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error?.message || data.Message || `bing_query_stats_http_${res.status}`);
+  }
+  const rows = Array.isArray(data.d) ? data.d : [];
+  return rows
+    .map(normalizeBingQueryRow)
+    .filter((row) => row.date >= startDate);
+}
+
+function normalizeBingQueryRow(row) {
+  const date = bingDateOnly(row?.Date);
+  const impressions = Math.round(Number(row?.Impressions || 0));
+  const clicks = Math.round(Number(row?.Clicks || 0));
+  const position = Number(row?.AvgImpressionPosition || row?.AvgClickPosition || 0);
+  return {
+    date,
+    query: clean(row?.Query, 500),
+    impressions,
+    clicks,
+    ctr: impressions > 0 ? clicks / impressions : 0,
+    position: Number.isFinite(position) ? position : 0
+  };
+}
+
+function bingDateOnly(value) {
+  const textValue = clean(value, 80);
+  const match = /\/Date\((-?\d+)([+-]\d{4})?\)\//.exec(textValue);
+  if (match) return dateOnly(Number(match[1]));
+  const parsed = Date.parse(textValue);
+  return Number.isNaN(parsed) ? '' : dateOnly(parsed);
+}
+
+async function storeBingSearchRows(db, siteUrl, rows) {
+  const usable = rows.filter((row) => row.date && row.query);
+  if (!usable.length) return 0;
+  const parsed = parsePage(siteUrl, siteUrl);
+  const statements = usable.map((row) => db.prepare(`
+    INSERT INTO search_terms (
+      source, date, site_url, site, page, path, query, country, device, clicks, impressions, ctr, position, imported_at
+    ) VALUES ('bing', ?, ?, ?, '', '', ?, '', '', ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(source, date, site_url, page, query, country, device) DO UPDATE SET
+      site = excluded.site,
+      clicks = excluded.clicks,
+      impressions = excluded.impressions,
+      ctr = excluded.ctr,
+      position = excluded.position,
+      imported_at = excluded.imported_at
+  `).bind(
+    row.date,
+    clean(siteUrl, 300),
+    parsed.site,
+    row.query,
+    row.clicks,
+    row.impressions,
+    row.ctr,
+    row.position
+  ));
   await db.batch(statements);
   return statements.length;
 }
@@ -3463,8 +3630,12 @@ function jstMonthKey(date) {
 export {
   BEACON_SCRIPT,
   PATH_CHECK_BASELINES,
+  bingDateOnly,
+  configuredBingSites,
   checkPathContract,
   isFastPathCheckFailure,
+  normalizeBingQueryRow,
+  normalizeSearchTermSource,
   shouldSendPathCheckAlert,
   stableFingerprint
 };
