@@ -36,6 +36,10 @@ function request(headers = {}) {
   });
 }
 
+function isoDaysAgo(days, extraMs = 0) {
+  return new Date(Date.now() - days * 86400000 + extraMs).toISOString();
+}
+
 test('/orders keeps Basic protection before dashboard key checks', async () => {
   const res = await worker.fetch(new Request('https://db.nice.okinawa/orders'), envWithKv({}), {});
   assert.equal(res.status, 401);
@@ -131,6 +135,114 @@ test('/orders returns sorted masked order source rows and distributions', async 
     { value: 'JP', count: 1 },
     { value: 'TW', count: 1 }
   ]);
+});
+
+test('/orders day mode counts only paid, deduped, non-test orders', async () => {
+  const fallbackBase = Date.now() - 3 * 86400000;
+  const records = {
+    'paypal_order_meta:paid-captured': JSON.stringify({
+      order_id: 'paid-captured',
+      email: 'real1@example.com',
+      plan: 'monthly',
+      amount: '1900',
+      currency: 'JPY',
+      created_at: isoDaysAgo(0),
+      updated_at: isoDaysAgo(0),
+      status: 'captured'
+    }),
+    'paypal_order_meta:paid-completed': JSON.stringify({
+      order_id: 'paid-completed',
+      email: 'real2@example.com',
+      plan: 'yearly',
+      amount: '7200',
+      currency: 'JPY',
+      created_at: isoDaysAgo(2),
+      status: 'completed'
+    }),
+    'paypal_order_meta:pending-real': JSON.stringify({
+      order_id: 'pending-real',
+      email: 'real3@example.com',
+      plan: 'monthly',
+      amount: '1900',
+      currency: 'JPY',
+      created_at: isoDaysAgo(1),
+      status: 'pending'
+    }),
+    'paypal_order_meta:duplicate-draft': JSON.stringify({
+      order_id: 'paid-captured',
+      email: 'real1@example.com',
+      plan: 'monthly',
+      amount: '1900',
+      currency: 'JPY',
+      created_at: isoDaysAgo(0, -1000),
+      updated_at: isoDaysAgo(0, -1000),
+      status: 'created'
+    }),
+    'paypal_order_meta:fallback-a': JSON.stringify({
+      email: 'real4@example.com',
+      plan: 'monthly',
+      amount: '1200',
+      currency: 'JPY',
+      created_at: new Date(fallbackBase).toISOString(),
+      status: 'captured'
+    }),
+    'paypal_order_meta:fallback-b': JSON.stringify({
+      email: 'real4@example.com',
+      plan: 'monthly',
+      amount: '1200',
+      currency: 'JPY',
+      created_at: new Date(fallbackBase + 30_000).toISOString(),
+      status: 'captured'
+    }),
+    'paypal_order_meta:cctest-paid': JSON.stringify({
+      order_id: 'cctest-paid',
+      email: 'cctest@nice.okinawa',
+      plan: 'monthly',
+      amount: '1900',
+      currency: 'JPY',
+      created_at: isoDaysAgo(0),
+      status: 'captured'
+    }),
+    'paypal_order_meta:regtest-paid': JSON.stringify({
+      order_id: 'regtest-paid',
+      email: 'regtest@example.com',
+      plan: 'monthly',
+      amount: '1900',
+      currency: 'JPY',
+      created_at: isoDaysAgo(0),
+      status: 'captured'
+    }),
+    'paypal_order_meta:internal-paid': JSON.stringify({
+      order_id: 'internal-paid',
+      email: 'internal-test@nice.okinawa',
+      plan: 'monthly',
+      amount: '1900',
+      currency: 'JPY',
+      created_at: isoDaysAgo(0),
+      status: 'captured'
+    })
+  };
+
+  const res = await worker.fetch(new Request('https://db.nice.okinawa/orders?days=7', {
+    headers: { authorization: AUTH, 'x-dashboard-key': 'dash' }
+  }), envWithKv(records), {});
+  const data = await res.json();
+
+  assert.equal(res.status, 200);
+  assert.equal(data.source_total_orders, 9);
+  assert.equal(data.source_unique_orders, 4);
+  assert.equal(data.source_paid_orders, 3);
+  assert.equal(data.total_orders, 3);
+  assert.equal(data.captured_total, 3);
+  assert.deepEqual(new Set(data.recent_orders.map((order) => order.order_id || order.key)), new Set([
+    'paid-captured',
+    'paid-completed',
+    'fallback-b'
+  ]));
+  assert.equal(data.recent_orders.some((order) => order.order_id === 'pending-real'), false);
+  assert.equal(data.recent_orders.some((order) => order.email.includes('test')), false);
+  assert.equal(data.range_counts.days_7, 3);
+  assert.equal(data.range_counts.days_30, 3);
 });
 
 test('/orders follows BJT_KV pagination before building dashboard data', async () => {
@@ -389,7 +501,7 @@ test('/orders month mode uses JST boundaries and separates captured from exclude
   assert.equal(data.month_end_jst, '2026-08-01T00:00:00+09:00');
   assert.deepEqual(data.captured_orders.map((order) => order.order_id), ['july-overseas', 'july-jst-first']);
   assert.deepEqual(data.excluded_orders.map((order) => order.order_id), ['july-pending']);
-  assert.equal(data.total_orders, 3);
+  assert.equal(data.total_orders, 2);
   assert.equal(data.captured_total, 2);
   assert.equal(data.excluded_total, 1);
   assert.deepEqual(data.tax_totals, [

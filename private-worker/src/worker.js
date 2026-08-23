@@ -5,6 +5,7 @@ const ORDER_DAY_OPTIONS = new Set([1, 7, 30, 180]);
 const ORDER_ROWS_CACHE_TTL_MS = 60000;
 const ORDER_KV_BULK_GET_SIZE = 100;
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
+const PAID_ORDER_STATUSES = new Set(['captured', 'completed']);
 const orderRowsCaches = new WeakMap();
 const COUNTRY_REGION_ALIASES = {
   JP: 'japan',
@@ -142,7 +143,8 @@ async function orders(request, env) {
   const requestedDays = Number(url.searchParams.get('days') || 7);
   const days = ORDER_DAY_OPTIONS.has(requestedDays) ? requestedDays : 7;
   const sinceMs = Date.now() - days * 86400000;
-  const { rows: allRows, cacheStatus, loadedAt } = await getCachedOrderRows(env.BJT_KV);
+  const { rows: sourceRows, cacheStatus, loadedAt } = await getCachedOrderRows(env.BJT_KV);
+  const allRows = dedupeOrderRows(sourceRows).filter((row) => !isTestOrder(row));
   const rows = [];
 
   for (const row of allRows) {
@@ -160,18 +162,21 @@ async function orders(request, env) {
     const bt = Date.parse(b.created_at || '') || 0;
     return bt - at;
   };
-  const sortedAllRows = [...allRows].sort(byCreatedDesc);
+  const paidAllRows = allRows.filter((row) => isPaidOrder(row));
+  const sortedPaidRows = [...paidAllRows].sort(byCreatedDesc);
   rows.sort(byCreatedDesc);
 
-  const capturedRows = rows.filter((row) => isCaptured(row));
-  const excludedRows = rows.filter((row) => !isCaptured(row));
-  const countedRows = monthRange ? capturedRows : rows;
+  const capturedRows = rows.filter((row) => isPaidOrder(row));
+  const excludedRows = rows.filter((row) => !isPaidOrder(row));
+  const countedRows = capturedRows;
 
   return json({
     ok: true,
     source: 'bjt_kv',
     source_prefix: ORDER_META_PREFIX,
-    source_total_orders: allRows.length,
+    source_total_orders: sourceRows.length,
+    source_unique_orders: allRows.length,
+    source_paid_orders: paidAllRows.length,
     cache_status: cacheStatus,
     cache_age_ms: loadedAt ? Math.max(0, Date.now() - loadedAt) : 0,
     elapsed_ms: Date.now() - startedAt,
@@ -181,18 +186,18 @@ async function orders(request, env) {
     month_start_jst: monthRange ? monthRange.startJst : null,
     month_end_jst: monthRange ? monthRange.endJst : null,
     generated_at: new Date().toISOString(),
-    total_orders: rows.length,
+    total_orders: capturedRows.length,
     captured_total: capturedRows.length,
     excluded_total: excludedRows.length,
     tax_totals: taxTotals(capturedRows),
-    range_counts: orderRangeCounts(sortedAllRows),
-    recent_orders: sortedAllRows.slice(0, 10),
+    range_counts: orderRangeCounts(sortedPaidRows),
+    recent_orders: sortedPaidRows.slice(0, 10),
     distributions: {
       overseas_region: distribution(countedRows, (row) => row.overseas_region || (normalizeRegion(row.buyer_location) === 'japan' ? 'japan' : '')),
       ip_country: distribution(countedRows, (row) => row.ip_country),
       paypal_payer_country: distribution(countedRows, (row) => row.paypal_payer_country)
     },
-    orders: monthRange ? capturedRows : rows,
+    orders: capturedRows,
     captured_orders: capturedRows,
     excluded_orders: excludedRows
   });
@@ -292,12 +297,14 @@ function jstMonthLabel(ms) {
 }
 
 function orderRow(keyName, meta) {
-  const orderId = text(meta.order_id) || keyName.slice(ORDER_META_PREFIX.length);
+  const explicitOrderId = text(meta.order_id);
+  const orderId = explicitOrderId || keyName.slice(ORDER_META_PREFIX.length);
   const email = text(meta.email);
   const ip = text(meta.ip);
   const row = {
     key: keyName,
     order_id: orderId,
+    order_id_source: explicitOrderId ? 'meta' : 'key',
     order_short: orderId ? orderId.slice(-6) : '-',
     email,
     email_masked: maskEmail(email),
@@ -329,6 +336,41 @@ function orderRow(keyName, meta) {
   return row;
 }
 
+function dedupeOrderRows(rows) {
+  const byKey = new Map();
+  for (const row of rows || []) {
+    const key = orderDedupeKey(row);
+    if (!key) continue;
+    const existing = byKey.get(key);
+    if (!existing || orderDedupeRank(row) > orderDedupeRank(existing)) {
+      byKey.set(key, row);
+    }
+  }
+  return Array.from(byKey.values());
+}
+
+function orderDedupeKey(row) {
+  const orderId = text(row.order_id).toLowerCase();
+  if (orderId && row.order_id_source === 'meta') return `order:${orderId}`;
+  const email = text(row.email).toLowerCase();
+  const amount = text(row.amount);
+  const currency = text(row.currency).toUpperCase();
+  const createdMs = Date.parse(row.created_at || row.captured_at || '');
+  if (email && amount && currency && Number.isFinite(createdMs)) {
+    const minute = Math.floor(createdMs / 60000);
+    return `fallback:${email}:${currency}:${amount}:${minute}`;
+  }
+  return `key:${text(row.key)}`;
+}
+
+function orderDedupeRank(row) {
+  const paid = isPaidOrder(row) ? 1_000_000_000_000_000 : 0;
+  const capturedMs = Date.parse(row.captured_at || '') || 0;
+  const updatedMs = Date.parse(row.updated_at || '') || 0;
+  const createdMs = Date.parse(row.created_at || '') || 0;
+  return paid + Math.max(capturedMs, updatedMs, createdMs);
+}
+
 function hasLocationMismatch(row) {
   const values = [
     normalizeRegion(row.ip_country),
@@ -344,8 +386,17 @@ function selectedBuyerRegion(row) {
   return normalizeRegion(row.overseas_region) || buyer;
 }
 
-function isCaptured(row) {
-  return text(row.status).toLowerCase() === 'captured';
+function isPaidOrder(row) {
+  return PAID_ORDER_STATUSES.has(text(row.status).toLowerCase());
+}
+
+function isTestOrder(row) {
+  const email = text(row.email).toLowerCase();
+  if (!email) return false;
+  const [local, domain = ''] = email.split('@');
+  if (/(^|[+._-])(cctest|regtest|internal|test)([+._-]|$)/.test(local)) return true;
+  if (domain === 'nice.okinawa' && /^(cc|cctest|regtest|test|internal|probe|admin|wan)/.test(local)) return true;
+  return false;
 }
 
 function orderRangeCounts(rows) {
