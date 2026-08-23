@@ -1187,6 +1187,7 @@ Progress 可以静态运行，但完整版权限、邮箱登录、账号统计�
   - `security find-generic-password -s cc-db-verify-secret -a db -w`
   - `security find-generic-password -s cc-db-basic-user -a db -w`
   - `security find-generic-password -s cc-db-basic-pass -a db -w`
+- 以上四个 Keychain 项是 db 生产验收必需凭据；缺一时先补齐，不再回报“进不去”。
 - 请求 Cloudflare Access 后面的 db 面板端点时使用：
   - `CF-Access-Client-Id: <id>`
   - `CF-Access-Client-Secret: <secret>`
