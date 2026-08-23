@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { attachBackupHistory, backupItem, buildAlertEmailPreview, collectAlertItems, dailyD1BackupItem, d1BackupItem, progressBackupItem, selectDeploymentWorkflowRun } from '../src/worker.js';
+import { attachBackupHistory, backupHistoryFromIndex, backupItem, buildAlertEmailPreview, collectAlertItems, dailyD1BackupItem, d1BackupItem, progressBackupItem, selectDeploymentWorkflowRun } from '../src/worker.js';
 
 const now = new Date('2026-07-18T21:00:00.000Z');
 
@@ -122,6 +122,42 @@ test('backup health reports the latest successful artifact and seven-day success
   assert.equal(item.success_rate_7d, 5 / 7);
   assert.equal(item.last_success_at, '2026-07-16T09:00:00.000Z');
   assert.equal(item.consecutive_failures, 2);
+});
+
+test('nice_analytics backup index accepts ISO strings and skips invalid timestamps', () => {
+  const rows = backupHistoryFromIndex({
+    ok: true,
+    data: {
+      backups: [
+        {
+          generated_at: '2026-07-17T18:29:01.000Z',
+          object_key: 'd1/nice_analytics/production/2026-07-18/nice.sql'
+        },
+        {
+          generated_at: 'not-a-date',
+          object_key: 'd1/nice_analytics/production/bad/nice.sql'
+        },
+        {
+          object_key: 'd1/nice_analytics/production/missing-time/nice.sql'
+        }
+      ]
+    }
+  }, now, 3);
+  assert.equal(rows.skipped, 2);
+  assert.equal(rows[0].date, '2026-07-19');
+  assert.equal(rows[1].date, '2026-07-18');
+  assert.equal(rows[1].ok, true);
+  assert.equal(rows[1].status, 'complete');
+
+  const item = attachBackupHistory({ key: 'nice-analytics-production', ok: true, latest_at: '2026-07-18T18:29:01.000Z' }, rows);
+  assert.equal(item.history_skipped, 2);
+});
+
+test('empty backup index returns unknown history instead of throwing', () => {
+  const rows = backupHistoryFromIndex({ ok: true, data: { backups: [] } }, now, 2);
+  assert.equal(rows.skipped, 0);
+  assert.deepEqual(rows.map((row) => row.status), ['unknown', 'unknown']);
+  assert.match(rows[0].error, /empty/);
 });
 
 test('backup failure alert subject identifies a silent same-day gap', () => {
