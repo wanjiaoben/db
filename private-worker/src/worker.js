@@ -3,6 +3,7 @@ const DEFAULT_ANALYTICS_ORIGIN = 'https://analytics.nice.okinawa';
 const ORDER_META_PREFIX = 'paypal_order_meta:';
 const ORDER_DAY_OPTIONS = new Set([1, 7, 30, 180]);
 const ORDER_ROWS_CACHE_TTL_MS = 60000;
+const ORDER_KV_BULK_GET_SIZE = 100;
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
 const orderRowsCaches = new WeakMap();
 const COUNTRY_REGION_ALIASES = {
@@ -227,16 +228,31 @@ async function getCachedOrderRows(kv) {
 async function loadOrderRows(kv) {
   const keys = await listOrderMetaKeys(kv);
   const rows = [];
-  for (const name of keys) {
-    const raw = await kv.get(name);
-    if (!raw) continue;
-    try {
-      rows.push(orderRow(name, JSON.parse(raw)));
-    } catch (e) {
-      // Ignore malformed historical order records instead of breaking the dashboard.
+  const chunks = [];
+  for (let i = 0; i < keys.length; i += ORDER_KV_BULK_GET_SIZE) {
+    chunks.push(keys.slice(i, i + ORDER_KV_BULK_GET_SIZE));
+  }
+  const chunkValues = await Promise.all(chunks.map((chunk) => kv.get(chunk, { type: 'text', cacheTtl: 60 })));
+  for (let index = 0; index < chunks.length; index += 1) {
+    const chunk = chunks[index];
+    const values = chunkValues[index];
+    for (const name of chunk) {
+      const raw = kvBulkValue(values, name);
+      if (!raw) continue;
+      try {
+        rows.push(orderRow(name, JSON.parse(raw)));
+      } catch (e) {
+        // Ignore malformed historical order records instead of breaking the dashboard.
+      }
     }
   }
   return rows;
+}
+
+function kvBulkValue(values, name) {
+  if (values instanceof Map) return values.get(name);
+  if (values && typeof values === 'object') return values[name];
+  return null;
 }
 
 async function listOrderMetaKeys(kv) {
