@@ -17,6 +17,9 @@ function envWithKv(records, extra = {}) {
         return { keys: Object.keys(records).map((name) => ({ name })) };
       },
       async get(name) {
+        if (Array.isArray(name)) {
+          return new Map(name.map((key) => [key, records[key] || null]));
+        }
         return records[name] || null;
       }
     },
@@ -176,6 +179,9 @@ test('/orders follows BJT_KV pagination before building dashboard data', async (
         };
       },
       async get(name) {
+        if (Array.isArray(name)) {
+          return new Map(name.map((key) => [key, records[key] || null]));
+        }
         return records[name] || null;
       }
     }
@@ -219,6 +225,9 @@ test('/orders reuses parsed order rows cache for repeated dashboard loads', asyn
       },
       async get(name) {
         getCalls += 1;
+        if (Array.isArray(name)) {
+          return new Map(name.map((key) => [key, records[key] || null]));
+        }
         return records[name] || null;
       }
     }
@@ -235,6 +244,49 @@ test('/orders reuses parsed order rows cache for repeated dashboard loads', asyn
   assert.equal(secondData.source_total_orders, 1);
   assert.equal(listCalls, 1);
   assert.equal(getCalls, 1);
+});
+
+test('/orders loads source rows with KV bulk get chunks', async () => {
+  const records = {};
+  for (let i = 0; i < 101; i += 1) {
+    const key = 'paypal_order_meta:bulk-' + String(i).padStart(3, '0');
+    records[key] = JSON.stringify({
+      order_id: 'bulk-' + String(i).padStart(3, '0'),
+      email: 'bulk@example.com',
+      plan: 'monthly',
+      amount: '1000',
+      currency: 'JPY',
+      buyer_location: 'japan',
+      buyer_location_label: '日本',
+      ip_country: 'JP',
+      created_at: new Date(Date.now() - i * 1000).toISOString(),
+      status: 'captured'
+    });
+  }
+  const bulkGetSizes = [];
+  const env = envWithKv(records, {
+    BJT_KV: {
+      async list(options) {
+        assert.equal(options.prefix, 'paypal_order_meta:');
+        assert.equal(options.cursor, undefined);
+        return { keys: Object.keys(records).map((name) => ({ name })) };
+      },
+      async get(keys, options) {
+        assert.equal(Array.isArray(keys), true);
+        assert.deepEqual(options, { type: 'text', cacheTtl: 60 });
+        bulkGetSizes.push(keys.length);
+        return new Map(keys.map((key) => [key, records[key] || null]));
+      }
+    }
+  });
+
+  const res = await worker.fetch(request(), env, {});
+  const data = await res.json();
+
+  assert.equal(res.status, 200);
+  assert.deepEqual(bulkGetSizes, [100, 1]);
+  assert.equal(data.source_total_orders, 101);
+  assert.equal(data.recent_orders.length, 10);
 });
 
 test('/orders month mode uses JST boundaries and separates captured from excluded statuses', async () => {
