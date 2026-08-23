@@ -109,9 +109,10 @@ latest 7 days into the same `search_terms` table with `source='bing'`.
 `GSC_CLIENT_EMAIL` and `GSC_PRIVATE_KEY` are still accepted as a fallback for
 older preview environments, but production should use the JSON secret above.
 
-Bing Webmaster `GetQueryStats` is a legacy API and Microsoft documents its
-retirement date as 2026-08-31. Replace it with the successor REST API before
-that date if Microsoft does not extend compatibility.
+Bing Webmaster sync uses Microsoft's documented JSON/HTTP endpoint
+`https://ssl.bing.com/webmaster/api.svc/json/GetQueryStats`, not SOAP or POX.
+Microsoft documents SOAP and POX retirement on 2026-08-31; keep watching their
+REST migration guidance and move again if JSON/HTTP is also superseded.
 
 ## GitHub Deployment Status
 
