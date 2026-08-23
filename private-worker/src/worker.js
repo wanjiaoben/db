@@ -140,6 +140,7 @@ async function orders(request, env) {
   const sinceMs = Date.now() - days * 86400000;
   const listed = await env.BJT_KV.list({ prefix: ORDER_META_PREFIX });
   const keys = Array.isArray(listed.keys) ? listed.keys : [];
+  const allRows = [];
   const rows = [];
 
   for (const key of keys) {
@@ -154,6 +155,7 @@ async function orders(request, env) {
       continue;
     }
     const row = orderRow(name, meta);
+    allRows.push(row);
     const createdMs = Date.parse(row.created_at || '');
     if (monthRange) {
       if (!Number.isFinite(createdMs) || createdMs < monthRange.startMs || createdMs >= monthRange.endMs) continue;
@@ -163,11 +165,13 @@ async function orders(request, env) {
     rows.push(row);
   }
 
-  rows.sort((a, b) => {
+  const byCreatedDesc = (a, b) => {
     const at = Date.parse(a.created_at || '') || 0;
     const bt = Date.parse(b.created_at || '') || 0;
     return bt - at;
-  });
+  };
+  allRows.sort(byCreatedDesc);
+  rows.sort(byCreatedDesc);
 
   const capturedRows = rows.filter((row) => isCaptured(row));
   const excludedRows = rows.filter((row) => !isCaptured(row));
@@ -185,6 +189,8 @@ async function orders(request, env) {
     captured_total: capturedRows.length,
     excluded_total: excludedRows.length,
     tax_totals: taxTotals(capturedRows),
+    range_counts: orderRangeCounts(allRows),
+    recent_orders: allRows.slice(0, 10),
     distributions: {
       overseas_region: distribution(countedRows, (row) => row.overseas_region || (normalizeRegion(row.buyer_location) === 'japan' ? 'japan' : '')),
       ip_country: distribution(countedRows, (row) => row.ip_country),
@@ -241,6 +247,11 @@ function orderRow(keyName, meta) {
     updated_at: text(meta.updated_at),
     status: text(meta.status),
     source: text(meta.source),
+    first_ref: text(meta.first_ref),
+    first_landing: text(meta.first_landing),
+    first_utm: text(meta.first_utm),
+    first_seen: text(meta.first_seen),
+    ui_lang: text(meta.ui_lang),
     paypal_payer_country: text(meta.paypal_payer_country),
     captured_at: text(meta.captured_at),
     business_record_key: text(meta.business_record_key)
@@ -266,6 +277,29 @@ function selectedBuyerRegion(row) {
 
 function isCaptured(row) {
   return text(row.status).toLowerCase() === 'captured';
+}
+
+function orderRangeCounts(rows) {
+  const now = new Date();
+  const todayKey = jstDateKey(now.getTime());
+  const nowMs = now.getTime();
+  const counts = { today: 0, days_7: 0, days_30: 0 };
+  for (const row of rows) {
+    const createdMs = Date.parse(row.created_at || '');
+    if (!Number.isFinite(createdMs)) continue;
+    if (jstDateKey(createdMs) === todayKey) counts.today += 1;
+    const ageMs = nowMs - createdMs;
+    if (ageMs >= 0 && ageMs <= 7 * 86400000) counts.days_7 += 1;
+    if (ageMs >= 0 && ageMs <= 30 * 86400000) counts.days_30 += 1;
+  }
+  return counts;
+}
+
+function jstDateKey(ms) {
+  const date = new Date(ms + 9 * 3600000);
+  return date.getUTCFullYear() + '-' +
+    String(date.getUTCMonth() + 1).padStart(2, '0') + '-' +
+    String(date.getUTCDate()).padStart(2, '0');
 }
 
 function taxTotals(rows) {
