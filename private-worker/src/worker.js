@@ -2,7 +2,9 @@ const REALM = 'Nice Okinawa Dashboard';
 const DEFAULT_ANALYTICS_ORIGIN = 'https://analytics.nice.okinawa';
 const ORDER_META_PREFIX = 'paypal_order_meta:';
 const ORDER_DAY_OPTIONS = new Set([1, 7, 30, 180]);
+const ORDER_ROWS_CACHE_TTL_MS = 60000;
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
+const orderRowsCaches = new WeakMap();
 const COUNTRY_REGION_ALIASES = {
   JP: 'japan',
   JAPAN: 'japan',
@@ -122,6 +124,7 @@ async function proxyAnalytics(request, env, url) {
 }
 
 async function orders(request, env) {
+  const startedAt = Date.now();
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     return json({ ok: false, error: 'method_not_allowed' }, 405);
   }
@@ -138,21 +141,10 @@ async function orders(request, env) {
   const requestedDays = Number(url.searchParams.get('days') || 7);
   const days = ORDER_DAY_OPTIONS.has(requestedDays) ? requestedDays : 7;
   const sinceMs = Date.now() - days * 86400000;
-  const keys = await listOrderMetaKeys(env.BJT_KV);
-  const allRows = [];
+  const { rows: allRows, cacheStatus, loadedAt } = await getCachedOrderRows(env.BJT_KV);
   const rows = [];
 
-  for (const name of keys) {
-    const raw = await env.BJT_KV.get(name);
-    if (!raw) continue;
-    let meta;
-    try {
-      meta = JSON.parse(raw);
-    } catch (e) {
-      continue;
-    }
-    const row = orderRow(name, meta);
-    allRows.push(row);
+  for (const row of allRows) {
     const createdMs = Date.parse(row.created_at || '');
     if (monthRange) {
       if (!Number.isFinite(createdMs) || createdMs < monthRange.startMs || createdMs >= monthRange.endMs) continue;
@@ -167,7 +159,7 @@ async function orders(request, env) {
     const bt = Date.parse(b.created_at || '') || 0;
     return bt - at;
   };
-  allRows.sort(byCreatedDesc);
+  const sortedAllRows = [...allRows].sort(byCreatedDesc);
   rows.sort(byCreatedDesc);
 
   const capturedRows = rows.filter((row) => isCaptured(row));
@@ -179,6 +171,9 @@ async function orders(request, env) {
     source: 'bjt_kv',
     source_prefix: ORDER_META_PREFIX,
     source_total_orders: allRows.length,
+    cache_status: cacheStatus,
+    cache_age_ms: loadedAt ? Math.max(0, Date.now() - loadedAt) : 0,
+    elapsed_ms: Date.now() - startedAt,
     mode: monthRange ? 'month' : 'days',
     days,
     month: monthRange ? monthRange.month : null,
@@ -189,8 +184,8 @@ async function orders(request, env) {
     captured_total: capturedRows.length,
     excluded_total: excludedRows.length,
     tax_totals: taxTotals(capturedRows),
-    range_counts: orderRangeCounts(allRows),
-    recent_orders: allRows.slice(0, 10),
+    range_counts: orderRangeCounts(sortedAllRows),
+    recent_orders: sortedAllRows.slice(0, 10),
     distributions: {
       overseas_region: distribution(countedRows, (row) => row.overseas_region || (normalizeRegion(row.buyer_location) === 'japan' ? 'japan' : '')),
       ip_country: distribution(countedRows, (row) => row.ip_country),
@@ -200,6 +195,48 @@ async function orders(request, env) {
     captured_orders: capturedRows,
     excluded_orders: excludedRows
   });
+}
+
+async function getCachedOrderRows(kv) {
+  const now = Date.now();
+  let cache = orderRowsCaches.get(kv);
+  if (!cache) {
+    cache = { rows: null, loadedAt: 0, promise: null };
+    orderRowsCaches.set(kv, cache);
+  }
+  if (cache.rows && now - cache.loadedAt < ORDER_ROWS_CACHE_TTL_MS) {
+    return { rows: cache.rows, cacheStatus: 'hit', loadedAt: cache.loadedAt };
+  }
+  if (cache.promise) {
+    const rows = await cache.promise;
+    return { rows, cacheStatus: 'wait', loadedAt: cache.loadedAt };
+  }
+  cache.promise = loadOrderRows(kv)
+    .then((rows) => {
+      cache.rows = rows;
+      cache.loadedAt = Date.now();
+      return rows;
+    })
+    .finally(() => {
+      cache.promise = null;
+    });
+  const rows = await cache.promise;
+  return { rows, cacheStatus: 'miss', loadedAt: cache.loadedAt };
+}
+
+async function loadOrderRows(kv) {
+  const keys = await listOrderMetaKeys(kv);
+  const rows = [];
+  for (const name of keys) {
+    const raw = await kv.get(name);
+    if (!raw) continue;
+    try {
+      rows.push(orderRow(name, JSON.parse(raw)));
+    } catch (e) {
+      // Ignore malformed historical order records instead of breaking the dashboard.
+    }
+  }
+  return rows;
 }
 
 async function listOrderMetaKeys(kv) {

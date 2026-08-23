@@ -193,6 +193,50 @@ test('/orders follows BJT_KV pagination before building dashboard data', async (
   assert.deepEqual(data.recent_orders.map((order) => order.order_id), ['second-page', 'first-page']);
 });
 
+test('/orders reuses parsed order rows cache for repeated dashboard loads', async () => {
+  let listCalls = 0;
+  let getCalls = 0;
+  const records = {
+    'paypal_order_meta:cached-order': JSON.stringify({
+      order_id: 'cached-order',
+      email: 'cache@example.com',
+      plan: 'monthly',
+      amount: '1000',
+      currency: 'JPY',
+      buyer_location: 'japan',
+      buyer_location_label: '日本',
+      ip_country: 'JP',
+      created_at: new Date().toISOString(),
+      status: 'captured'
+    })
+  };
+  const env = envWithKv(records, {
+    BJT_KV: {
+      async list(options) {
+        assert.equal(options.prefix, 'paypal_order_meta:');
+        listCalls += 1;
+        return { keys: [{ name: 'paypal_order_meta:cached-order' }] };
+      },
+      async get(name) {
+        getCalls += 1;
+        return records[name] || null;
+      }
+    }
+  });
+
+  const first = await worker.fetch(request(), env, {});
+  const firstData = await first.json();
+  const second = await worker.fetch(request(), env, {});
+  const secondData = await second.json();
+
+  assert.equal(firstData.cache_status, 'miss');
+  assert.equal(secondData.cache_status, 'hit');
+  assert.equal(firstData.source_total_orders, 1);
+  assert.equal(secondData.source_total_orders, 1);
+  assert.equal(listCalls, 1);
+  assert.equal(getCalls, 1);
+});
+
 test('/orders month mode uses JST boundaries and separates captured from excluded statuses', async () => {
   const records = {
     'paypal_order_meta:june-jst-last': JSON.stringify({
