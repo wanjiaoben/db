@@ -36,4 +36,42 @@ jobs:
           NICE_ANALYTICS_BACKUP_PREFIX: d1/nice_analytics/production
           NICE_ANALYTICS_BACKUP_RETENTION_DAYS: "30"
           NICE_ANALYTICS_BACKUP_MONTHLY_KEEP_DAY: "1"
-        run: node scripts/backup_nice_analytics_d1.mjs
+        run: |
+          for attempt in 1 2; do
+            echo "nice_analytics backup attempt ${attempt}/2"
+            if node scripts/backup_nice_analytics_d1.mjs; then
+              exit 0
+            fi
+            if [ "${attempt}" = "1" ]; then
+              echo "Backup attempt failed; retrying once after 60 seconds."
+              sleep 60
+            fi
+          done
+          exit 1
+
+      - name: Alert after two consecutive backup failures
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DASHBOARD_KEY: ${{ secrets.DASHBOARD_KEY }}
+        run: |
+          prior_conclusion="$(gh run list \
+            --workflow nice-analytics-d1-backup.yml \
+            --branch main \
+            --status completed \
+            --limit 1 \
+            --json conclusion \
+            --jq '.[0].conclusion // ""')"
+          echo "prior_completed_conclusion=${prior_conclusion}"
+          if [ "${prior_conclusion}" != "failure" ]; then
+            echo "Current failure is not the second consecutive completed failure; skipping alert."
+            exit 0
+          fi
+          if [ -z "${DASHBOARD_KEY}" ]; then
+            echo "DASHBOARD_KEY secret is unavailable; cannot trigger dashboard alert."
+            exit 0
+          fi
+          curl -fsS -X POST \
+            -H "x-dashboard-key: ${DASHBOARD_KEY}" \
+            https://analytics.nice.okinawa/alerts/check >/tmp/alerts-check.json
+          node -e "const fs=require('fs'); const data=JSON.parse(fs.readFileSync('/tmp/alerts-check.json','utf8')); console.log(JSON.stringify({ok:data.ok,status:data.status,sent:data.sent,red_items:(data.red_items||[]).map((item)=>item.key)}, null, 2));"

@@ -1,5 +1,7 @@
 # db.nice.okinawa Progress
 
+BACKUP-0823-01 adds whole-job retry and two-consecutive-failure dashboard alert triggering to the nice_analytics D1 backup workflow; token validation now reaches D1 export but still needs D1 export permission beyond D1 Read.
+
 UX-0823-03 fixes the orders dashboard counts and recent list to use paid, deduped, non-test order rows only while keeping attribution blank until upstream first-touch fields arrive.
 
 BACKUP-0823-01 keeps fresh R2 latest manifests from being overridden by missing same-day daily history, preserving BJT/progress green status while leaving true nice_analytics token 9109 backup failures visible.
