@@ -4,6 +4,10 @@ import test from 'node:test';
 
 import {
   buildSearchConsoleWeeklyEmailText,
+  bingDateOnly,
+  configuredBingSites,
+  normalizeBingQueryRow,
+  normalizeSearchTermSource,
   searchConsoleCredentials
 } from '../src/worker.js';
 
@@ -70,10 +74,46 @@ test('Search Console cron and email configuration are explicit', () => {
   const worker = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
   const wrangler = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
   assert.match(worker, /const GSC_DAILY_SYNC_CRON = '0 0 \* \* \*'/);
+  assert.match(worker, /syncBingSearchTermsRange\(env\)/);
   assert.match(worker, /sendSearchConsoleWeeklyReport\(env, scheduledAt/);
   assert.match(wrangler, /GSC_SERVICE_ACCOUNT_JSON/);
+  assert.match(wrangler, /BING_SITE_URLS = "https:\/\/bjt\.nice\.okinawa\//);
+  assert.match(wrangler, /BING_API_KEY/);
   assert.match(wrangler, /ALERT_RECIPIENTS = "aboutokinawa@gmail\.com"/);
   assert.doesNotMatch(wrangler, /GSC_WEEKLY_REPORT_EMAIL/);
   assert.doesNotMatch(wrangler, /ALERT_EMAIL_ALLOWLIST/);
   assert.doesNotMatch(wrangler, /WAN_ALERT_EMAIL/);
+});
+
+test('Bing Webmaster query stats rows normalize into search_terms shape', () => {
+  assert.equal(bingDateOnly('/Date(1787443200000+0000)/'), '2026-08-23');
+  const row = normalizeBingQueryRow({
+    Date: '/Date(1787443200000+0000)/',
+    Query: 'okinawa snorkel',
+    Impressions: 40,
+    Clicks: 4,
+    AvgImpressionPosition: 8.5
+  });
+  assert.deepEqual(row, {
+    date: '2026-08-23',
+    query: 'okinawa snorkel',
+    impressions: 40,
+    clicks: 4,
+    ctr: 0.1,
+    position: 8.5
+  });
+});
+
+test('Bing search term config uses the six requested sites by default', () => {
+  assert.equal(normalizeSearchTermSource('bing'), 'bing');
+  assert.equal(normalizeSearchTermSource('all'), 'all');
+  assert.equal(normalizeSearchTermSource('bad'), 'google');
+  assert.deepEqual(configuredBingSites({}), [
+    'https://bjt.nice.okinawa/',
+    'https://kiso.nice.okinawa/',
+    'https://snorkel.nice.okinawa/',
+    'https://progress.nice.okinawa/',
+    'https://nice.okinawa/',
+    'https://translation.nice.okinawa/'
+  ]);
 });

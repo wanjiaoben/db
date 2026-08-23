@@ -1271,8 +1271,13 @@ td.num, th.num { text-align: right; }
   </section>
 
   <section class="card">
-    <h2>Google 搜索词 <span class="sub" id="gscUpdated"></span></h2>
+    <h2>搜索词 <span class="sub" id="gscUpdated"></span></h2>
     <div class="gsc-tools">
+      <select id="searchSourceFilter" aria-label="搜索来源">
+        <option value="google" selected>Google</option>
+        <option value="bing">Bing</option>
+        <option value="all">合计</option>
+      </select>
       <select id="gscSiteFilter" aria-label="Google 搜索词站点">
         <option value="">全部站点</option>
       </select>
@@ -1328,6 +1333,7 @@ const fmt = new Intl.NumberFormat('ja-JP');
 let selectedSite = '';
 let selectedPage = '';
 let selectedGscSite = '';
+let selectedSearchSource = 'google';
 let visitorDays = 7;
 let orderMode = 'month';
 let lastOrderData = null;
@@ -1464,10 +1470,10 @@ function updateGscSiteOptions(sites) {
   selectedGscSite = $('gscSiteFilter').value;
 }
 
-function renderSearchConsoleRows(tableId, rows, compact = false) {
+function renderSearchConsoleRows(tableId, rows, compact = false, emptyText = '暂无搜索词数据') {
   const list = rows || [];
   if (!list.length) {
-    $(tableId).innerHTML = '<tr><td colspan="' + (compact ? '5' : '7') + '" class="empty">暂无搜索词数据</td></tr>';
+    $(tableId).innerHTML = '<tr><td colspan="' + (compact ? '5' : '7') + '" class="empty">' + escapeHtml(emptyText) + '</td></tr>';
     return;
   }
   renderRows(tableId, list, (r) => compact ? row([
@@ -2174,10 +2180,12 @@ async function load() {
   const range = $('days').value || '7';
   const site = $('siteFilter').value || '';
   const gscSite = $('gscSiteFilter').value || '';
+  const searchSource = $('searchSourceFilter').value || 'google';
   const path = $('pageFilter').value || '';
   const qs = new URLSearchParams(range === 'today' ? { range: 'today', days: '1' } : { days: range });
   if (site) qs.set('site', site);
   if (gscSite) qs.set('gsc_site', gscSite);
+  qs.set('search_source', searchSource);
   if (path) qs.set('path', path);
   try {
     const res = await fetch(API + '?' + qs.toString(), {
@@ -2213,7 +2221,7 @@ async function load() {
     ]));
     const searchConsole = data.search_console || {};
     if (!searchConsole.ok) {
-      const gscEmptyText = searchConsole.configured === false ? '未接入 Search Console' : 'Search Console 尚未配置或还没有同步数据';
+      const gscEmptyText = searchSource === 'bing' ? 'Bing 收录中' : (searchConsole.configured === false ? '未接入 Search Console' : 'Search Console 尚未配置或还没有同步数据');
       $('queryTable').innerHTML = '<tr><td colspan="7" class="empty">' + escapeHtml(gscEmptyText) + '</td></tr>';
       $('gscNoClickTable').innerHTML = '<tr><td colspan="5" class="empty">' + escapeHtml(gscEmptyText) + '</td></tr>';
       $('gscStrikingTable').innerHTML = '<tr><td colspan="5" class="empty">' + escapeHtml(gscEmptyText) + '</td></tr>';
@@ -2221,10 +2229,12 @@ async function load() {
     } else {
       updateGscSiteOptions(searchConsole.sites);
       const importedAt = (searchConsole.totals || {}).imported_at;
-      $('gscUpdated').textContent = (gscSite ? gscSite + ' · ' : '全部站点 · ') + (importedAt ? '同步 ' + timeText(importedAt) : '等待同步');
-      renderSearchConsoleRows('queryTable', searchConsole.queries, false);
-      renderSearchConsoleRows('gscNoClickTable', searchConsole.no_click, true);
-      renderSearchConsoleRows('gscStrikingTable', searchConsole.striking_distance, true);
+      const sourceLabel = searchSource === 'bing' ? 'Bing' : (searchSource === 'all' ? '合计' : 'Google');
+      $('gscUpdated').textContent = sourceLabel + ' · ' + (gscSite ? gscSite + ' · ' : '全部站点 · ') + (importedAt ? '同步 ' + timeText(importedAt) : '等待同步');
+      const emptyText = searchSource === 'bing' ? 'Bing 收录中' : '暂无搜索词数据';
+      renderSearchConsoleRows('queryTable', searchConsole.queries, false, emptyText);
+      renderSearchConsoleRows('gscNoClickTable', searchConsole.no_click, true, emptyText);
+      renderSearchConsoleRows('gscStrikingTable', searchConsole.striking_distance, true, emptyText);
     }
   } catch (e) {
     $('status').textContent = e.message === 'unauthorized' ? '需要 Dashboard key' : '连接失败';
@@ -2261,17 +2271,19 @@ $('syncGsc').addEventListener('click', async () => {
         ...(key ? { 'x-dashboard-key': key } : {})
       }
     });
-    const data = await readJsonResponse(res);
-    if (!res.ok || !data.ok) throw new Error(data.error || '同步失败');
-    $('status').textContent = '搜索词已同步 ' + n(data.imported_rows) + ' 行';
-    load();
-  } catch (e) {
-    $('status').textContent = '同步失败';
-    $('error').textContent = e.message === 'missing_search_console_config'
-      ? 'Search Console 尚未配置。需要先设置 GSC_SERVICE_ACCOUNT_JSON，并把服务账号加入 Search Console。'
-      : e.message;
-    $('error').style.display = 'block';
-  }
+	    const data = await readJsonResponse(res);
+	    if (!res.ok || !data.ok) throw new Error(data.error || '同步失败');
+	    const googleRows = data.google ? Number(data.google.imported_rows || 0) : 0;
+	    const bingRows = data.bing ? Number(data.bing.imported_rows || 0) : 0;
+	    $('status').textContent = '搜索词已同步 Google ' + n(googleRows) + ' / Bing ' + n(bingRows) + ' 行';
+	    load();
+	  } catch (e) {
+	    $('status').textContent = '同步失败';
+	    $('error').textContent = e.message === 'missing_search_console_config'
+	      ? '搜索词尚未配置。Google 需要 GSC_SERVICE_ACCOUNT_JSON；Bing 需要 BING_API_KEY。'
+	      : e.message;
+	    $('error').style.display = 'block';
+	  }
 });
 $('sendGscWeekly').addEventListener('click', async () => {
   $('error').style.display = 'none';
@@ -2328,6 +2340,10 @@ $('siteFilter').addEventListener('change', () => {
 });
 $('gscSiteFilter').addEventListener('change', () => {
   selectedGscSite = $('gscSiteFilter').value;
+  load();
+});
+$('searchSourceFilter').addEventListener('change', () => {
+  selectedSearchSource = $('searchSourceFilter').value || 'google';
   load();
 });
 $('pageFilter').addEventListener('change', () => {

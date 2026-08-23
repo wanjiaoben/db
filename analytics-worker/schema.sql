@@ -86,6 +86,30 @@ CREATE INDEX IF NOT EXISTS idx_search_console_daily_site_date ON search_console_
 CREATE INDEX IF NOT EXISTS idx_search_console_daily_path_date ON search_console_daily(path, date);
 CREATE INDEX IF NOT EXISTS idx_search_console_daily_query_date ON search_console_daily(query, date);
 
+CREATE TABLE IF NOT EXISTS search_terms (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  imported_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  source TEXT NOT NULL DEFAULT 'google',
+  date TEXT NOT NULL,
+  site_url TEXT NOT NULL,
+  site TEXT NOT NULL,
+  page TEXT NOT NULL DEFAULT '',
+  path TEXT NOT NULL DEFAULT '',
+  query TEXT NOT NULL,
+  country TEXT,
+  device TEXT,
+  clicks INTEGER NOT NULL DEFAULT 0,
+  impressions INTEGER NOT NULL DEFAULT 0,
+  ctr REAL NOT NULL DEFAULT 0,
+  position REAL NOT NULL DEFAULT 0,
+  UNIQUE(source, date, site_url, page, query, country, device)
+);
+
+CREATE INDEX IF NOT EXISTS idx_search_terms_source_date ON search_terms(source, date);
+CREATE INDEX IF NOT EXISTS idx_search_terms_source_site_date ON search_terms(source, site, date);
+CREATE INDEX IF NOT EXISTS idx_search_terms_source_path_date ON search_terms(source, path, date);
+CREATE INDEX IF NOT EXISTS idx_search_terms_source_query_date ON search_terms(source, query, date);
+
 CREATE TABLE IF NOT EXISTS probe_results (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   checked_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
