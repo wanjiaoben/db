@@ -1119,7 +1119,7 @@ async function summary(request, env) {
     SELECT site_id AS site, ${pathExpr} AS path, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
     FROM visitor_events
     WHERE created_at >= ?${siteFilterClause} AND event_type='pageview'
-    GROUP BY site, path
+    GROUP BY site_id, ${pathExpr}
     ORDER BY views DESC
     LIMIT 60
   `, [since, ...siteFilterParams]);
@@ -1129,33 +1129,33 @@ async function summary(request, env) {
       SELECT site_id AS site, ${pathExpr} AS path, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions, COUNT(DISTINCT visitor_id) AS visitors
       FROM visitor_events
       WHERE created_at >= ?${filterClause} AND event_type='pageview'
-      GROUP BY site, path
+      GROUP BY site_id, ${pathExpr}
     ),
     source_rank AS (
       SELECT site_id AS site, ${pathExpr} AS path, COALESCE(NULLIF(referrer_host, ''), 'direct') AS source, COUNT(*) AS views,
-        ROW_NUMBER() OVER (PARTITION BY site, path ORDER BY COUNT(*) DESC) AS rn
+        ROW_NUMBER() OVER (PARTITION BY site_id, ${pathExpr} ORDER BY COUNT(*) DESC) AS rn
       FROM visitor_events
       WHERE created_at >= ?${filterClause} AND event_type='pageview'
-      GROUP BY site, path, source
+      GROUP BY site_id, ${pathExpr}, COALESCE(NULLIF(referrer_host, ''), 'direct')
     ),
     lang_rank AS (
       SELECT site_id AS site, ${pathExpr} AS path, COALESCE(NULLIF(ui_lang, ''), 'unknown') AS lang, COUNT(*) AS views,
-        ROW_NUMBER() OVER (PARTITION BY site, path ORDER BY COUNT(*) DESC) AS rn
+        ROW_NUMBER() OVER (PARTITION BY site_id, ${pathExpr} ORDER BY COUNT(*) DESC) AS rn
       FROM visitor_events
       WHERE created_at >= ?${filterClause} AND event_type='pageview'
-      GROUP BY site, path, lang
+      GROUP BY site_id, ${pathExpr}, COALESCE(NULLIF(ui_lang, ''), 'unknown')
     ),
     contacts AS (
       SELECT site_id AS site, ${pathExpr} AS path, COUNT(*) AS clicks
       FROM visitor_events
       WHERE created_at >= ?${filterClause} AND event_type='contact_click'
-      GROUP BY site, path
+      GROUP BY site_id, ${pathExpr}
     ),
     leave_stats AS (
       SELECT site_id AS site, ${pathExpr} AS path, ROUND(AVG(dwell_ms)) AS avg_duration_ms, NULL AS avg_scroll
       FROM visitor_events
       WHERE created_at >= ?${filterClause} AND event_type='dwell'
-      GROUP BY site, path
+      GROUP BY site_id, ${pathExpr}
     )
     SELECT
       pv.site,
@@ -1181,7 +1181,7 @@ async function summary(request, env) {
     SELECT site_id AS site, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
     FROM visitor_events
     WHERE created_at >= ? AND event_type='pageview'
-    GROUP BY site
+    GROUP BY site_id
     ORDER BY views DESC
     LIMIT 50
   `, [since]);
@@ -1190,7 +1190,7 @@ async function summary(request, env) {
     SELECT COALESCE(NULLIF(referrer_host, ''), 'direct') AS source, COALESCE(NULLIF(utm_medium, ''), '') AS medium, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
     FROM visitor_events
     WHERE created_at >= ?${filterClause} AND event_type='pageview'
-    GROUP BY source, medium
+    GROUP BY COALESCE(NULLIF(referrer_host, ''), 'direct'), COALESCE(NULLIF(utm_medium, ''), '')
     ORDER BY views DESC
     LIMIT 20
   `, [since, ...filterParams]);
@@ -1199,7 +1199,7 @@ async function summary(request, env) {
     SELECT section_id AS section, COUNT(*) AS views, NULL AS avg_duration_ms
     FROM visitor_events
     WHERE created_at >= ?${filterClause} AND event_type='section_view' AND section_id <> ''
-    GROUP BY section
+    GROUP BY section_id
     ORDER BY views DESC
     LIMIT 20
   `, [since, ...filterParams]);
@@ -1217,7 +1217,7 @@ async function summary(request, env) {
     SELECT COALESCE(NULLIF(ui_lang, ''), 'unknown') AS lang, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
     FROM visitor_events
     WHERE created_at >= ?${filterClause} AND event_type='pageview'
-    GROUP BY lang
+    GROUP BY COALESCE(NULLIF(ui_lang, ''), 'unknown')
     ORDER BY views DESC
     LIMIT 20
   `, [since, ...filterParams]);
@@ -1235,7 +1235,7 @@ async function summary(request, env) {
     SELECT COALESCE(NULLIF(device_type, ''), 'unknown') AS device, COUNT(*) AS views
     FROM visitor_events
     WHERE created_at >= ?${filterClause} AND event_type='pageview'
-    GROUP BY device
+    GROUP BY COALESCE(NULLIF(device_type, ''), 'unknown')
     ORDER BY views DESC
   `, [since, ...filterParams]);
 
