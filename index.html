@@ -1379,7 +1379,7 @@ td.num, th.num { text-align: right; }
       <div class="order-pulse-item"><span>7天</span><strong>-</strong></div>
       <div class="order-pulse-item"><span>30天</span><strong>-</strong></div>
     </div>
-    <div class="recent-orders" id="recentOrders"><div class="empty">等待最近订单</div></div>
+    <div class="recent-orders" id="recentOrders"><div class="empty">订单读取中</div></div>
     <details class="order-full-details">
       <summary>月度合计与完整订单</summary>
       <div class="order-tools">
@@ -2465,7 +2465,7 @@ async function loadOrders() {
     lastOrderData = null;
     $('orderUpdated').textContent = '';
     $('orderPulse').innerHTML = '<div class="empty">订单小计读取失败：' + escapeHtml(e.message) + '</div>';
-    $('recentOrders').innerHTML = '';
+    $('recentOrders').innerHTML = '<div class="empty">最近订单读取失败：' + escapeHtml(e.message) + '</div>';
     $('orderSummary').innerHTML = '<div class="empty">订单来源读取失败：' + escapeHtml(e.message) + '</div>';
     $('orderTaxNote').textContent = '';
     $('orderRows').innerHTML = '';

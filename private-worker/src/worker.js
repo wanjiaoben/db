@@ -138,14 +138,11 @@ async function orders(request, env) {
   const requestedDays = Number(url.searchParams.get('days') || 7);
   const days = ORDER_DAY_OPTIONS.has(requestedDays) ? requestedDays : 7;
   const sinceMs = Date.now() - days * 86400000;
-  const listed = await env.BJT_KV.list({ prefix: ORDER_META_PREFIX });
-  const keys = Array.isArray(listed.keys) ? listed.keys : [];
+  const keys = await listOrderMetaKeys(env.BJT_KV);
   const allRows = [];
   const rows = [];
 
-  for (const key of keys) {
-    const name = key && key.name;
-    if (!name) continue;
+  for (const name of keys) {
     const raw = await env.BJT_KV.get(name);
     if (!raw) continue;
     let meta;
@@ -179,6 +176,9 @@ async function orders(request, env) {
 
   return json({
     ok: true,
+    source: 'bjt_kv',
+    source_prefix: ORDER_META_PREFIX,
+    source_total_orders: allRows.length,
     mode: monthRange ? 'month' : 'days',
     days,
     month: monthRange ? monthRange.month : null,
@@ -200,6 +200,22 @@ async function orders(request, env) {
     captured_orders: capturedRows,
     excluded_orders: excludedRows
   });
+}
+
+async function listOrderMetaKeys(kv) {
+  const names = [];
+  let cursor = undefined;
+  do {
+    const options = { prefix: ORDER_META_PREFIX };
+    if (cursor) options.cursor = cursor;
+    const listed = await kv.list(options);
+    const keys = Array.isArray(listed?.keys) ? listed.keys : [];
+    for (const key of keys) {
+      if (key?.name) names.push(key.name);
+    }
+    cursor = listed?.list_complete === false && listed?.cursor ? listed.cursor : undefined;
+  } while (cursor);
+  return names;
 }
 
 function jstMonthRange(month) {
