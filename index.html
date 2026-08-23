@@ -1668,6 +1668,19 @@ async function readJsonResponse(res) {
   }
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (e) {
+    if (e && e.name === 'AbortError') throw new Error('订单 API 超过 8 秒未返回，稍后自动重试');
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function renderRows(id, rows, mapper) {
   const body = $(id);
   if (!rows || !rows.length) {
@@ -2429,6 +2442,8 @@ async function loadVisitors() {
   }
 }
 
+let orderRetryTimer = null;
+
 async function loadOrders() {
   const key = localStorage.getItem('nice_dashboard_key') || '';
   const days = visitorDaysFromControl();
@@ -2439,13 +2454,17 @@ async function loadOrders() {
     query.set('days', String(days));
   }
   try {
-    const res = await fetch(ORDER_API + '?' + query.toString(), {
+    if (orderRetryTimer) {
+      clearTimeout(orderRetryTimer);
+      orderRetryTimer = null;
+    }
+    const res = await fetchWithTimeout(ORDER_API + '?' + query.toString(), {
       credentials: 'include',
       headers: {
         accept: 'application/json',
         ...(key ? { 'x-dashboard-key': key } : {})
       }
-    });
+    }, 8000);
     const data = await readJsonResponse(res);
     if (!res.ok || !data.ok) throw new Error(data.error || 'orders API 请求失败');
     lastOrderData = data;
@@ -2472,6 +2491,9 @@ async function loadOrders() {
     $('exportOrdersCsv').disabled = true;
     toplineState.todayOrders = '-';
     renderTopline();
+    if (String(e.message || '').includes('自动重试')) {
+      orderRetryTimer = setTimeout(loadOrders, 5000);
+    }
   }
 }
 
