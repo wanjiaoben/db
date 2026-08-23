@@ -23,8 +23,14 @@ function fakeDb(fixtures) {
         async first() {
           const key = fixtureKeys.find((needle) => sql.includes(needle));
           return key ? fixtures[key] : null;
+        },
+        async run() {
+          return { success: true };
         }
       };
+    },
+    async batch(statements) {
+      return Promise.all(statements.map((statement) => statement.run()));
     }
   };
 }
@@ -141,4 +147,42 @@ test('visitor dashboard accepts 1/7/30/180 day ranges and keeps legacy fallback'
     headers: { 'x-dashboard-key': 'test-token' }
   }), { DASHBOARD_KEY: 'test-token', DB: fakeDb(emptyFixtures) }, {});
   assert.equal((await fallback.json()).days, 28);
+});
+
+test('summary dashboard reads visitor_events for first-screen counters', async () => {
+  const db = fakeDb({
+    "COUNT(CASE WHEN event_type='contact_click' THEN 1 END) AS clicks,\n      ROUND(AVG": {
+      page_views: 123,
+      sessions: 45,
+      visitors: 30,
+      clicks: 6,
+      avg_duration_ms: 12000,
+      avg_scroll: null
+    },
+    "COUNT(DISTINCT CASE WHEN event_type='pageview' THEN visitor_id END) AS visitors": {
+      page_views: 12,
+      sessions: 8,
+      visitors: 7
+    },
+    'SELECT COUNT(DISTINCT session_id) AS sessions\n    FROM visitor_events': {
+      sessions: 4
+    },
+    'SELECT site_id AS site, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions': [
+      { site: 'bjt', views: 100, sessions: 40 }
+    ]
+  });
+
+  const res = await worker.fetch(new Request('https://analytics.nice.okinawa/summary?days=7', {
+    headers: { 'x-dashboard-key': 'test-token' }
+  }), { DASHBOARD_KEY: 'test-token', DB: db }, {});
+  const data = await res.json();
+
+  assert.equal(res.status, 200);
+  assert.equal(data.ok, true);
+  assert.equal(data.totals.page_views, 123);
+  assert.equal(data.today.page_views, 12);
+  assert.equal(data.online, 4);
+  assert.equal(data.sites[0].site, 'bjt');
+  assert.equal(db.calls.some((call) => /FROM\s+events\b/i.test(call.sql)), false);
+  assert.equal(db.calls.some((call) => /FROM\s+visitor_events\b/i.test(call.sql)), true);
 });

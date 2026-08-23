@@ -12,7 +12,8 @@ function envWithKv(records, extra = {}) {
     DASHBOARD_KEY: 'dash',
     BJT_KV: {
       async list(options) {
-        assert.deepEqual(options, { prefix: 'paypal_order_meta:' });
+        assert.equal(options.prefix, 'paypal_order_meta:');
+        assert.equal(options.cursor, undefined);
         return { keys: Object.keys(records).map((name) => ({ name })) };
       },
       async get(name) {
@@ -109,6 +110,8 @@ test('/orders returns sorted masked order source rows and distributions', async 
 
   assert.equal(res.status, 200);
   assert.equal(data.ok, true);
+  assert.equal(data.source, 'bjt_kv');
+  assert.equal(data.source_total_orders, 2);
   assert.equal(data.total_orders, 2);
   assert.deepEqual(Object.keys(data.range_counts).sort(), ['days_30', 'days_7', 'today']);
   assert.deepEqual(data.recent_orders.map((order) => order.order_id), ['newer-order-ABCDEF', 'older-order-123456']);
@@ -125,6 +128,69 @@ test('/orders returns sorted masked order source rows and distributions', async 
     { value: 'JP', count: 1 },
     { value: 'TW', count: 1 }
   ]);
+});
+
+test('/orders follows BJT_KV pagination before building dashboard data', async () => {
+  const records = {
+    'paypal_order_meta:first-page': JSON.stringify({
+      order_id: 'first-page',
+      email: 'first@example.com',
+      plan: 'monthly',
+      amount: '1000',
+      currency: 'JPY',
+      buyer_location: 'japan',
+      buyer_location_label: '日本',
+      ip_country: 'JP',
+      created_at: '2026-07-01T00:00:00.000Z',
+      status: 'captured'
+    }),
+    'paypal_order_meta:second-page': JSON.stringify({
+      order_id: 'second-page',
+      email: 'second@example.com',
+      plan: 'yearly',
+      amount: '9800',
+      currency: 'JPY',
+      buyer_location: 'japan',
+      buyer_location_label: '日本',
+      ip_country: 'JP',
+      created_at: '2026-07-02T00:00:00.000Z',
+      status: 'captured'
+    })
+  };
+  const seenOptions = [];
+  const env = envWithKv(records, {
+    BJT_KV: {
+      async list(options) {
+        seenOptions.push({ ...options });
+        if (!options.cursor) {
+          return {
+            keys: [{ name: 'paypal_order_meta:first-page' }],
+            list_complete: false,
+            cursor: 'next-page'
+          };
+        }
+        assert.equal(options.cursor, 'next-page');
+        return {
+          keys: [{ name: 'paypal_order_meta:second-page' }],
+          list_complete: true
+        };
+      },
+      async get(name) {
+        return records[name] || null;
+      }
+    }
+  });
+
+  const res = await worker.fetch(request(), env, {});
+  const data = await res.json();
+
+  assert.equal(res.status, 200);
+  assert.deepEqual(seenOptions, [
+    { prefix: 'paypal_order_meta:' },
+    { prefix: 'paypal_order_meta:', cursor: 'next-page' }
+  ]);
+  assert.equal(data.source_total_orders, 2);
+  assert.deepEqual(data.recent_orders.map((order) => order.order_id), ['second-page', 'first-page']);
 });
 
 test('/orders month mode uses JST boundaries and separates captured from excluded statuses', async () => {

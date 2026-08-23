@@ -1060,6 +1060,11 @@ async function first(db, sql, params = []) {
   return db.prepare(sql).bind(...params).first();
 }
 
+function jstDayStartIso(ms = Date.now()) {
+  const jst = new Date(ms + 9 * 3600000);
+  return new Date(Date.UTC(jst.getUTCFullYear(), jst.getUTCMonth(), jst.getUTCDate(), -9, 0, 0, 0)).toISOString();
+}
+
 async function summary(request, env) {
   if (!requireDashboard(request, env)) {
     return json({ ok: false, error: 'unauthorized' }, request, 403);
@@ -1074,81 +1079,82 @@ async function summary(request, env) {
   const selectedSearchSite = clean(url.searchParams.get('gsc_site'), 120);
   const selectedSearchSource = normalizeSearchTermSource(url.searchParams.get('search_source') || 'google');
   const selectedPath = clean(url.searchParams.get('path'), 300);
-  const filterClause = `${selectedSite ? ' AND site = ?' : ''}${selectedPath ? ' AND path = ?' : ''}`;
+  const pathExpr = "COALESCE(NULLIF(landing_path, ''), '/')";
+  const filterClause = `${selectedSite ? ' AND site_id = ?' : ''}${selectedPath ? ` AND ${pathExpr} = ?` : ''}`;
   const filterParams = [...(selectedSite ? [selectedSite] : []), ...(selectedPath ? [selectedPath] : [])];
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
-  const todayIso = today.toISOString();
+  const siteFilterClause = selectedSite ? ' AND site_id = ?' : '';
+  const siteFilterParams = selectedSite ? [selectedSite] : [];
+  const todayIso = jstDayStartIso();
   const since = range === 'today' ? todayIso : new Date(Date.now() - days * 86400000).toISOString();
   const onlineSince = new Date(Date.now() - 5 * 60000).toISOString();
 
   const totals = await first(env.DB, `
     SELECT
-      COUNT(CASE WHEN type='page_view' THEN 1 END) AS page_views,
-      COUNT(DISTINCT CASE WHEN type='page_view' THEN session_id END) AS sessions,
-      COUNT(DISTINCT CASE WHEN type='page_view' THEN visitor_id END) AS visitors,
-      COUNT(CASE WHEN type='click' THEN 1 END) AS clicks,
-      ROUND(AVG(CASE WHEN type='page_leave' AND duration_ms IS NOT NULL THEN duration_ms END)) AS avg_duration_ms,
-      ROUND(AVG(CASE WHEN type='page_leave' AND max_scroll IS NOT NULL THEN max_scroll END)) AS avg_scroll
-    FROM events
+      COUNT(CASE WHEN event_type='pageview' THEN 1 END) AS page_views,
+      COUNT(DISTINCT CASE WHEN event_type='pageview' THEN session_id END) AS sessions,
+      COUNT(DISTINCT CASE WHEN event_type='pageview' THEN visitor_id END) AS visitors,
+      COUNT(CASE WHEN event_type='contact_click' THEN 1 END) AS clicks,
+      ROUND(AVG(CASE WHEN event_type='dwell' AND dwell_ms IS NOT NULL THEN dwell_ms END)) AS avg_duration_ms,
+      NULL AS avg_scroll
+    FROM visitor_events
     WHERE created_at >= ?${filterClause}
   `, [since, ...filterParams]);
 
   const todayTotals = await first(env.DB, `
     SELECT
-      COUNT(CASE WHEN type='page_view' THEN 1 END) AS page_views,
-      COUNT(DISTINCT CASE WHEN type='page_view' THEN session_id END) AS sessions,
-      COUNT(DISTINCT CASE WHEN type='page_view' THEN visitor_id END) AS visitors
-    FROM events
+      COUNT(CASE WHEN event_type='pageview' THEN 1 END) AS page_views,
+      COUNT(DISTINCT CASE WHEN event_type='pageview' THEN session_id END) AS sessions,
+      COUNT(DISTINCT CASE WHEN event_type='pageview' THEN visitor_id END) AS visitors
+    FROM visitor_events
     WHERE created_at >= ?${filterClause}
   `, [todayIso, ...filterParams]);
 
   const online = await first(env.DB, `
     SELECT COUNT(DISTINCT session_id) AS sessions
-    FROM events
+    FROM visitor_events
     WHERE created_at >= ?${filterClause}
   `, [onlineSince, ...filterParams]);
 
   const pages = await all(env.DB, `
-    SELECT site, path, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
-    FROM events
-    WHERE created_at >= ?${selectedSite ? ' AND site = ?' : ''} AND type='page_view'
+    SELECT site_id AS site, ${pathExpr} AS path, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
+    FROM visitor_events
+    WHERE created_at >= ?${siteFilterClause} AND event_type='pageview'
     GROUP BY site, path
     ORDER BY views DESC
     LIMIT 60
-  `, [since, ...(selectedSite ? [selectedSite] : [])]);
+  `, [since, ...siteFilterParams]);
 
   const pageRows = await all(env.DB, `
     WITH page_views AS (
-      SELECT site, path, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions, COUNT(DISTINCT visitor_id) AS visitors
-      FROM events
-      WHERE created_at >= ?${filterClause} AND type='page_view'
+      SELECT site_id AS site, ${pathExpr} AS path, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions, COUNT(DISTINCT visitor_id) AS visitors
+      FROM visitor_events
+      WHERE created_at >= ?${filterClause} AND event_type='pageview'
       GROUP BY site, path
     ),
     source_rank AS (
-      SELECT site, path, source, COUNT(*) AS views,
+      SELECT site_id AS site, ${pathExpr} AS path, COALESCE(NULLIF(referrer_host, ''), 'direct') AS source, COUNT(*) AS views,
         ROW_NUMBER() OVER (PARTITION BY site, path ORDER BY COUNT(*) DESC) AS rn
-      FROM events
-      WHERE created_at >= ?${filterClause} AND type='page_view'
+      FROM visitor_events
+      WHERE created_at >= ?${filterClause} AND event_type='pageview'
       GROUP BY site, path, source
     ),
     lang_rank AS (
-      SELECT site, path, lang, COUNT(*) AS views,
+      SELECT site_id AS site, ${pathExpr} AS path, COALESCE(NULLIF(ui_lang, ''), 'unknown') AS lang, COUNT(*) AS views,
         ROW_NUMBER() OVER (PARTITION BY site, path ORDER BY COUNT(*) DESC) AS rn
-      FROM events
-      WHERE created_at >= ?${filterClause} AND type='page_view'
+      FROM visitor_events
+      WHERE created_at >= ?${filterClause} AND event_type='pageview'
       GROUP BY site, path, lang
     ),
     contacts AS (
-      SELECT site, path, COUNT(*) AS clicks
-      FROM events
-      WHERE created_at >= ?${filterClause} AND type='click' AND event_name LIKE 'contact_%'
+      SELECT site_id AS site, ${pathExpr} AS path, COUNT(*) AS clicks
+      FROM visitor_events
+      WHERE created_at >= ?${filterClause} AND event_type='contact_click'
       GROUP BY site, path
     ),
     leave_stats AS (
-      SELECT site, path, ROUND(AVG(duration_ms)) AS avg_duration_ms, ROUND(AVG(max_scroll)) AS avg_scroll
-      FROM events
-      WHERE created_at >= ?${filterClause} AND type='page_leave'
+      SELECT site_id AS site, ${pathExpr} AS path, ROUND(AVG(dwell_ms)) AS avg_duration_ms, NULL AS avg_scroll
+      FROM visitor_events
+      WHERE created_at >= ?${filterClause} AND event_type='dwell'
       GROUP BY site, path
     )
     SELECT
@@ -1172,45 +1178,45 @@ async function summary(request, env) {
   `, [since, ...filterParams, since, ...filterParams, since, ...filterParams, since, ...filterParams, since, ...filterParams]);
 
   const sites = await all(env.DB, `
-    SELECT site, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
-    FROM events
-    WHERE created_at >= ? AND type='page_view'
+    SELECT site_id AS site, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
+    FROM visitor_events
+    WHERE created_at >= ? AND event_type='pageview'
     GROUP BY site
     ORDER BY views DESC
     LIMIT 50
   `, [since]);
 
   const sources = await all(env.DB, `
-    SELECT source, medium, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
-    FROM events
-    WHERE created_at >= ?${filterClause} AND type='page_view'
+    SELECT COALESCE(NULLIF(referrer_host, ''), 'direct') AS source, COALESCE(NULLIF(utm_medium, ''), '') AS medium, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
+    FROM visitor_events
+    WHERE created_at >= ?${filterClause} AND event_type='pageview'
     GROUP BY source, medium
     ORDER BY views DESC
     LIMIT 20
   `, [since, ...filterParams]);
 
   const sections = await all(env.DB, `
-    SELECT section, COUNT(*) AS views, ROUND(AVG(duration_ms)) AS avg_duration_ms
-    FROM events
-    WHERE created_at >= ?${filterClause} AND section <> ''
+    SELECT section_id AS section, COUNT(*) AS views, NULL AS avg_duration_ms
+    FROM visitor_events
+    WHERE created_at >= ?${filterClause} AND event_type='section_view' AND section_id <> ''
     GROUP BY section
     ORDER BY views DESC
     LIMIT 20
   `, [since, ...filterParams]);
 
   const contacts = await all(env.DB, `
-    SELECT event_name, label, COUNT(*) AS clicks
-    FROM events
-    WHERE created_at >= ?${filterClause} AND type='click' AND event_name LIKE 'contact_%'
-    GROUP BY event_name, label
+    SELECT contact_channel AS event_name, contact_channel AS label, COUNT(*) AS clicks
+    FROM visitor_events
+    WHERE created_at >= ?${filterClause} AND event_type='contact_click'
+    GROUP BY contact_channel
     ORDER BY clicks DESC
     LIMIT 20
   `, [since, ...filterParams]);
 
   const languages = await all(env.DB, `
-    SELECT lang, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
-    FROM events
-    WHERE created_at >= ?${filterClause} AND type='page_view'
+    SELECT COALESCE(NULLIF(ui_lang, ''), 'unknown') AS lang, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
+    FROM visitor_events
+    WHERE created_at >= ?${filterClause} AND event_type='pageview'
     GROUP BY lang
     ORDER BY views DESC
     LIMIT 20
@@ -1218,24 +1224,36 @@ async function summary(request, env) {
 
   const countries = await all(env.DB, `
     SELECT country, COUNT(*) AS views
-    FROM events
-    WHERE created_at >= ?${filterClause} AND type='page_view' AND country <> ''
+    FROM visitor_events
+    WHERE created_at >= ?${filterClause} AND event_type='pageview' AND country <> ''
     GROUP BY country
     ORDER BY views DESC
     LIMIT 20
   `, [since, ...filterParams]);
 
   const devices = await all(env.DB, `
-    SELECT device, COUNT(*) AS views
-    FROM events
-    WHERE created_at >= ?${filterClause} AND type='page_view'
+    SELECT COALESCE(NULLIF(device_type, ''), 'unknown') AS device, COUNT(*) AS views
+    FROM visitor_events
+    WHERE created_at >= ?${filterClause} AND event_type='pageview'
     GROUP BY device
     ORDER BY views DESC
   `, [since, ...filterParams]);
 
   const recent = await all(env.DB, `
-    SELECT created_at, type, site, path, source, country, device, lang, event_name, section, duration_ms, max_scroll
-    FROM events
+    SELECT
+      created_at,
+      event_type AS type,
+      site_id AS site,
+      ${pathExpr} AS path,
+      COALESCE(NULLIF(referrer_host, ''), 'direct') AS source,
+      country,
+      device_type AS device,
+      ui_lang AS lang,
+      contact_channel AS event_name,
+      section_id AS section,
+      dwell_ms AS duration_ms,
+      NULL AS max_scroll
+    FROM visitor_events
     WHERE created_at >= ?${filterClause}
     ORDER BY created_at DESC
     LIMIT 50
