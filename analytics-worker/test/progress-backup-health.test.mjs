@@ -124,6 +124,42 @@ test('backup health reports the latest successful artifact and seven-day success
   assert.equal(item.consecutive_failures, 2);
 });
 
+test('missing same-day daily history does not override a fresh latest manifest', () => {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' }).format(new Date());
+  const item = attachBackupHistory({
+    key: 'bjt',
+    ok: true,
+    status: 'ok',
+    latest_at: '2026-07-18T18:00:00.000Z'
+  }, [
+    { date: today, ok: false, status: 'missing', error: 'not_found' },
+    { date: '2026-07-18', ok: true, latest_at: '2026-07-18T18:00:00.000Z' },
+    { date: '2026-07-17', ok: true, latest_at: '2026-07-17T18:00:00.000Z' }
+  ]);
+
+  assert.equal(item.ok, true);
+  assert.equal(item.status, 'ok');
+  assert.equal(item.consecutive_failures, 1);
+  assert.equal(item.failure_date, today);
+});
+
+test('missing same-day daily history still marks an already-failed backup as silent', () => {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' }).format(new Date());
+  const item = attachBackupHistory({
+    key: 'progress-production',
+    ok: false,
+    status: 'stale',
+    latest_at: '2026-07-17T18:00:00.000Z'
+  }, [
+    { date: today, ok: false, status: 'missing', error: 'not_found' },
+    { date: '2026-07-18', ok: true, latest_at: '2026-07-18T18:00:00.000Z' }
+  ]);
+
+  assert.equal(item.ok, false);
+  assert.equal(item.status, 'silent');
+  assert.equal(item.error, 'not_found');
+});
+
 test('nice_analytics backup index accepts ISO strings and skips invalid timestamps', () => {
   const rows = backupHistoryFromIndex({
     ok: true,
