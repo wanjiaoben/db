@@ -2918,7 +2918,7 @@ function unknownBackupHistory(today, days, error) {
   }));
 }
 
-export function attachBackupHistory(item, history) {
+export function attachBackupHistory(item, history, now = new Date()) {
   const rows = Array.isArray(history) ? history : [];
   const successful = rows.filter((row) => row.ok).length;
   let consecutiveFailures = 0;
@@ -2927,8 +2927,8 @@ export function attachBackupHistory(item, history) {
     consecutiveFailures += 1;
   }
   const latestFailure = rows.find((row) => !row.ok);
-  const today = jstDateKey(new Date());
-  const silentToday = !item.ok && rows[0]?.date === today && !rows[0]?.ok && jstHour(new Date()) >= 12;
+  const today = jstDateKey(now);
+  const silentToday = !item.ok && rows[0]?.date === today && !rows[0]?.ok && jstHour(now) >= 12;
   return {
     ...item,
     ...(silentToday ? {

@@ -144,7 +144,8 @@ test('missing same-day daily history does not override a fresh latest manifest',
 });
 
 test('missing same-day daily history still marks an already-failed backup as silent', () => {
-  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' }).format(new Date());
+  const afterNoon = new Date('2026-07-18T04:00:00.000Z'); // 13:00 JST
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' }).format(afterNoon);
   const item = attachBackupHistory({
     key: 'progress-production',
     ok: false,
@@ -153,7 +154,7 @@ test('missing same-day daily history still marks an already-failed backup as sil
   }, [
     { date: today, ok: false, status: 'missing', error: 'not_found' },
     { date: '2026-07-18', ok: true, latest_at: '2026-07-18T18:00:00.000Z' }
-  ]);
+  ], afterNoon);
 
   assert.equal(item.ok, false);
   assert.equal(item.status, 'silent');

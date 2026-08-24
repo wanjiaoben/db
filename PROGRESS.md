@@ -1,5 +1,7 @@
 # db.nice.okinawa Progress
 
+GATE-0824-13: 备份健康门禁的 stale/silent 测试改为显式注入时钟，固定在 13:00 JST 验证 silent；真实备份判定逻辑未放宽。Draft PR #50，未合并。
+
 BACKUP-0823-01 adds whole-job retry and two-consecutive-failure dashboard alert triggering to the nice_analytics D1 backup workflow; token validation now reaches D1 export but still needs D1 export permission beyond D1 Read.
 
 UX-0823-03 fixes the orders dashboard counts and recent list to use paid, deduped, non-test order rows only while keeping attribution blank until upstream first-touch fields arrive.
