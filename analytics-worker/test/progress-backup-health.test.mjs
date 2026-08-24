@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { attachBackupHistory, backupHistoryFromIndex, backupItem, buildAlertEmailPreview, collectAlertItems, dailyD1BackupItem, deploymentWorkflowStatus, d1BackupItem, progressBackupItem, selectDeploymentWorkflowRun } from '../src/worker.js';
+import { attachBackupHistory, backupHistoryFromIndex, backupItem, buildAlertEmailPreview, collectAlertItems, dailyD1BackupItem, deploymentWorkflowStatus, d1BackupItem, progressBackupItem, readR2Json, selectDeploymentWorkflowRun } from '../src/worker.js';
 
 const now = new Date('2026-07-18T21:00:00.000Z');
 
@@ -139,8 +139,44 @@ test('missing same-day daily history does not override a fresh latest manifest',
 
   assert.equal(item.ok, true);
   assert.equal(item.status, 'ok');
-  assert.equal(item.consecutive_failures, 1);
-  assert.equal(item.failure_date, today);
+  assert.equal(item.consecutive_failures, 0);
+  assert.equal(item.failure_date, '');
+});
+
+test('R2 JSON reads retry transient Cloudflare 10001 get errors', async () => {
+  let attempts = 0;
+  const result = await readR2Json({
+    async get() {
+      attempts += 1;
+      if (attempts < 3) throw new Error('get: We encountered an internal error. Please try again. (10001)');
+      return {
+        uploaded: new Date('2026-08-24T00:00:00.000Z'),
+        async text() {
+          return '{"ok":true}';
+        }
+      };
+    }
+  }, 'd1/latest/manifest.json');
+
+  assert.equal(result.ok, true);
+  assert.equal(result.attempts, 3);
+  assert.deepEqual(result.data, { ok: true });
+});
+
+test('R2 JSON reads do not retry permanent JSON parse errors into success', async () => {
+  const result = await readR2Json({
+    async get() {
+      return {
+        async text() {
+          return '{bad json';
+        }
+      };
+    }
+  }, 'bad.json');
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'error');
+  assert.match(result.error, /JSON|Expected|position/i);
 });
 
 test('missing same-day daily history still marks an already-failed backup as silent', () => {

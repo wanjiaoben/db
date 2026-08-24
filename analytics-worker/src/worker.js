@@ -2880,11 +2880,13 @@ export function attachBackupHistory(item, history, now = new Date()) {
   const rows = Array.isArray(history) ? history : [];
   const successful = rows.filter((row) => row.ok).length;
   let consecutiveFailures = 0;
-  for (const row of rows) {
-    if (row.ok) break;
-    consecutiveFailures += 1;
+  if (!item.ok) {
+    for (const row of rows) {
+      if (row.ok) break;
+      consecutiveFailures += 1;
+    }
   }
-  const latestFailure = rows.find((row) => !row.ok);
+  const latestFailure = item.ok ? null : rows.find((row) => !row.ok);
   const today = jstDateKey(now);
   const silentToday = !item.ok && rows[0]?.date === today && !rows[0]?.ok && jstHour(now) >= 12;
   return {
@@ -2916,22 +2918,39 @@ function shiftDateKey(value, delta) {
   return date.toISOString().slice(0, 10);
 }
 
-async function readR2Json(bucket, key) {
+const R2_JSON_READ_ATTEMPTS = 3;
+
+export async function readR2Json(bucket, key) {
   if (!bucket) return { ok: false, status: 'manual', key, error: 'missing_r2_binding' };
-  try {
-    const object = await bucket.get(key);
-    if (!object) return { ok: false, status: 'missing', key, error: 'not_found' };
-    const text = await object.text();
-    return {
-      ok: true,
-      status: 'ok',
-      key,
-      updated_at: object.uploaded ? object.uploaded.toISOString() : '',
-      data: JSON.parse(text)
-    };
-  } catch (e) {
-    return { ok: false, status: 'error', key, error: clean(e.message || String(e), 300) };
+  let lastError = '';
+  for (let attempt = 1; attempt <= R2_JSON_READ_ATTEMPTS; attempt += 1) {
+    try {
+      const object = await bucket.get(key);
+      if (!object) return { ok: false, status: 'missing', key, error: 'not_found' };
+      const text = await object.text();
+      return {
+        ok: true,
+        status: 'ok',
+        key,
+        updated_at: object.uploaded ? object.uploaded.toISOString() : '',
+        data: JSON.parse(text),
+        attempts: attempt
+      };
+    } catch (e) {
+      lastError = clean(e.message || String(e), 300);
+      if (attempt >= R2_JSON_READ_ATTEMPTS || !isTransientR2ReadError(lastError)) break;
+      await sleep(100 * attempt);
+    }
   }
+  return { ok: false, status: 'error', key, error: lastError };
+}
+
+function isTransientR2ReadError(error) {
+  return /\\b10001\\b|internal error|try again|temporar/i.test(String(error || ''));
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 const DAILY_BACKUP_MAX_AGE_HOURS = 27;
