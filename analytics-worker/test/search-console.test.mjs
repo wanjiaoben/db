@@ -5,9 +5,11 @@ import test from 'node:test';
 import {
   buildSearchConsoleWeeklyEmailText,
   bingDateOnly,
+  configuredSearchConsoleSites,
   configuredBingSites,
   normalizeBingQueryRow,
   normalizeSearchTermSource,
+  parsePage,
   searchConsoleCredentials
 } from '../src/worker.js';
 
@@ -77,12 +79,38 @@ test('Search Console cron and email configuration are explicit', () => {
   assert.match(worker, /syncBingSearchTermsRange\(env\)/);
   assert.match(worker, /sendSearchConsoleWeeklyReport\(env, scheduledAt/);
   assert.match(wrangler, /GSC_SERVICE_ACCOUNT_JSON/);
+  assert.match(wrangler, /GSC_SITE_URLS = "sc-domain:bjt\.nice\.okinawa/);
   assert.match(wrangler, /BING_SITE_URLS = "https:\/\/bjt\.nice\.okinawa\//);
   assert.match(wrangler, /BING_API_KEY/);
   assert.match(wrangler, /ALERT_RECIPIENTS = "aboutokinawa@gmail\.com"/);
   assert.doesNotMatch(wrangler, /GSC_WEEKLY_REPORT_EMAIL/);
   assert.doesNotMatch(wrangler, /ALERT_EMAIL_ALLOWLIST/);
   assert.doesNotMatch(wrangler, /WAN_ALERT_EMAIL/);
+});
+
+test('Search Console config supports domain and URL-prefix properties', () => {
+  assert.deepEqual(configuredSearchConsoleSites({
+    GSC_SITE_URLS: 'sc-domain:bjt.nice.okinawa,sc-domain:kiso.nice.okinawa,sc-domain:nice.okinawa,sc-domain:progress.nice.okinawa,sc-domain:snorkel.nice.okinawa,https://translation.nice.okinawa/'
+  }), [
+    'sc-domain:bjt.nice.okinawa',
+    'sc-domain:kiso.nice.okinawa',
+    'sc-domain:nice.okinawa',
+    'sc-domain:progress.nice.okinawa',
+    'sc-domain:snorkel.nice.okinawa',
+    'https://translation.nice.okinawa/'
+  ]);
+  assert.deepEqual(parsePage('sc-domain:bjt.nice.okinawa', 'https://bjt.nice.okinawa/pro/buy/'), {
+    site: 'bjt',
+    path: '/pro/buy/'
+  });
+  assert.deepEqual(parsePage('sc-domain:bjt.nice.okinawa', ''), {
+    site: 'bjt',
+    path: '/'
+  });
+  assert.deepEqual(parsePage('https://translation.nice.okinawa/', 'https://translation.nice.okinawa/en/'), {
+    site: 'translation',
+    path: '/en/'
+  });
 });
 
 test('Bing Webmaster query stats rows normalize into search_terms shape', () => {
