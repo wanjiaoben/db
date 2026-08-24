@@ -82,3 +82,32 @@ test('visitor events accepts text/plain JSON bodies', async () => {
   assert.equal(insert.params[14], 'm0727_27');
   assert.equal(insert.params[15], 12345);
 });
+
+test('mogi_audio_fail accepts controlled error events and preserves telemetry fields', async () => {
+  const calls = [];
+  const waits = [];
+  const env = { DB: { prepare(sql) { return { bind(...params) { calls.push({ sql, params }); return { first: async () => ({ count: 0 }), run: async () => ({ success: true }) }; } }; } } };
+  const body = {
+    site_id: 'bjt', event_type: 'mogi_audio_fail', visitor_id: 'telemetry-v', session_id: 'telemetry-s',
+    ts: '2026-08-24T00:00:00.000Z', question_id: 'ps12345', part: '2', section: 'S1',
+    duration_ms: 8123, failure_stage: 'canplay_timeout', ua: 'test-mobile', network_type: '4g', phase: 'retry-2'
+  };
+  const response = await worker.fetch(new Request('https://analytics.nice.okinawa/events', {
+    method: 'POST', headers: { origin: 'https://bjt.nice.okinawa', 'content-type': 'application/json' }, body: JSON.stringify(body)
+  }), env, { waitUntil: (promise) => waits.push(promise) });
+  await Promise.all(waits);
+  assert.equal(response.status, 204);
+  const insert = calls.find((call) => call.sql.includes('INSERT INTO visitor_events'));
+  assert.ok(insert);
+  assert.deepEqual(insert.params.slice(-8), ['ps12345', '2', 'S1', 8123, 'canplay_timeout', 'test-mobile', '4g', 'retry-2']);
+});
+
+test('future error_* event names are allowed but arbitrary names remain rejected', async () => {
+  const env = { DB: { prepare() { return { bind() { return { first: async () => ({ count: 0 }), run: async () => ({ success: true }) }; } }; } } };
+  const base = { site_id: 'bjt', visitor_id: 'v', session_id: 's' };
+  const request = (event_type) => new Request('https://analytics.nice.okinawa/events', { method: 'POST', headers: { origin: 'https://bjt.nice.okinawa', 'content-type': 'application/json' }, body: JSON.stringify({ ...base, event_type }) });
+  const ok = await worker.fetch(request('error_payment_timeout'), env, { waitUntil() {} });
+  const bad = await worker.fetch(request('telemetry_unknown'), env, { waitUntil() {} });
+  assert.equal(ok.status, 204);
+  assert.equal(bad.status, 400);
+});

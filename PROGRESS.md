@@ -58,3 +58,5 @@ M0718-19 splits Progress backup health into production/preview manifests, valida
 - Ran `python3 /Users/jiajia/Documents/GitHub/db/scripts/content_stats.py --no-push` to write `content-stats.json` and history.
 - Temporarily inserted a 2026-06-15 history snapshot and reran the script to verify positive, negative, and zero `change` values, then restored real history and regenerated the final JSON.
 M0807-69 db：新增 nice_analytics 生产 D1 每日备份 workflow，UTC 18:29 导出到 `progress-backup/d1/nice_analytics/production/`，manifest 记录时间、大小、sha256、表行数、failures 与 30 天游走+月留一份保留策略；上传后立即读回校验 sha256；dashboard 备份健康加入 nice_analytics manifest 校验。
+# EVENT-0824-07
+- analytics-worker: allow `mogi_audio_fail` and controlled `error_*` telemetry, persist question/part/section/duration/failure-stage/UA/network fields, and add dashboard event-type filtering. D1 migration `analytics-worker/migrations/0003-visitor-error-telemetry.sql` is transactional and retains the legacy table for rollback verification. Production deployment and live test-row cleanup remain release-gated.
