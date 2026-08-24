@@ -1402,6 +1402,36 @@ td.num, th.num { text-align: right; }
     grid-template-columns: 1fr;
     gap: 4px;
   }
+  .all-order-total {
+    grid-template-columns: 1fr;
+  }
+  .all-order-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .all-order-search {
+    grid-column: 1 / -1;
+    flex-basis: auto;
+    width: 100%;
+  }
+  .all-order-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .all-order-cell {
+    display: grid;
+    grid-template-columns: 86px minmax(0, 1fr);
+    gap: 6px;
+    align-items: baseline;
+    white-space: normal;
+  }
+  .all-order-cell span,
+  .all-order-cell b {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .order-cell {
     display: grid;
     grid-template-columns: 82px minmax(0, 1fr);
@@ -1583,7 +1613,7 @@ td.num, th.num { text-align: right; }
     </details>
   </section>
 
-  <section class="card all-orders-page" id="allOrdersPage" hidden>
+  <section class="card all-orders-page" id="allOrdersPage">
     <div class="visitor-head">
       <h2 style="position:static;margin:0;padding:0;border:0">订单明细 <span class="module-range" id="allOrderUpdated">实付 · 读取中</span></h2>
       <a class="order-page-link" href="#" id="backToDashboard">返回首屏</a>
@@ -2357,14 +2387,10 @@ function allOrderRowsHtml(orders) {
 }
 
 function renderOrderViewMode() {
-  const detail = location.hash.replace(/^#/, '') === 'all-orders';
   const allPage = $('allOrdersPage');
-  if (allPage) allPage.hidden = !detail;
-  document.querySelectorAll('main > *').forEach((section) => {
-    if (section.id === 'allOrdersPage') return;
-    section.hidden = detail;
-  });
-  if (detail) loadAllOrders();
+  if (!allPage) return;
+  allPage.hidden = false;
+  if (location.hash.replace(/^#/, '') === 'all-orders') loadAllOrders();
 }
 
 function updateAllOrderControls() {
@@ -2376,7 +2402,7 @@ function updateAllOrderControls() {
 }
 
 async function loadAllOrders() {
-  if (!$('allOrdersPage') || $('allOrdersPage').hidden) return;
+  if (!$('allOrdersPage')) return;
   allOrdersState.loading = true;
   updateAllOrderControls();
   const key = localStorage.getItem('nice_dashboard_key') || '';
@@ -2988,8 +3014,9 @@ $('saveKey').addEventListener('click', () => {
   loadPathCheckStatus();
   loadVisitors();
   loadOrders();
+  loadAllOrders();
 });
-$('refresh').addEventListener('click', () => { load(); loadSiteTable(); loadControl(); loadVisitors(); loadOrders(); loadSnsMetrics(); loadContentStats(); });
+$('refresh').addEventListener('click', () => { load(); loadSiteTable(); loadControl(); loadVisitors(); loadOrders(); loadAllOrders(); loadSnsMetrics(); loadContentStats(); });
 $('syncGsc').addEventListener('click', async () => {
   $('error').style.display = 'none';
   $('status').textContent = '同步搜索词中';
@@ -3050,6 +3077,7 @@ $('backToDashboard').addEventListener('click', (event) => {
   event.preventDefault();
   history.pushState(null, '', location.pathname + location.search);
   renderOrderViewMode();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 $('allOrderPaid').addEventListener('click', () => {
   allOrdersState.status = 'paid';
@@ -3159,9 +3187,10 @@ loadControl();
 loadPathCheckStatus();
 loadVisitors();
 loadOrders();
+loadAllOrders();
 loadSnsMetrics();
 loadContentStats();
-setInterval(() => { load(); loadSiteTable(); loadControl(); loadPathCheckStatus(); loadVisitors(); loadOrders(); loadSnsMetrics(); loadContentStats(); }, 30000);
+setInterval(() => { load(); loadSiteTable(); loadControl(); loadPathCheckStatus(); loadVisitors(); loadOrders(); loadAllOrders(); loadSnsMetrics(); loadContentStats(); }, 30000);
 </script>
 </body>
 </html>
