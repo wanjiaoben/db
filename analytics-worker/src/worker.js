@@ -40,6 +40,7 @@ const PATH_CHECK_INTERVAL_MS = 15 * 60 * 1000;
 const PATH_CHECK_TIMEOUT_MS = 12000;
 const PATH_CHECK_FAILURE_DEBOUNCE = 3;
 const PATH_CHECK_FAST_FAILURE_DEBOUNCE = 2;
+const DEPLOYMENT_IN_PROGRESS_ALERT_MS = 30 * 60 * 1000;
 const PATH_CHECK_BASELINES = Object.freeze([
   pageCheck('site-snorkel-home', 'snorkel home', 'https://snorkel.nice.okinawa/', 'Okinawa Snorkeling Tours'),
   pageCheck('site-fishing-home', 'fishing home', 'https://fishing.nice.okinawa/', 'Okinawa Fishing Charter'),
@@ -3083,20 +3084,7 @@ async function getRepoDeploymentStatus(env, repo) {
       };
     }
     const run = selectDeploymentWorkflowRun(data.workflow_runs || []);
-    if (!run) {
-      return { repo, ok: false, status: 'unknown', conclusion: '', updated_at: '', url: '', error: 'no_deployment_runs', manual: false };
-    }
-    const conclusion = run.conclusion || run.status || '';
-    return {
-      repo,
-      ok: run.status === 'completed' && run.conclusion === 'success',
-      status: run.status || '',
-      conclusion,
-      workflow: run.name || '',
-      updated_at: run.updated_at || run.created_at || '',
-      url: run.html_url || '',
-      error: ''
-    };
+    return deploymentWorkflowStatus(repo, run, new Date());
   } catch (e) {
     return {
       repo,
@@ -3113,6 +3101,47 @@ async function getRepoDeploymentStatus(env, repo) {
 
 export function selectDeploymentWorkflowRun(runs) {
   return (runs || []).find((item) => item.head_branch === 'main' && isDeploymentStatusRun(item)) || null;
+}
+
+export function deploymentWorkflowStatus(repo, run, now = new Date()) {
+  if (!run) {
+    return {
+      repo,
+      ok: false,
+      status: 'no_data',
+      conclusion: '',
+      updated_at: '',
+      url: '',
+      error: '',
+      manual: true,
+      note: '无数据'
+    };
+  }
+
+  const status = run.status || '';
+  const conclusion = run.conclusion || status || '';
+  const startedAt = run.run_started_at || run.created_at || run.updated_at || '';
+  const updatedAt = run.updated_at || startedAt;
+  const startedMs = Date.parse(startedAt);
+  const ageMs = Number.isFinite(startedMs) ? Math.max(0, now.getTime() - startedMs) : 0;
+  const inProgress = status && status !== 'completed';
+  const inProgressTimedOut = inProgress && ageMs > DEPLOYMENT_IN_PROGRESS_ALERT_MS;
+  const completedFailure = status === 'completed' && conclusion === 'failure';
+
+  return {
+    repo,
+    ok: completedFailure || inProgressTimedOut ? false : true,
+    status,
+    conclusion,
+    workflow: run.name || '',
+    updated_at: updatedAt,
+    url: run.html_url || '',
+    error: inProgressTimedOut ? 'deployment_in_progress_timeout' : (completedFailure ? 'deployment_failed' : ''),
+    manual: false,
+    note: inProgress && !inProgressTimedOut ? '部署进行中' : '',
+    alert: completedFailure || inProgressTimedOut,
+    age_minutes: inProgress && Number.isFinite(ageMs) ? Math.round(ageMs / 60000) : null
+  };
 }
 
 function isDeploymentStatusRun(run) {
@@ -3453,7 +3482,7 @@ export function collectAlertItems(backups, deployments, probes) {
     }
   }
   for (const item of deployments?.items || []) {
-    if (!item.ok && !item.manual) {
+    if (item.alert === true || (!item.ok && !item.manual && item.alert !== false)) {
       items.push({
         type: 'deployment',
         key: item.repo || 'repo',
