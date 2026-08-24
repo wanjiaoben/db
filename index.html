@@ -865,6 +865,139 @@ td.num, th.num { text-align: right; }
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+.order-page-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  margin: 0 0 8px;
+  border: 1px solid var(--blue);
+  border-radius: 5px;
+  padding: 0 10px;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+}
+.all-orders-page[hidden] {
+  display: none;
+}
+.all-orders-page {
+  display: grid;
+  gap: 8px;
+}
+.all-order-controls,
+.all-order-pager {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+.all-order-search {
+  flex: 1 1 220px;
+  min-width: 0;
+  height: 31px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0 9px;
+  background: #fffdfa;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+.all-order-controls button,
+.all-order-pager button {
+  height: 31px;
+  border: 1px solid var(--ink);
+  border-radius: 5px;
+  padding: 0 10px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.all-order-controls button.secondary,
+.all-order-pager button.secondary {
+  background: #fffdfa;
+  color: var(--ink);
+}
+.all-order-controls button.active {
+  border-color: var(--blue);
+  background: var(--blue);
+}
+.all-order-controls button:disabled,
+.all-order-pager button:disabled {
+  border-color: #c9c5bc;
+  background: #d8d3c8;
+  color: #fff;
+  cursor: default;
+}
+.all-order-total {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.all-order-total-item {
+  min-width: 0;
+  border: 1px solid #ece6da;
+  border-radius: 5px;
+  padding: 7px 8px;
+  background: #fffdfa;
+}
+.all-order-total-item span {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+}
+.all-order-total-item strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.all-order-list {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+.all-order-row {
+  display: grid;
+  grid-template-columns: minmax(116px, 1fr) minmax(130px, 1.1fr) minmax(100px, 1fr) minmax(76px, .7fr) minmax(90px, .8fr) minmax(120px, 1fr) minmax(70px, .6fr);
+  gap: 6px;
+  align-items: start;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid #ece6da;
+  border-radius: 5px;
+  padding: 6px;
+  background: #fffdfa;
+  overflow: hidden;
+}
+.all-order-cell {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.2;
+}
+.all-order-cell span {
+  display: block;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+}
+.all-order-cell b {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
 .order-full-details {
   min-width: 0;
   max-width: 100%;
@@ -1114,6 +1247,17 @@ td.num, th.num { text-align: right; }
   }
   .order-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .all-order-total {
+    grid-template-columns: 1fr;
+  }
+  .all-order-row {
+    grid-template-columns: 1fr;
+  }
+  .all-order-cell,
+  .all-order-cell b {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 @media (max-width: 680px) {
@@ -1426,6 +1570,7 @@ td.num, th.num { text-align: right; }
       <div class="order-pulse-item"><span>30天</span><strong>-</strong></div>
     </div>
     <div class="recent-orders" id="recentOrders"><div class="empty">订单读取中</div></div>
+    <a class="order-page-link" href="#all-orders" id="allOrdersLink">查看全部订单</a>
     <details class="order-full-details">
       <summary>月度合计与完整订单</summary>
       <div class="order-tools">
@@ -1436,6 +1581,26 @@ td.num, th.num { text-align: right; }
       <div class="order-tax-note" id="orderTaxNote"></div>
       <div class="order-list" id="orderRows"></div>
     </details>
+  </section>
+
+  <section class="card all-orders-page" id="allOrdersPage" hidden>
+    <div class="visitor-head">
+      <h2 style="position:static;margin:0;padding:0;border:0">订单明细 <span class="module-range" id="allOrderUpdated">实付 · 读取中</span></h2>
+      <a class="order-page-link" href="#" id="backToDashboard">返回首屏</a>
+    </div>
+    <div class="all-order-controls">
+      <button type="button" id="allOrderPaid" class="active">实付</button>
+      <button type="button" id="allOrderAll" class="secondary">全部含 pending/失败</button>
+      <input class="all-order-search" id="allOrderSearch" type="search" placeholder="邮箱或 PayPal 取引 ID">
+      <button type="button" id="allOrderSearchButton">搜索</button>
+    </div>
+    <div class="all-order-total" id="allOrderTotals"><div class="empty">等待订单明细</div></div>
+    <div class="all-order-list" id="allOrderRows"><div class="empty">等待订单明细</div></div>
+    <div class="all-order-pager">
+      <button type="button" id="allOrderPrev" class="secondary">上一页</button>
+      <span class="sub" id="allOrderPageInfo">-</span>
+      <button type="button" id="allOrderNext" class="secondary">下一页</button>
+    </div>
   </section>
 
   <section class="card metrics">
@@ -1616,6 +1781,14 @@ let orderRange = normalizeRangeValue(localStorage.getItem('nice_order_range') ||
 let visitorDays = 7;
 let orderMode = 'month';
 let lastOrderData = null;
+const allOrdersState = {
+  status: 'paid',
+  query: '',
+  page: 1,
+  pageSize: 50,
+  totalPages: 1,
+  loading: false
+};
 const toplineState = {
   pathHtml: '巡检 读取中',
   pathRed: false,
@@ -2142,6 +2315,101 @@ function recentOrdersHtml(orders) {
         '<div class="recent-order-cell">' + escapeHtml(orderCountryText(order)) + '</div>' +
       '</div>';
     }).join('');
+}
+
+function paypalTransactionText(order) {
+  return order.paypal_transaction_id || order.order_id || order.business_record_key || '-';
+}
+
+function allOrderTotalsHtml(data) {
+  const totals = data.totals || [];
+  const amount = totals.length
+    ? totals.map((item) => escapeHtml(item.currency || '-') + ' ' + escapeHtml(String(item.amount || 0))).join(' / ')
+    : '-';
+  return '<div class="all-order-total-item"><span>当前筛选单数</span><strong>' + n(data.total_orders) + '</strong></div>' +
+    '<div class="all-order-total-item"><span>金额合计</span><strong>' + amount + '</strong></div>' +
+    '<div class="all-order-total-item"><span>范围</span><strong>' + (data.status_mode === 'all' ? '全部' : '实付') + '</strong></div>';
+}
+
+function allOrderRowHtml(order) {
+  const tx = paypalTransactionText(order);
+  const title = [
+    'order_id=' + (order.order_id || '-'),
+    'paypal_transaction_id=' + (order.paypal_transaction_id || '-'),
+    'business_record_key=' + (order.business_record_key || '-'),
+    'landing=' + (order.first_landing || '-'),
+    'utm=' + (order.first_utm || '-')
+  ].join(' | ');
+  return '<div class="all-order-row" title="' + escapeHtml(title) + '">' +
+    '<div class="all-order-cell"><span>下单时间(JST)</span><b>' + escapeHtml(timeText(order.created_at)) + '</b></div>' +
+    '<div class="all-order-cell"><span>邮箱</span><b>' + escapeHtml(order.email || order.email_masked || '-') + '</b></div>' +
+    '<div class="all-order-cell"><span>产品名</span><b>' + escapeHtml(orderProductText(order)) + '</b></div>' +
+    '<div class="all-order-cell"><span>金额</span><b>' + escapeHtml(moneyText(order)) + '</b></div>' +
+    '<div class="all-order-cell"><span>状态</span><b>' + escapeHtml(order.status || '-') + '</b></div>' +
+    '<div class="all-order-cell"><span>PayPal 取引 ID</span><b>' + escapeHtml(tx) + '</b></div>' +
+    '<div class="all-order-cell"><span>来源</span><b>' + escapeHtml(orderSourceText(order)) + '</b></div>' +
+  '</div>';
+}
+
+function allOrderRowsHtml(orders) {
+  if (!orders || !orders.length) return '<div class="empty">当前筛选暂无订单</div>';
+  return orders.map(allOrderRowHtml).join('');
+}
+
+function renderOrderViewMode() {
+  const detail = location.hash.replace(/^#/, '') === 'all-orders';
+  const allPage = $('allOrdersPage');
+  if (allPage) allPage.hidden = !detail;
+  document.querySelectorAll('main > *').forEach((section) => {
+    if (section.id === 'allOrdersPage') return;
+    section.hidden = detail;
+  });
+  if (detail) loadAllOrders();
+}
+
+function updateAllOrderControls() {
+  $('allOrderPaid').className = allOrdersState.status === 'paid' ? 'active' : 'secondary';
+  $('allOrderAll').className = allOrdersState.status === 'all' ? 'active' : 'secondary';
+  $('allOrderPrev').disabled = allOrdersState.loading || allOrdersState.page <= 1;
+  $('allOrderNext').disabled = allOrdersState.loading || allOrdersState.page >= allOrdersState.totalPages;
+  $('allOrderPageInfo').textContent = allOrdersState.loading ? '读取中' : ('第 ' + n(allOrdersState.page) + ' / ' + n(allOrdersState.totalPages) + ' 页');
+}
+
+async function loadAllOrders() {
+  if (!$('allOrdersPage') || $('allOrdersPage').hidden) return;
+  allOrdersState.loading = true;
+  updateAllOrderControls();
+  const key = localStorage.getItem('nice_dashboard_key') || '';
+  const qs = new URLSearchParams({
+    detail: '1',
+    status: allOrdersState.status,
+    page: String(allOrdersState.page),
+    page_size: String(allOrdersState.pageSize)
+  });
+  if (allOrdersState.query) qs.set('q', allOrdersState.query);
+  try {
+    const res = await fetch(ORDER_API + '?' + qs.toString(), {
+      credentials: 'include',
+      headers: {
+        accept: 'application/json',
+        ...(key ? { 'x-dashboard-key': key } : {})
+      }
+    });
+    const data = await readJsonResponse(res);
+    if (!res.ok || !data.ok) throw new Error(data.error || '订单明细 API 请求失败');
+    allOrdersState.totalPages = data.total_pages || 1;
+    allOrdersState.page = data.page || allOrdersState.page;
+    $('allOrderTotals').innerHTML = allOrderTotalsHtml(data);
+    $('allOrderRows').innerHTML = allOrderRowsHtml(data.orders || []);
+    $('allOrderUpdated').textContent = '共 ' + n(data.total_orders) + ' 单 · ' + (data.cache_status || '-') + ' · ' + new Date(data.generated_at).toLocaleTimeString();
+    updateKeyStatus(true);
+  } catch (e) {
+    $('allOrderTotals').innerHTML = '<div class="empty">订单明细读取失败：' + escapeHtml(e.message) + '</div>';
+    $('allOrderRows').innerHTML = '';
+  } finally {
+    allOrdersState.loading = false;
+    updateAllOrderControls();
+  }
 }
 
 function amountText(currency, amount) {
@@ -2775,6 +3043,46 @@ $('sendGscWeekly').addEventListener('click', async () => {
   }
 });
 $('days').addEventListener('change', () => { syncRangeTabs(); load(); });
+$('allOrdersLink').addEventListener('click', () => {
+  allOrdersState.page = 1;
+});
+$('backToDashboard').addEventListener('click', (event) => {
+  event.preventDefault();
+  history.pushState(null, '', location.pathname + location.search);
+  renderOrderViewMode();
+});
+$('allOrderPaid').addEventListener('click', () => {
+  allOrdersState.status = 'paid';
+  allOrdersState.page = 1;
+  loadAllOrders();
+});
+$('allOrderAll').addEventListener('click', () => {
+  allOrdersState.status = 'all';
+  allOrdersState.page = 1;
+  loadAllOrders();
+});
+$('allOrderSearchButton').addEventListener('click', () => {
+  allOrdersState.query = $('allOrderSearch').value.trim();
+  allOrdersState.page = 1;
+  loadAllOrders();
+});
+$('allOrderSearch').addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  allOrdersState.query = $('allOrderSearch').value.trim();
+  allOrdersState.page = 1;
+  loadAllOrders();
+});
+$('allOrderPrev').addEventListener('click', () => {
+  if (allOrdersState.page <= 1) return;
+  allOrdersState.page -= 1;
+  loadAllOrders();
+});
+$('allOrderNext').addEventListener('click', () => {
+  if (allOrdersState.page >= allOrdersState.totalPages) return;
+  allOrdersState.page += 1;
+  loadAllOrders();
+});
+window.addEventListener('hashchange', renderOrderViewMode);
 $('visitorRangeTabs').addEventListener('click', (event) => {
   const button = event.target.closest('button[data-range]');
   if (!button) return;
@@ -2843,6 +3151,7 @@ $('orderMonth').value = defaultOrderMonth();
 syncRangeTabs();
 renderTopline();
 syncMobileCollapses();
+renderOrderViewMode();
 window.addEventListener('resize', syncMobileCollapses);
 load();
 loadSiteTable();
