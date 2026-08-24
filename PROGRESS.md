@@ -1,5 +1,7 @@
 # db.nice.okinawa Progress
 
+ORDERS-0824-08追加② adds explicit range/status labels to every dashboard module and gives the site total table its own remembered 1/7/30/180-day range tabs independent of the visitor overview.
+
 ALERT-0824-16 fixes deployment dashboard alert semantics so no deployment runs render as gray no-data, in-progress runs alert only after 30 minutes, and only completed failures or timed-out deployments enter dashboard email candidates.
 
 GSC-0824-10 updates Google Search Console properties to the confirmed mixed domain/URL-prefix form and teaches search term parsing to keep sc-domain rows attributed to the correct site before production backfill.
