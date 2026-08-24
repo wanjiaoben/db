@@ -138,7 +138,7 @@ test('/orders returns sorted masked order source rows and distributions', async 
 });
 
 test('/orders day mode counts only paid, deduped, non-test orders', async () => {
-  const fallbackBase = Date.now() - 3 * 86400000;
+  const fallbackBase = Math.floor((Date.now() - 3 * 86400000) / 60000) * 60000;
   const records = {
     'paypal_order_meta:paid-captured': JSON.stringify({
       order_id: 'paid-captured',
