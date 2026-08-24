@@ -34,7 +34,7 @@ service = "nice-analytics"
 [vars]
 ALLOWED_ORIGIN = "https://translation.nice.okinawa"
 DASHBOARD_ORIGIN = "https://db.nice.okinawa"
-GSC_SITE_URLS = "https://bjt.nice.okinawa/,https://kiso.nice.okinawa/,https://progress.nice.okinawa/,https://fishing.nice.okinawa/,https://snorkel.nice.okinawa/,https://nice.okinawa/,https://activity.nice.okinawa/,https://translation.nice.okinawa/,https://rental.nice.okinawa/,https://golf.nice.okinawa/,https://japanusedcars.nice.okinawa/"
+GSC_SITE_URLS = "sc-domain:bjt.nice.okinawa,sc-domain:kiso.nice.okinawa,sc-domain:nice.okinawa,sc-domain:progress.nice.okinawa,sc-domain:snorkel.nice.okinawa,https://translation.nice.okinawa/"
 # Secret required: GSC_SERVICE_ACCOUNT_JSON.
 BING_SITE_URLS = "https://bjt.nice.okinawa/,https://kiso.nice.okinawa/,https://snorkel.nice.okinawa/,https://progress.nice.okinawa/,https://nice.okinawa/,https://translation.nice.okinawa/"
 # Secret required: BING_API_KEY.
@@ -80,7 +80,7 @@ service = "nice-analytics"
 [env.preview.vars]
 ALLOWED_ORIGIN = "https://db-t0705-12.nice.okinawa"
 DASHBOARD_ORIGIN = "https://db-t0705-12.nice.okinawa"
-GSC_SITE_URLS = "https://bjt.nice.okinawa/,https://kiso.nice.okinawa/,https://progress.nice.okinawa/,https://fishing.nice.okinawa/,https://snorkel.nice.okinawa/,https://nice.okinawa/,https://activity.nice.okinawa/,https://translation.nice.okinawa/,https://rental.nice.okinawa/,https://golf.nice.okinawa/,https://japanusedcars.nice.okinawa/"
+GSC_SITE_URLS = "sc-domain:bjt.nice.okinawa,sc-domain:kiso.nice.okinawa,sc-domain:nice.okinawa,sc-domain:progress.nice.okinawa,sc-domain:snorkel.nice.okinawa,https://translation.nice.okinawa/"
 # Secret required: GSC_SERVICE_ACCOUNT_JSON.
 BING_SITE_URLS = "https://bjt.nice.okinawa/,https://kiso.nice.okinawa/,https://snorkel.nice.okinawa/,https://progress.nice.okinawa/,https://nice.okinawa/,https://translation.nice.okinawa/"
 # Secret required: BING_API_KEY.

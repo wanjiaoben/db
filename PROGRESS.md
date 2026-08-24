@@ -1,5 +1,7 @@
 # db.nice.okinawa Progress
 
+GSC-0824-10 updates Google Search Console properties to the confirmed mixed domain/URL-prefix form and teaches search term parsing to keep sc-domain rows attributed to the correct site before production backfill.
+
 BACKUP-0823-01 adds whole-job retry and two-consecutive-failure dashboard alert triggering to the nice_analytics D1 backup workflow; token validation now reaches D1 export but still needs D1 export permission beyond D1 Read.
 
 UX-0823-03 fixes the orders dashboard counts and recent list to use paid, deduped, non-test order rows only while keeping attribution blank until upstream first-touch fields arrive.

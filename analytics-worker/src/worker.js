@@ -1951,6 +1951,9 @@ function parsePage(siteUrl, page) {
     const parsed = new URL(page);
     return { site: siteIdFromHostname(parsed.hostname), path: parsed.pathname || '/' };
   } catch (e) {
+    if (siteUrl.startsWith('sc-domain:')) {
+      return { site: siteIdFromHostname(siteUrl.slice('sc-domain:'.length)), path: '/' };
+    }
     try {
       const fallback = new URL(siteUrl);
       return { site: siteIdFromHostname(fallback.hostname), path: '/' };
@@ -3685,11 +3688,13 @@ export {
   BEACON_SCRIPT,
   PATH_CHECK_BASELINES,
   bingDateOnly,
+  configuredSearchConsoleSites,
   configuredBingSites,
   checkPathContract,
   isFastPathCheckFailure,
   normalizeBingQueryRow,
   normalizeSearchTermSource,
+  parsePage,
   shouldSendPathCheckAlert,
   stableFingerprint
 };
