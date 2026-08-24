@@ -1,5 +1,7 @@
 # db.nice.okinawa Progress
 
+ALERT-0824-16 fixes deployment dashboard alert semantics so no deployment runs render as gray no-data, in-progress runs alert only after 30 minutes, and only completed failures or timed-out deployments enter dashboard email candidates.
+
 GSC-0824-10 updates Google Search Console properties to the confirmed mixed domain/URL-prefix form and teaches search term parsing to keep sc-domain rows attributed to the correct site before production backfill.
 
 GATE-0824-13: 备份健康门禁的 stale/silent 测试改为显式注入时钟，固定在 13:00 JST 验证 silent；真实备份判定逻辑未放宽。PR #50 已合入 main。

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { attachBackupHistory, backupHistoryFromIndex, backupItem, buildAlertEmailPreview, collectAlertItems, dailyD1BackupItem, d1BackupItem, progressBackupItem, selectDeploymentWorkflowRun } from '../src/worker.js';
+import { attachBackupHistory, backupHistoryFromIndex, backupItem, buildAlertEmailPreview, collectAlertItems, dailyD1BackupItem, deploymentWorkflowStatus, d1BackupItem, progressBackupItem, selectDeploymentWorkflowRun } from '../src/worker.js';
 
 const now = new Date('2026-07-18T21:00:00.000Z');
 
@@ -334,4 +334,62 @@ test('deployment status ignores manually dispatched backup failures and falls ba
   ]);
   assert.equal(run.name, 'MERGE_GATE');
   assert.equal(run.conclusion, 'success');
+});
+
+test('deployment alerts only include failed runs and timed-out in-progress runs', () => {
+  const now = new Date('2026-08-24T01:00:00.000Z');
+  const success = deploymentWorkflowStatus('bjt', {
+    head_branch: 'main',
+    name: 'Atomic Release',
+    status: 'completed',
+    conclusion: 'success',
+    created_at: '2026-08-24T00:10:00.000Z',
+    updated_at: '2026-08-24T00:12:00.000Z'
+  }, now);
+  const inProgress = deploymentWorkflowStatus('bjt', {
+    head_branch: 'main',
+    name: 'Atomic Release',
+    status: 'in_progress',
+    conclusion: null,
+    created_at: '2026-08-24T00:40:00.000Z',
+    updated_at: '2026-08-24T00:50:00.000Z'
+  }, now);
+  const failure = deploymentWorkflowStatus('bjt', {
+    head_branch: 'main',
+    name: 'Atomic Release',
+    status: 'completed',
+    conclusion: 'failure',
+    created_at: '2026-08-24T00:10:00.000Z',
+    updated_at: '2026-08-24T00:12:00.000Z'
+  }, now);
+  const noData = deploymentWorkflowStatus('bjt', null, now);
+  const timedOut = deploymentWorkflowStatus('bjt', {
+    head_branch: 'main',
+    name: 'Atomic Release',
+    status: 'in_progress',
+    conclusion: null,
+    created_at: '2026-08-24T00:20:00.000Z',
+    updated_at: '2026-08-24T00:55:00.000Z'
+  }, now);
+
+  assert.equal(success.ok, true);
+  assert.equal(inProgress.ok, true);
+  assert.equal(inProgress.note, '部署进行中');
+  assert.equal(noData.manual, true);
+  assert.equal(noData.status, 'no_data');
+  assert.equal(failure.ok, false);
+  assert.equal(failure.alert, true);
+  assert.equal(timedOut.ok, false);
+  assert.equal(timedOut.alert, true);
+  assert.equal(timedOut.error, 'deployment_in_progress_timeout');
+
+  const alert = collectAlertItems(
+    { items: [] },
+    { items: [success, inProgress, failure, noData, timedOut] },
+    { targets: [] }
+  );
+  assert.deepEqual(alert.map((item) => `${item.key}:${item.status}`), [
+    'bjt:failure',
+    'bjt:in_progress'
+  ]);
 });

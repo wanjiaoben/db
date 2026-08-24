@@ -232,6 +232,7 @@ td.num, th.num { text-align: right; }
 }
 .status-dot.ok { background: var(--green); }
 .status-dot.manual { background: var(--gold); }
+.status-dot.neutral { background: var(--muted); }
 .spark {
   display: inline-flex;
   gap: 2px;
@@ -1612,8 +1613,8 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (s) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[s]));
 }
 
-function statusDot(ok, manual) {
-  return '<span class="status-dot ' + (ok ? 'ok' : (manual ? 'manual' : '')) + '"></span>';
+function statusDot(ok, manual, neutral) {
+  return '<span class="status-dot ' + (ok ? 'ok' : (neutral ? 'neutral' : (manual ? 'manual' : ''))) + '"></span>';
 }
 
 function renderTopline() {
@@ -2302,7 +2303,7 @@ async function loadControl() {
     const deployments = ((data.deployments || {}).items || []);
     renderRows('deployTable', deployments, (r) => row([
       escapeHtml(r.repo || '-'),
-      { html: statusDot(r.ok, r.manual) + escapeHtml(r.ok ? '成功' : (r.manual ? (r.note || '未配 token') : (r.conclusion || r.status || '异常'))) },
+      { html: statusDot(r.ok, r.manual, r.status === 'no_data') + escapeHtml(r.status === 'no_data' ? '无数据' : (r.ok ? (r.note || '成功') : (r.manual ? (r.note || '未配 token') : (r.error === 'deployment_in_progress_timeout' ? '部署卡住超过 30 分钟' : (r.conclusion || r.status || '异常'))))) },
       escapeHtml(timeText(r.updated_at)),
       r.url ? '<a href="' + escapeHtml(r.url) + '" target="_blank">' + escapeHtml(r.workflow || 'workflow') + '</a>' : escapeHtml(r.error || r.workflow || '-')
     ]));
