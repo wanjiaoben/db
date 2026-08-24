@@ -1180,6 +1180,23 @@ meeting
 
 Progress 可以静态运行，但完整版权限、邮箱登录、账号统计必须由后台负责。
 
+### db.nice.okinawa 生产验收 Access service token
+
+- 只读生产验收从本机 Keychain 取 Access service token 与 Basic 认证，不把凭据写入仓库、日志或 PR 描述：
+  - `security find-generic-password -s cc-db-verify-id -a db -w`
+  - `security find-generic-password -s cc-db-verify-secret -a db -w`
+  - `security find-generic-password -s cc-db-basic-user -a db -w`
+  - `security find-generic-password -s cc-db-basic-pass -a db -w`
+- 以上四个 Keychain 项是 db 生产验收必需凭据；缺一时先补齐，不再回报“进不去”。
+- 请求 Cloudflare Access 后面的 db 面板端点时使用：
+  - `CF-Access-Client-Id: <id>`
+  - `CF-Access-Client-Secret: <secret>`
+- 源站 Basic 认证同时使用 `Authorization: Basic <base64(user:pass)>`；没有 Basic 时 Access 可放行，但 db-private 源站仍会返回 401。
+- 典型只读验收：
+  - `/summary`：验证 Access 是否放行到源站。
+  - `/orders`：验证订单接口状态码与冷载耗时。
+- 命令中凭据只能放在 shell 变量里，curl 输出不得包含请求头或 token 值。
+
 当前目标：
 
 - 已登录且邮箱在后台 allowlist 的用户：可刷完整版 deck

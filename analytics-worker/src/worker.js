@@ -15,7 +15,8 @@ const VISITOR_DASHBOARD_PATH = '/visitors';
 const VISITOR_EVENT_RATE_LIMIT_PER_MINUTE = 30;
 const VISITOR_SAMPLE_MIN_EVENTS = 20;
 const VISITOR_DASHBOARD_DAY_OPTIONS = new Set([1, 7, 30, 180]);
-const VISITOR_EVENT_TYPES = new Set(['pageview', 'dwell', 'contact_click', 'section_view']);
+const VISITOR_EVENT_TYPES = new Set(['pageview', 'dwell', 'contact_click', 'section_view', 'mogi_audio_fail']);
+const VISITOR_EVENT_ERROR_PATTERN = /^error_[a-z0-9_]{1,35}$/;
 const CONTACT_CHANNELS = new Set(['wechat', 'email', 'whatsapp', 'line', 'phone', 'form']);
 const VISITOR_EVENT_SITES = Object.freeze({
   snorkel: 'snorkel.nice.okinawa',
@@ -506,6 +507,10 @@ function deviceType(value) {
   return '';
 }
 
+function isAllowedVisitorEventType(value) {
+  return VISITOR_EVENT_TYPES.has(value) || VISITOR_EVENT_ERROR_PATTERN.test(value);
+}
+
 async function visitorEventBody(request) {
   const contentType = (request.headers.get('content-type') || '').toLowerCase();
   if (contentType.startsWith('application/json')) return request.json();
@@ -536,7 +541,7 @@ async function collectVisitorEvent(request, env, ctx) {
   }
 
   const eventType = clean(body.event_type, 40).toLowerCase();
-  if (!VISITOR_EVENT_TYPES.has(eventType)) {
+  if (!isAllowedVisitorEventType(eventType)) {
     return emptyVisitorEventResponse(request, 400);
   }
 
@@ -580,20 +585,30 @@ async function collectVisitorEvent(request, env, ctx) {
     section_id: eventType === 'section_view' ? clean(body.section_id, 120) : '',
     contact_channel: eventType === 'contact_click' ? contactChannel(body.contact_channel) : '',
     device_type: deviceType(body.device_type),
-    viewport_width: positiveInteger(body.viewport_width, null)
+    viewport_width: positiveInteger(body.viewport_width, null),
+    question_id: clean(body.question_id || body.questionId, 120),
+    part: clean(body.part, 40),
+    section: clean(body.section, 120),
+    event_duration_ms: positiveInteger(body.duration_ms ?? body.event_duration_ms, null),
+    failure_stage: clean(body.failure_stage || body.failureStage, 100),
+    user_agent: clean(body.ua || body.user_agent || request.headers.get('user-agent'), 512),
+    network_type: clean(body.network_type || body.networkType, 40),
+    phase: clean(body.phase, 40)
   };
 
   ctx.waitUntil(env.DB.prepare(`
     INSERT INTO visitor_events (
       site_id, event_type, visitor_id, session_id, ts, referrer_host, country, city, timezone,
       ui_lang, browser_lang, landing_path, utm_source, utm_medium, utm_campaign,
-      dwell_ms, section_id, contact_channel, device_type, viewport_width
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      dwell_ms, section_id, contact_channel, device_type, viewport_width,
+      question_id, part, section, event_duration_ms, failure_stage, user_agent, network_type, phase
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     row.site_id, row.event_type, row.visitor_id, row.session_id, row.ts, row.referrer_host,
     row.country, row.city, row.timezone, row.ui_lang, row.browser_lang, row.landing_path,
     row.utm_source, row.utm_medium, row.utm_campaign, row.dwell_ms, row.section_id,
-    row.contact_channel, row.device_type, row.viewport_width
+    row.contact_channel, row.device_type, row.viewport_width, row.question_id, row.part,
+    row.section, row.event_duration_ms, row.failure_stage, row.user_agent, row.network_type, row.phase
   ).run());
 
   return emptyVisitorEventResponse(request);
@@ -614,6 +629,8 @@ async function visitorDashboard(request, env) {
   const requestedDays = Number(url.searchParams.get('days') || 28);
   const days = VISITOR_DASHBOARD_DAY_OPTIONS.has(requestedDays) ? requestedDays : 28;
   const since = new Date(Date.now() - days * 86400000).toISOString();
+  const requestedEventType = clean(url.searchParams.get('event_type'), 40).toLowerCase();
+  const eventType = isAllowedVisitorEventType(requestedEventType) ? requestedEventType : '';
 
   const [
     totals,
@@ -626,7 +643,10 @@ async function visitorDashboard(request, env) {
     uiLangs,
     utmSources,
     rawRecords,
-    visitorRows
+    visitorRows,
+    eventTypeOptions,
+    eventTypeCount,
+    eventTypeRecords
   ] = await Promise.all([
     all(env.DB, `
       SELECT
@@ -782,7 +802,23 @@ async function visitorDashboard(request, env) {
       LEFT JOIN external_touch e ON e.site_id = g.site_id AND e.visitor_id = g.visitor_id AND e.rn = 1
       ORDER BY g.last_seen_at DESC
       LIMIT 160
-    `, [since])
+    `, [since]),
+    all(env.DB, `
+      SELECT DISTINCT event_type FROM visitor_events
+      WHERE created_at >= ? ORDER BY event_type
+    `, [since]),
+    first(env.DB, `
+      SELECT COUNT(*) AS count FROM visitor_events
+      WHERE created_at >= ? AND event_type = ?
+    `, [since, eventType || '__none__']),
+    all(env.DB, `
+      SELECT created_at, site_id, event_type, question_id, part, section,
+        event_duration_ms, failure_stage, user_agent, network_type, phase,
+        visitor_id, session_id
+      FROM visitor_events
+      WHERE created_at >= ? AND event_type = ?
+      ORDER BY created_at DESC, id DESC LIMIT 100
+    `, [since, eventType || '__none__'])
   ]);
 
   const medianBySite = mapBySite(medianDwell, 'median_dwell_ms');
@@ -828,6 +864,16 @@ async function visitorDashboard(request, env) {
     ok: true,
     days,
     generated_at: new Date().toISOString(),
+    event_type: eventType,
+    event_type_options: (eventTypeOptions || []).map((row) => row.event_type).filter(Boolean),
+    event_type_count: Number(eventTypeCount?.count || 0),
+    event_type_records: (eventTypeRecords || []).map((row) => ({
+      created_at: row.created_at || '', site_id: row.site_id || '', event_type: row.event_type || '',
+      question_id: row.question_id || '', part: row.part || '', section: row.section || '',
+      event_duration_ms: Number(row.event_duration_ms || 0), failure_stage: row.failure_stage || '',
+      user_agent: row.user_agent || '', network_type: row.network_type || '', phase: row.phase || '',
+      visitor_id: row.visitor_id || '', session_id: row.session_id || ''
+    })),
     sample_min_events: VISITOR_SAMPLE_MIN_EVENTS,
     contact_clicks: {
       total: Number(contactTotal?.count || 0),

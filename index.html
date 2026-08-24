@@ -340,6 +340,16 @@ td.num, th.num { text-align: right; }
 .order-card {
   max-height: none;
 }
+.event-type-card { max-height: none; }
+.event-type-filter { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.event-type-filter select { min-height: 32px; max-width: 220px; }
+.event-type-summary { margin: 6px 0 8px; }
+.event-type-count { color: var(--muted); font-size: 12px; }
+.event-type-count strong { color: var(--ink); font-size: 20px; }
+.event-type-records { overflow-x: auto; }
+.event-type-table { min-width: 620px; font-size: 11px; }
+.event-type-row { display: grid; grid-template-columns: 1.1fr 1.5fr 1fr 1.5fr .7fr; gap: 8px; padding: 6px 8px; border-top: 1px solid var(--line); }
+.event-type-head { font-weight: 700; color: var(--muted); border-top: 0; }
 .visitor-head {
   display: flex;
   align-items: center;
@@ -1200,6 +1210,8 @@ td.num, th.num { text-align: right; }
     flex-direction: column;
     align-items: stretch;
   }
+  .event-type-filter { justify-content: space-between; }
+  .event-type-filter select { flex: 1 1 auto; max-width: none; }
   .order-summary {
     grid-template-columns: 1fr;
   }
@@ -1415,6 +1427,19 @@ td.num, th.num { text-align: right; }
     <div class="site-overview" id="siteOverview"><div class="empty">等待访客数据</div></div>
     <div class="site-detail" id="siteDetail"></div>
   </details>
+
+  <section class="card event-type-card" id="eventTypeCard">
+    <div class="visitor-head">
+      <h2 style="position:static;margin:0;padding:0;border:0">埋点事件 <span class="sub" id="eventTypeUpdated"></span></h2>
+      <label class="event-type-filter">事件类型
+        <select id="eventTypeFilter" aria-label="埋点事件类型">
+          <option value="">全部事件</option>
+        </select>
+      </label>
+    </div>
+    <div class="event-type-summary" id="eventTypeSummary"><div class="empty">选择事件类型查看明细</div></div>
+    <div class="event-type-records" id="eventTypeRecords"></div>
+  </section>
 
   <details class="card inventory-card mobile-collapse" open>
     <summary class="mobile-card-title">内容库存</summary>
@@ -1880,6 +1905,26 @@ function syncRangeTabs() {
 function rangeLabel(days) {
   if (days === 1) return '今天';
   return days + '天';
+}
+
+function eventTypeRecordsHtml(records) {
+  if (!records || !records.length) return '<div class="empty">该事件类型暂无记录</div>';
+  return '<div class="event-type-table" role="table"><div class="event-type-row event-type-head"><span>时间</span><span>站点/题号</span><span>Part/Section</span><span>耗时/阶段</span><span>网络</span></div>' +
+    records.map((r) => '<div class="event-type-row"><span>' + escapeHtml(relativeTime(r.created_at)) + '</span><span>' + escapeHtml((r.site_id || '-') + (r.question_id ? ' · ' + r.question_id : '')) + '</span><span>' + escapeHtml((r.part || '-') + ' / ' + (r.section || '-')) + '</span><span>' + escapeHtml((r.event_duration_ms ? r.event_duration_ms + 'ms' : '-') + ' · ' + (r.failure_stage || '-')) + '</span><span title="' + escapeHtml(r.user_agent || '') + '">' + escapeHtml(r.network_type || '-') + '</span></div>').join('') + '</div>';
+}
+
+function renderEventTypeData(data) {
+  const selector = $('eventTypeFilter');
+  const current = data.event_type || selector.value || '';
+  const options = data.event_type_options || [];
+  selector.innerHTML = '<option value="">全部事件</option>' + options.map((value) => '<option value="' + escapeHtml(value) + '">' + escapeHtml(value) + '</option>').join('');
+  selector.value = current;
+  const count = Number(data.event_type_count || 0);
+  $('eventTypeSummary').innerHTML = current
+    ? '<div class="event-type-count"><strong>' + n(count) + '</strong> 条 · <code>' + escapeHtml(current) + '</code></div>'
+    : '<div class="event-type-count">请选择事件类型查看条数与明细</div>';
+  $('eventTypeRecords').innerHTML = current ? eventTypeRecordsHtml(data.event_type_records || []) : '';
+  $('eventTypeUpdated').textContent = current ? rangeLabel(data.days) + ' · 更新 ' + new Date(data.generated_at).toLocaleTimeString() : '';
 }
 
 function defaultOrderMonth() {
@@ -2421,7 +2466,10 @@ async function loadVisitors() {
   const key = localStorage.getItem('nice_dashboard_key') || '';
   visitorDays = visitorDaysFromControl();
   try {
-    const res = await fetch(VISITOR_API + '?days=' + encodeURIComponent(visitorDays), {
+    const query = new URLSearchParams({ days: String(visitorDays) });
+    const selectedEventType = $('eventTypeFilter')?.value || '';
+    if (selectedEventType) query.set('event_type', selectedEventType);
+    const res = await fetch(VISITOR_API + '?' + query.toString(), {
       credentials: 'include',
       headers: {
         accept: 'application/json',
@@ -2435,10 +2483,13 @@ async function loadVisitors() {
     $('siteOverview').innerHTML = siteOverviewHtml(sites);
     $('siteDetail').innerHTML = siteDetailsHtml(sites) +
       '<details class="visitor-flow"><summary>访客明细流水 ' + n((data.visitor_rows || []).length) + '</summary>' + visitorRowsHtml(data.visitor_rows || []) + '</details>';
+    renderEventTypeData(data);
   } catch (e) {
     $('visitorUpdated').textContent = '';
     $('siteOverview').innerHTML = '<div class="empty">访客数据读取失败：' + escapeHtml(e.message) + '</div>';
     $('siteDetail').innerHTML = '';
+    $('eventTypeSummary').innerHTML = '<div class="empty">埋点事件读取失败：' + escapeHtml(e.message) + '</div>';
+    $('eventTypeRecords').innerHTML = '';
   }
 }
 
@@ -2658,6 +2709,7 @@ $('sendGscWeekly').addEventListener('click', async () => {
   }
 });
 $('days').addEventListener('change', () => { syncRangeTabs(); load(); loadVisitors(); loadOrders(); });
+$('eventTypeFilter').addEventListener('change', () => { loadVisitors(); });
 $('visitorRangeTabs').addEventListener('click', (event) => {
   const button = event.target.closest('button[data-range]');
   if (!button) return;

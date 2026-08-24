@@ -7,6 +7,10 @@ stores them in Cloudflare D1, and serves dashboard summaries to `db.nice.okinawa
 
 1. Create a D1 database named `nice_analytics`.
 2. Run `schema.sql` in the D1 console.
+
+### EVENT-0824-07 telemetry migration
+
+Before deploying the Worker change, run `migrations/0003-visitor-error-telemetry.sql` against the target D1 database in a governed release. It renames the old table to a retained rollback copy, copies every existing row into the expanded table, and commits transactionally; the legacy copy is intentionally not dropped in this change. Verify row counts before/after, then deploy the Worker. The migration adds `mogi_audio_fail` plus controlled `error_*` event names and stores question, part, section, duration, failure stage, user-agent, network type, and phase fields.
 3. Deploy this worker as `nice-analytics`.
 4. Bind the D1 database to the worker with binding name `DB`.
 5. Add worker secrets named `DASHBOARD_KEY` and `RESEND_API_KEY`.

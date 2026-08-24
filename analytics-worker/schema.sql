@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS visitor_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   site_id TEXT NOT NULL,
-  event_type TEXT NOT NULL CHECK (event_type IN ('pageview', 'dwell', 'contact_click', 'section_view')),
+  event_type TEXT NOT NULL CHECK (event_type IN ('pageview', 'dwell', 'contact_click', 'section_view', 'mogi_audio_fail') OR event_type GLOB 'error_[a-z0-9_]*'),
   visitor_id TEXT NOT NULL,
   session_id TEXT NOT NULL,
   ts TEXT NOT NULL,
@@ -56,7 +56,15 @@ CREATE TABLE IF NOT EXISTS visitor_events (
   section_id TEXT,
   contact_channel TEXT,
   device_type TEXT,
-  viewport_width INTEGER
+  viewport_width INTEGER,
+  question_id TEXT,
+  part TEXT,
+  section TEXT,
+  event_duration_ms INTEGER,
+  failure_stage TEXT,
+  user_agent TEXT,
+  network_type TEXT,
+  phase TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_visitor_events_site_ts ON visitor_events(site_id, ts);
