@@ -351,6 +351,30 @@ td.num, th.num { text-align: right; }
 .visitor-head h2 {
   min-width: 0;
 }
+.module-range {
+  display: inline-block;
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: -9px -9px 6px;
+  padding: 8px 9px 5px;
+  background: var(--panel);
+  border-bottom: 1px solid #ece6da;
+}
+.section-head h2 {
+  position: static;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
 .days-control {
   display: none;
 }
@@ -398,6 +422,12 @@ td.num, th.num { text-align: right; }
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 4px;
+}
+.metrics-title {
+  grid-column: 1 / -1;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
 }
 .metric-item {
   min-width: 0;
@@ -1201,6 +1231,21 @@ td.num, th.num { text-align: right; }
     flex-direction: column;
     align-items: stretch;
   }
+  .section-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .module-range {
+    display: block;
+    margin: 2px 0 0;
+    line-height: 1.35;
+  }
+  .metrics-title {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
   .order-summary {
     grid-template-columns: 1fr;
   }
@@ -1367,7 +1412,7 @@ td.num, th.num { text-align: right; }
 
   <section class="card order-card">
     <div class="visitor-head">
-      <h2 style="position:static;margin:0;padding:0;border:0">订单来源 <span class="sub" id="orderUpdated"></span></h2>
+      <h2 style="position:static;margin:0;padding:0;border:0">订单来源 <span class="module-range" id="orderUpdated">读取中</span></h2>
       <div class="segmented" id="orderRangeTabs" aria-label="订单时间范围">
         <button type="button" data-range="today">今天</button>
         <button type="button" data-range="7">7天</button>
@@ -1394,6 +1439,7 @@ td.num, th.num { text-align: right; }
   </section>
 
   <section class="card metrics">
+    <div class="metrics-title">实时总览 <span class="module-range" id="metricsUpdated">实时</span></div>
     <div class="metric-item"><span>实时在线</span><strong id="online">-</strong></div>
     <div class="metric-item"><span>今日访问</span><strong id="todayViews">-</strong></div>
     <div class="metric-item"><span>区间访问</span><strong id="views">-</strong></div>
@@ -1405,7 +1451,7 @@ td.num, th.num { text-align: right; }
   <details class="card visitor-card mobile-collapse" open>
     <summary class="mobile-card-title">访客流水</summary>
     <div class="visitor-head">
-      <h2 style="position:static;margin:0;padding:0;border:0">站点总览 <span class="sub" id="visitorUpdated"></span></h2>
+      <h2 style="position:static;margin:0;padding:0;border:0">站点总览 <span class="module-range" id="visitorUpdated">近 7 天</span></h2>
       <div class="segmented" id="visitorRangeTabs" aria-label="访客时间范围">
         <button type="button" data-range="today">今天</button>
         <button type="button" data-range="7" class="active">7天</button>
@@ -1419,7 +1465,7 @@ td.num, th.num { text-align: right; }
 
   <details class="card inventory-card mobile-collapse" open>
     <summary class="mobile-card-title">内容库存</summary>
-    <h2>内容库存 <span class="sub" id="contentUpdated"></span></h2>
+    <h2>内容库存 <span class="module-range" id="contentUpdated">实时</span></h2>
     <div class="inventory-grid">
       <div class="inventory-row">
         <div class="inventory-title">BJT Pro</div>
@@ -1449,7 +1495,7 @@ td.num, th.num { text-align: right; }
     <summary class="mobile-card-title">系统健康</summary>
   <div class="control-grid">
     <section class="card control-card">
-      <h2>系统健康 <span class="sub" id="controlUpdated"></span></h2>
+      <h2>系统健康 <span class="module-range" id="controlUpdated">实时</span></h2>
       <div class="path-check-status" id="pathCheckStatus">
         <div class="path-check-main">上次巡检：读取中</div>
         <div class="path-check-meta">PASS - / FAIL -</div>
@@ -1474,7 +1520,7 @@ td.num, th.num { text-align: right; }
     </section>
 
     <section class="card control-card">
-      <h2>营收 / 会员</h2>
+      <h2>营收 / 会员 <span class="module-range" id="revenueUpdated">实时</span></h2>
       <table>
         <thead><tr><th>站点</th><th class="num">今日</th><th class="num">本月</th><th class="num">会员/用户</th><th>状态</th></tr></thead>
         <tbody id="revenueTable"><tr><td colspan="5" class="empty">等待营收会员数据</td></tr></tbody>
@@ -1484,7 +1530,15 @@ td.num, th.num { text-align: right; }
   </details>
 
   <section class="card">
-    <h2>站点总表</h2>
+    <div class="section-head">
+      <h2>站点总表 <span class="module-range" id="siteTableUpdated">近 7 天</span></h2>
+      <div class="segmented" id="siteTableRangeTabs" aria-label="站点总表时间范围">
+        <button type="button" data-range="today">今天</button>
+        <button type="button" data-range="7" class="active">7天</button>
+        <button type="button" data-range="30">30天</button>
+        <button type="button" data-range="180">180天</button>
+      </div>
+    </div>
     <table>
       <thead><tr><th>站点</th><th class="num">访问</th><th class="num">访客</th><th>主来源</th><th>语言</th><th class="num">联系</th><th class="num">停留</th></tr></thead>
       <tbody id="pageTable"></tbody>
@@ -1493,7 +1547,7 @@ td.num, th.num { text-align: right; }
 
   <details class="card mobile-collapse search-collapse" open>
     <summary class="mobile-card-title">搜索词</summary>
-    <h2>搜索词 <span class="sub" id="gscUpdated"></span></h2>
+    <h2>搜索词 <span class="module-range" id="gscUpdated">近 28 天</span></h2>
     <div class="gsc-tools">
       <select id="searchSourceFilter" aria-label="搜索来源">
         <option value="google" selected>Google</option>
@@ -1528,7 +1582,7 @@ td.num, th.num { text-align: right; }
   </details>
 
   <section class="card">
-    <h2>SNS 反馈</h2>
+    <h2>SNS 反馈 <span class="module-range" id="snsRangeUpdated">实时</span></h2>
     <table>
       <thead><tr><th>检查条数</th><th class="num">IG赞</th><th class="num">IG评论</th><th class="num">FB赞</th><th class="num">FB评论</th><th>DM状态</th><th>更新时间</th></tr></thead>
       <tbody><tr><td id="snsPosts">-</td><td class="num" id="snsIgLikes">-</td><td class="num" id="snsIgComments">-</td><td class="num" id="snsFbLikes">-</td><td class="num" id="snsFbComments">-</td><td id="snsDm">-</td><td id="snsUpdated">-</td></tr></tbody>
@@ -1556,6 +1610,9 @@ let selectedSite = '';
 let selectedPage = '';
 let selectedGscSite = '';
 let selectedSearchSource = 'google';
+let visitorRange = normalizeRangeValue(localStorage.getItem('nice_visitor_range') || '7');
+let siteTableRange = normalizeRangeValue(localStorage.getItem('nice_site_table_range') || '7');
+let orderRange = normalizeRangeValue(localStorage.getItem('nice_order_range') || '7');
 let visitorDays = 7;
 let orderMode = 'month';
 let lastOrderData = null;
@@ -1862,25 +1919,49 @@ function shortVisitor(id) {
 }
 
 function visitorDaysFromControl() {
-  const value = $('days').value;
+  return rangeValueToDays(visitorRange);
+}
+
+function siteTableDaysFromControl() {
+  return rangeValueToDays(siteTableRange);
+}
+
+function orderDaysFromControl() {
+  return rangeValueToDays(orderRange);
+}
+
+function rangeValueToDays(value) {
+  value = normalizeRangeValue(value);
   if (value === 'today') return 1;
   const days = Number(value || 7);
   return [1, 7, 30, 180].includes(days) ? days : 7;
 }
 
+function normalizeRangeValue(value) {
+  const text = String(value || '7');
+  return ['today', '7', '30', '180'].includes(text) ? text : '7';
+}
+
 function syncRangeTabs() {
-  const current = $('days').value || '7';
   document.querySelectorAll('#visitorRangeTabs button').forEach((button) => {
-    button.classList.toggle('active', button.dataset.range === current);
+    button.classList.toggle('active', button.dataset.range === visitorRange);
+  });
+  document.querySelectorAll('#siteTableRangeTabs button').forEach((button) => {
+    button.classList.toggle('active', button.dataset.range === siteTableRange);
   });
   document.querySelectorAll('#orderRangeTabs button').forEach((button) => {
-    button.classList.toggle('active', orderMode === 'days' && button.dataset.range === current);
+    button.classList.toggle('active', orderMode === 'days' && button.dataset.range === orderRange);
   });
 }
 
 function rangeLabel(days) {
   if (days === 1) return '今天';
-  return days + '天';
+  return '近 ' + days + ' 天';
+}
+
+function rangeQueryParams(rangeValue) {
+  const days = rangeValueToDays(rangeValue);
+  return rangeValue === 'today' ? { range: 'today', days: '1' } : { days: String(days) };
 }
 
 function defaultOrderMonth() {
@@ -2215,7 +2296,7 @@ function sumStats(...stats) {
 }
 
 function setContentOpenedTime() {
-  $('contentUpdated').textContent = '更新 ' + new Date().toLocaleString();
+  $('contentUpdated').textContent = '实时 · 更新 ' + new Date().toLocaleTimeString();
 }
 
 async function loadContentStats() {
@@ -2240,7 +2321,7 @@ async function loadContentStats() {
     statCell('progTotal', pr.total || sumStats(pr.en, pr.jp, pr.cn));
     setContentOpenedTime();
   } catch (e) {
-    $('contentUpdated').textContent = '内容库存读取失败：' + e.message;
+    $('contentUpdated').textContent = '实时 · 读取失败';
   }
 }
 
@@ -2260,6 +2341,7 @@ async function loadSnsMetrics() {
     $('snsUpdated').textContent = data.updateMode === 'manual'
       ? '手动 ' + (data.lastManualUpdate ? new Date(data.lastManualUpdate).toLocaleString() : '-')
       : (data.generatedAt ? new Date(data.generatedAt).toLocaleString() : '-');
+    $('snsRangeUpdated').textContent = '实时 · 更新 ' + (data.generatedAt ? new Date(data.generatedAt).toLocaleTimeString() : new Date().toLocaleTimeString());
     renderRows('snsTable', (data.topPosts || []).slice(0, 10), (r) => row([
       { html: n(r.rank), num: true },
       escapeHtml(r.theme || '-'),
@@ -2273,6 +2355,7 @@ async function loadSnsMetrics() {
       ].filter(Boolean).join(' ') || '-' }
     ]));
   } catch (e) {
+    $('snsRangeUpdated').textContent = '实时 · 读取失败';
     $('snsTable').innerHTML = '<tr><td colspan="7" class="empty">SNS统计读取失败：' + escapeHtml(e.message) + '</td></tr>';
   }
 }
@@ -2290,7 +2373,9 @@ async function loadControl() {
     const data = await readJsonResponse(res);
     if (!res.ok || !data.ok) throw new Error(data.error || 'control API 请求失败');
 
-    $('controlUpdated').textContent = data.generated_at ? '更新 ' + new Date(data.generated_at).toLocaleTimeString() : '';
+    const controlTime = data.generated_at ? new Date(data.generated_at).toLocaleTimeString() : new Date().toLocaleTimeString();
+    $('controlUpdated').textContent = '实时 · 更新 ' + controlTime;
+    $('revenueUpdated').textContent = '实时 · 更新 ' + controlTime;
     const backups = ((data.backups || {}).items || []);
     renderRows('backupTable', backups, (r) => row([
       escapeHtml(r.label || r.key || '-'),
@@ -2325,6 +2410,8 @@ async function loadControl() {
       { html: statusDot(r.ok, r.manual) + escapeHtml(r.manual ? (r.note || '手动') : (r.note || '自动')) }
     ]));
   } catch (e) {
+    $('controlUpdated').textContent = '实时 · 读取失败';
+    $('revenueUpdated').textContent = '实时 · 读取失败';
     $('backupTable').innerHTML = '<tr><td colspan="5" class="empty">系统健康读取失败：' + escapeHtml(e.message) + '</td></tr>';
     $('deployTable').innerHTML = '<tr><td colspan="4" class="empty">部署状态读取失败</td></tr>';
     $('probeTable').innerHTML = '<tr><td colspan="4" class="empty">探针状态读取失败</td></tr>';
@@ -2437,7 +2524,7 @@ async function loadVisitors() {
     $('siteDetail').innerHTML = siteDetailsHtml(sites) +
       '<details class="visitor-flow"><summary>访客明细流水 ' + n((data.visitor_rows || []).length) + '</summary>' + visitorRowsHtml(data.visitor_rows || []) + '</details>';
   } catch (e) {
-    $('visitorUpdated').textContent = '';
+    $('visitorUpdated').textContent = rangeLabel(visitorDays) + ' · 读取失败';
     $('siteOverview').innerHTML = '<div class="empty">访客数据读取失败：' + escapeHtml(e.message) + '</div>';
     $('siteDetail').innerHTML = '';
   }
@@ -2447,7 +2534,7 @@ let orderRetryTimer = null;
 
 async function loadOrders() {
   const key = localStorage.getItem('nice_dashboard_key') || '';
-  const days = visitorDaysFromControl();
+  const days = orderDaysFromControl();
   const query = new URLSearchParams();
   if (orderMode === 'month') {
     query.set('month', orderMonthValue());
@@ -2507,7 +2594,7 @@ async function load() {
   const gscSite = $('gscSiteFilter').value || '';
   const searchSource = $('searchSourceFilter').value || 'google';
   const path = $('pageFilter').value || '';
-  const qs = new URLSearchParams(range === 'today' ? { range: 'today', days: '1' } : { days: range });
+  const qs = new URLSearchParams(rangeQueryParams(range));
   if (site) qs.set('site', site);
   if (gscSite) qs.set('gsc_site', gscSite);
   qs.set('search_source', searchSource);
@@ -2532,11 +2619,60 @@ async function load() {
     $('visitors').textContent = n(totals.visitors);
     $('duration').textContent = seconds(totals.avg_duration_ms);
     $('scroll').textContent = totals.avg_scroll ? Math.round(totals.avg_scroll) + '%' : '-';
+    $('metricsUpdated').textContent = rangeLabel(rangeValueToDays(range)) + ' · 更新 ' + new Date(data.generated_at).toLocaleTimeString();
     $('status').textContent = (site ? site + ' · ' : '') + (path ? path + ' · ' : '') + '已更新 ' + new Date(data.generated_at).toLocaleTimeString();
     updateKeyStatus(true);
     updateSiteOptions(data.sites);
     updatePageOptions(data.pages);
 
+    const searchConsole = data.search_console || {};
+    if (!searchConsole.ok) {
+      const gscEmptyText = searchSource === 'bing' ? 'Bing 收录中' : (searchConsole.configured === false ? '未接入 Search Console' : 'Search Console 尚未配置或还没有同步数据');
+      $('queryTable').innerHTML = '<tr><td colspan="7" class="empty">' + escapeHtml(gscEmptyText) + '</td></tr>';
+      $('gscNoClickTable').innerHTML = '<tr><td colspan="5" class="empty">' + escapeHtml(gscEmptyText) + '</td></tr>';
+      $('gscStrikingTable').innerHTML = '<tr><td colspan="5" class="empty">' + escapeHtml(gscEmptyText) + '</td></tr>';
+      $('gscUpdated').textContent = '近 28 天 · ' + (searchSource === 'bing' ? 'Bing 收录中' : '等待同步');
+    } else {
+      updateGscSiteOptions(searchConsole.sites);
+      const importedAt = (searchConsole.totals || {}).imported_at;
+      const sourceLabel = searchSource === 'bing' ? 'Bing' : (searchSource === 'all' ? '合计' : 'Google');
+      $('gscUpdated').textContent = '近 28 天 · ' + sourceLabel + ' · ' + (gscSite ? gscSite + ' · ' : '全部站点 · ') + (importedAt ? '同步 ' + timeText(importedAt) : '等待同步');
+      const emptyText = searchSource === 'bing' ? 'Bing 收录中' : '暂无搜索词数据';
+      renderSearchConsoleRows('queryTable', searchConsole.queries, false, emptyText);
+      renderSearchConsoleRows('gscNoClickTable', searchConsole.no_click, true, emptyText);
+      renderSearchConsoleRows('gscStrikingTable', searchConsole.striking_distance, true, emptyText);
+    }
+  } catch (e) {
+    $('metricsUpdated').textContent = rangeLabel(rangeValueToDays(range)) + ' · 读取失败';
+    $('gscUpdated').textContent = '近 28 天 · 读取失败';
+    $('status').textContent = e.message === 'unauthorized' ? '需要 Dashboard key' : '连接失败';
+    if (e.message === 'unauthorized') updateKeyStatus(false);
+    $('error').textContent = e.message === 'unauthorized'
+      ? '手机浏览器还没有保存 Dashboard key，或保存的是旧 key。请在上方输入最新 key 后点保存。'
+      : e.message + '。确认 Worker 已部署，DASHBOARD_KEY 正确。';
+    $('error').style.display = 'block';
+  }
+}
+
+async function loadSiteTable() {
+  const key = localStorage.getItem('nice_dashboard_key') || '';
+  const days = siteTableDaysFromControl();
+  const site = $('siteFilter').value || '';
+  const path = $('pageFilter').value || '';
+  const qs = new URLSearchParams(rangeQueryParams(siteTableRange));
+  if (site) qs.set('site', site);
+  if (path) qs.set('path', path);
+  try {
+    const res = await fetch(API + '?' + qs.toString(), {
+      credentials: 'include',
+      headers: {
+        accept: 'application/json',
+        ...(key ? { 'x-dashboard-key': key } : {})
+      }
+    });
+    const data = await readJsonResponse(res);
+    if (!res.ok || !data.ok) throw new Error(data.error || '站点总表 API 请求失败');
+    $('siteTableUpdated').textContent = rangeLabel(days) + ' · 更新 ' + new Date(data.generated_at).toLocaleTimeString();
     renderRows('pageTable', aggregateBySite(data.page_rows), (r) => row([
       '<button type="button" data-site="' + escapeHtml(r.site || '') + '">' + escapeHtml(r.site || '-') + '</button>',
       { html: n(r.views), num: true },
@@ -2546,30 +2682,9 @@ async function load() {
       { html: n(r.contact_clicks), num: true },
       { html: seconds(r.avg_duration_ms), num: true }
     ]));
-    const searchConsole = data.search_console || {};
-    if (!searchConsole.ok) {
-      const gscEmptyText = searchSource === 'bing' ? 'Bing 收录中' : (searchConsole.configured === false ? '未接入 Search Console' : 'Search Console 尚未配置或还没有同步数据');
-      $('queryTable').innerHTML = '<tr><td colspan="7" class="empty">' + escapeHtml(gscEmptyText) + '</td></tr>';
-      $('gscNoClickTable').innerHTML = '<tr><td colspan="5" class="empty">' + escapeHtml(gscEmptyText) + '</td></tr>';
-      $('gscStrikingTable').innerHTML = '<tr><td colspan="5" class="empty">' + escapeHtml(gscEmptyText) + '</td></tr>';
-      $('gscUpdated').textContent = '';
-    } else {
-      updateGscSiteOptions(searchConsole.sites);
-      const importedAt = (searchConsole.totals || {}).imported_at;
-      const sourceLabel = searchSource === 'bing' ? 'Bing' : (searchSource === 'all' ? '合计' : 'Google');
-      $('gscUpdated').textContent = sourceLabel + ' · ' + (gscSite ? gscSite + ' · ' : '全部站点 · ') + (importedAt ? '同步 ' + timeText(importedAt) : '等待同步');
-      const emptyText = searchSource === 'bing' ? 'Bing 收录中' : '暂无搜索词数据';
-      renderSearchConsoleRows('queryTable', searchConsole.queries, false, emptyText);
-      renderSearchConsoleRows('gscNoClickTable', searchConsole.no_click, true, emptyText);
-      renderSearchConsoleRows('gscStrikingTable', searchConsole.striking_distance, true, emptyText);
-    }
   } catch (e) {
-    $('status').textContent = e.message === 'unauthorized' ? '需要 Dashboard key' : '连接失败';
-    if (e.message === 'unauthorized') updateKeyStatus(false);
-    $('error').textContent = e.message === 'unauthorized'
-      ? '手机浏览器还没有保存 Dashboard key，或保存的是旧 key。请在上方输入最新 key 后点保存。'
-      : e.message + '。确认 Worker 已部署，DASHBOARD_KEY 正确。';
-    $('error').style.display = 'block';
+    $('siteTableUpdated').textContent = rangeLabel(days) + ' · 读取失败';
+    $('pageTable').innerHTML = '<tr><td colspan="7" class="empty">站点总表读取失败：' + escapeHtml(e.message) + '</td></tr>';
   }
 }
 
@@ -2600,12 +2715,13 @@ $('saveKey').addEventListener('click', () => {
   localStorage.setItem('nice_dashboard_key', $('key').value.trim());
   updateKeyStatus(true);
   load();
+  loadSiteTable();
   loadControl();
   loadPathCheckStatus();
   loadVisitors();
   loadOrders();
 });
-$('refresh').addEventListener('click', () => { load(); loadControl(); loadVisitors(); loadOrders(); loadSnsMetrics(); loadContentStats(); });
+$('refresh').addEventListener('click', () => { load(); loadSiteTable(); loadControl(); loadVisitors(); loadOrders(); loadSnsMetrics(); loadContentStats(); });
 $('syncGsc').addEventListener('click', async () => {
   $('error').style.display = 'none';
   $('status').textContent = '同步搜索词中';
@@ -2658,21 +2774,29 @@ $('sendGscWeekly').addEventListener('click', async () => {
     $('error').style.display = 'block';
   }
 });
-$('days').addEventListener('change', () => { syncRangeTabs(); load(); loadVisitors(); loadOrders(); });
+$('days').addEventListener('change', () => { syncRangeTabs(); load(); });
 $('visitorRangeTabs').addEventListener('click', (event) => {
   const button = event.target.closest('button[data-range]');
   if (!button) return;
-  $('days').value = button.dataset.range || '7';
+  visitorRange = normalizeRangeValue(button.dataset.range || '7');
+  localStorage.setItem('nice_visitor_range', visitorRange);
   syncRangeTabs();
-  load();
   loadVisitors();
-  loadOrders();
+});
+$('siteTableRangeTabs').addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-range]');
+  if (!button) return;
+  siteTableRange = normalizeRangeValue(button.dataset.range || '7');
+  localStorage.setItem('nice_site_table_range', siteTableRange);
+  syncRangeTabs();
+  loadSiteTable();
 });
 $('orderRangeTabs').addEventListener('click', (event) => {
   const button = event.target.closest('button[data-range]');
   if (!button) return;
   orderMode = 'days';
-  $('days').value = button.dataset.range || '7';
+  orderRange = normalizeRangeValue(button.dataset.range || '7');
+  localStorage.setItem('nice_order_range', orderRange);
   syncRangeTabs();
   loadOrders();
 });
@@ -2687,6 +2811,7 @@ $('siteFilter').addEventListener('change', () => {
   $('pageFilter').value = '';
   selectedPage = '';
   load();
+  loadSiteTable();
 });
 $('gscSiteFilter').addEventListener('change', () => {
   selectedGscSite = $('gscSiteFilter').value;
@@ -2699,6 +2824,7 @@ $('searchSourceFilter').addEventListener('change', () => {
 $('pageFilter').addEventListener('change', () => {
   selectedPage = $('pageFilter').value;
   load();
+  loadSiteTable();
 });
 $('pageTable').addEventListener('click', (event) => {
   const siteButton = event.target.closest('button[data-site]');
@@ -2708,6 +2834,7 @@ $('pageTable').addEventListener('click', (event) => {
   $('pageFilter').value = '';
   selectedPage = '';
   load();
+  loadSiteTable();
 });
 $('sendTestAlert').addEventListener('click', sendTestAlert);
 $('key').value = localStorage.getItem('nice_dashboard_key') || '';
@@ -2718,13 +2845,14 @@ renderTopline();
 syncMobileCollapses();
 window.addEventListener('resize', syncMobileCollapses);
 load();
+loadSiteTable();
 loadControl();
 loadPathCheckStatus();
 loadVisitors();
 loadOrders();
 loadSnsMetrics();
 loadContentStats();
-setInterval(() => { load(); loadControl(); loadPathCheckStatus(); loadVisitors(); loadOrders(); loadSnsMetrics(); loadContentStats(); }, 30000);
+setInterval(() => { load(); loadSiteTable(); loadControl(); loadPathCheckStatus(); loadVisitors(); loadOrders(); loadSnsMetrics(); loadContentStats(); }, 30000);
 </script>
 </body>
 </html>
