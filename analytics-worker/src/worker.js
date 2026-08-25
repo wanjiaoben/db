@@ -627,7 +627,8 @@ async function visitorDashboard(request, env) {
     uiLangs,
     utmSources,
     rawRecords,
-    visitorRows
+    visitorRows,
+    contactVisitors
   ] = await Promise.all([
     all(env.DB, `
       SELECT
@@ -751,6 +752,16 @@ async function visitorDashboard(request, env) {
           AND LOWER(REPLACE(referrer_host, 'www.', '')) <> 'direct'
           AND LOWER(REPLACE(referrer_host, 'www.', '')) <> 'nice.okinawa'
           AND LOWER(REPLACE(referrer_host, 'www.', '')) NOT LIKE '%.nice.okinawa'
+      ),
+      utm_touch AS (
+        SELECT
+          site_id,
+          visitor_id,
+          utm_source,
+          ROW_NUMBER() OVER (PARTITION BY site_id, visitor_id ORDER BY created_at ASC, id ASC) AS rn
+        FROM base
+        WHERE utm_source IS NOT NULL
+          AND utm_source <> ''
       )
       SELECT
         g.site_id,
@@ -767,7 +778,7 @@ async function visitorDashboard(request, env) {
         g.contact_clicks,
         COALESCE(g.contact_channels, '') AS contact_channels,
         COALESCE(g.section_ids, '') AS section_ids,
-        COALESCE(e.referrer_host, 'direct') AS referrer_host,
+        COALESCE(e.referrer_host, u.utm_source, 'direct') AS referrer_host,
         COALESCE(l.country, '') AS country,
         COALESCE(l.city, '') AS city,
         COALESCE(l.timezone, '') AS timezone,
@@ -781,8 +792,92 @@ async function visitorDashboard(request, env) {
       LEFT JOIN latest l ON l.site_id = g.site_id AND l.visitor_id = g.visitor_id AND l.rn = 1
       LEFT JOIN first_touch f ON f.site_id = g.site_id AND f.visitor_id = g.visitor_id AND f.rn = 1
       LEFT JOIN external_touch e ON e.site_id = g.site_id AND e.visitor_id = g.visitor_id AND e.rn = 1
+      LEFT JOIN utm_touch u ON u.site_id = g.site_id AND u.visitor_id = g.visitor_id AND u.rn = 1
       ORDER BY g.last_seen_at DESC
       LIMIT 160
+    `, [since]),
+    all(env.DB, `
+      WITH base AS (
+        SELECT *
+        FROM visitor_events
+        WHERE created_at >= ?
+      ),
+      grouped AS (
+        SELECT
+          site_id,
+          visitor_id,
+          MAX(created_at) AS last_contact_at,
+          COUNT(CASE WHEN event_type='contact_click' THEN 1 END) AS contact_clicks,
+          GROUP_CONCAT(DISTINCT CASE WHEN event_type='contact_click' AND contact_channel <> '' THEN contact_channel END) AS contact_channels
+        FROM base
+        GROUP BY site_id, visitor_id
+        HAVING contact_clicks > 0
+      ),
+      latest_contact AS (
+        SELECT
+          site_id,
+          visitor_id,
+          country,
+          city,
+          timezone,
+          ui_lang,
+          browser_lang,
+          ROW_NUMBER() OVER (PARTITION BY site_id, visitor_id ORDER BY created_at DESC, id DESC) AS rn
+        FROM base
+        WHERE event_type='contact_click'
+      ),
+      first_touch AS (
+        SELECT
+          site_id,
+          visitor_id,
+          landing_path,
+          utm_source,
+          ROW_NUMBER() OVER (PARTITION BY site_id, visitor_id ORDER BY created_at ASC, id ASC) AS rn
+        FROM base
+      ),
+      external_touch AS (
+        SELECT
+          site_id,
+          visitor_id,
+          LOWER(REPLACE(referrer_host, 'www.', '')) AS referrer_host,
+          ROW_NUMBER() OVER (PARTITION BY site_id, visitor_id ORDER BY created_at ASC, id ASC) AS rn
+        FROM base
+        WHERE referrer_host IS NOT NULL
+          AND referrer_host <> ''
+          AND LOWER(REPLACE(referrer_host, 'www.', '')) <> 'direct'
+          AND LOWER(REPLACE(referrer_host, 'www.', '')) <> 'nice.okinawa'
+          AND LOWER(REPLACE(referrer_host, 'www.', '')) NOT LIKE '%.nice.okinawa'
+      ),
+      utm_touch AS (
+        SELECT
+          site_id,
+          visitor_id,
+          utm_source,
+          ROW_NUMBER() OVER (PARTITION BY site_id, visitor_id ORDER BY created_at ASC, id ASC) AS rn
+        FROM base
+        WHERE utm_source IS NOT NULL
+          AND utm_source <> ''
+      )
+      SELECT
+        g.site_id,
+        g.visitor_id,
+        g.last_contact_at,
+        g.contact_clicks,
+        COALESCE(g.contact_channels, '') AS contact_channels,
+        COALESCE(c.country, '') AS country,
+        COALESCE(c.city, '') AS city,
+        COALESCE(c.timezone, '') AS timezone,
+        COALESCE(c.ui_lang, '') AS ui_lang,
+        COALESCE(c.browser_lang, '') AS browser_lang,
+        COALESCE(e.referrer_host, u.utm_source, 'direct') AS source,
+        COALESCE(NULLIF(f.landing_path, ''), '/') AS landing_path
+      FROM grouped g
+      LEFT JOIN latest_contact c ON c.site_id = g.site_id AND c.visitor_id = g.visitor_id AND c.rn = 1
+      LEFT JOIN first_touch f ON f.site_id = g.site_id AND f.visitor_id = g.visitor_id AND f.rn = 1
+      LEFT JOIN external_touch e ON e.site_id = g.site_id AND e.visitor_id = g.visitor_id AND e.rn = 1
+      LEFT JOIN utm_touch u ON u.site_id = g.site_id AND u.visitor_id = g.visitor_id AND u.rn = 1
+      ORDER BY g.last_contact_at DESC
+      LIMIT 80
     `, [since])
   ]);
 
@@ -865,6 +960,20 @@ async function visitorDashboard(request, env) {
       utm_campaign: row.utm_campaign || '',
       is_bot_like: isBotLikeVisitor(row),
       bot_reasons: botLikeReasons(row)
+    })),
+    contact_visitors: contactVisitors.map((row) => ({
+      site_id: row.site_id || '',
+      visitor_id: row.visitor_id || '',
+      last_contact_at: row.last_contact_at || '',
+      contact_clicks: Number(row.contact_clicks || 0),
+      contact_channels: splitCsv(row.contact_channels),
+      country: row.country || '',
+      city: row.city || '',
+      timezone: row.timezone || '',
+      ui_lang: row.ui_lang || '',
+      browser_lang: row.browser_lang || '',
+      source: row.source || 'direct',
+      landing_path: row.landing_path || '/'
     }))
   }, request);
 }
@@ -883,6 +992,7 @@ async function visitorSourceRank(db, since) {
       SELECT
         site_id,
         visitor_id,
+        utm_source,
         LOWER(REPLACE(COALESCE(referrer_host, ''), 'www.', '')) AS referrer_host,
         created_at,
         id
@@ -901,15 +1011,31 @@ async function visitorSourceRank(db, since) {
         AND referrer_host <> 'nice.okinawa'
         AND referrer_host NOT LIKE '%.nice.okinawa'
     ),
+    utm_touch AS (
+      SELECT
+        site_id,
+        visitor_id,
+        utm_source,
+        ROW_NUMBER() OVER (PARTITION BY site_id, visitor_id ORDER BY created_at ASC, id ASC) AS rn
+      FROM base
+      WHERE utm_source IS NOT NULL
+        AND utm_source <> ''
+    ),
     visitor_sources AS (
       SELECT
         site_id,
         visitor_id,
-        COALESCE(MAX(CASE WHEN rn = 1 THEN referrer_host END), 'direct') AS value
+        COALESCE(
+          MAX(CASE WHEN source_type = 'referrer' AND rn = 1 THEN value END),
+          MAX(CASE WHEN source_type = 'utm' AND rn = 1 THEN value END),
+          'direct'
+        ) AS value
       FROM (
-        SELECT DISTINCT site_id, visitor_id, NULL AS referrer_host, NULL AS rn FROM base
+        SELECT DISTINCT site_id, visitor_id, NULL AS source_type, NULL AS value, NULL AS rn FROM base
         UNION ALL
-        SELECT site_id, visitor_id, referrer_host, rn FROM external_touch
+        SELECT site_id, visitor_id, 'referrer' AS source_type, referrer_host AS value, rn FROM external_touch
+        UNION ALL
+        SELECT site_id, visitor_id, 'utm' AS source_type, utm_source AS value, rn FROM utm_touch
       )
       GROUP BY site_id, visitor_id
     ),
@@ -1132,12 +1258,29 @@ async function summary(request, env) {
       WHERE created_at >= ?${filterClause} AND event_type='pageview'
       GROUP BY site_id, ${pathExpr}
     ),
-    source_rank AS (
-      SELECT site_id AS site, ${pathExpr} AS path, COALESCE(NULLIF(referrer_host, ''), 'direct') AS source, COUNT(*) AS views,
-        ROW_NUMBER() OVER (PARTITION BY site_id, ${pathExpr} ORDER BY COUNT(*) DESC) AS rn
+    page_source_events AS (
+      SELECT
+        site_id AS site,
+        ${pathExpr} AS path,
+        CASE
+          WHEN referrer_host IS NOT NULL
+            AND referrer_host <> ''
+            AND LOWER(REPLACE(referrer_host, 'www.', '')) <> 'direct'
+            AND LOWER(REPLACE(referrer_host, 'www.', '')) <> 'nice.okinawa'
+            AND LOWER(REPLACE(referrer_host, 'www.', '')) NOT LIKE '%.nice.okinawa'
+            THEN LOWER(REPLACE(referrer_host, 'www.', ''))
+          WHEN utm_source IS NOT NULL AND utm_source <> ''
+            THEN utm_source
+          ELSE 'direct'
+        END AS source
       FROM visitor_events
       WHERE created_at >= ?${filterClause} AND event_type='pageview'
-      GROUP BY site_id, ${pathExpr}, COALESCE(NULLIF(referrer_host, ''), 'direct')
+    ),
+    source_rank AS (
+      SELECT site, path, source, COUNT(*) AS views,
+        ROW_NUMBER() OVER (PARTITION BY site, path ORDER BY COUNT(*) DESC, source) AS rn
+      FROM page_source_events
+      GROUP BY site, path, source
     ),
     lang_rank AS (
       SELECT site_id AS site, ${pathExpr} AS path, COALESCE(NULLIF(ui_lang, ''), 'unknown') AS lang, COUNT(*) AS views,

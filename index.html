@@ -739,6 +739,40 @@ td.num, th.num { text-align: right; }
   color: var(--green);
   font-weight: 800;
 }
+.contact-visitor-table {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+.contact-visitor-head,
+.contact-visitor-row {
+  display: grid;
+  grid-template-columns: 54px minmax(96px, 1.1fr) minmax(64px, 0.9fr) minmax(86px, 1fr);
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.contact-visitor-head {
+  color: var(--muted);
+  font-size: 10px;
+  padding: 0 5px 1px;
+}
+.contact-visitor-row {
+  min-height: 26px;
+  border: 1px solid #ece6da;
+  border-radius: 4px;
+  background: #fffdfa;
+  padding: 0 5px;
+}
+.contact-visitor-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
 .visitor-detail {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1523,6 +1557,16 @@ td.num, th.num { text-align: right; }
   .visitor-cell {
     font-size: 10px;
   }
+  .contact-visitor-head,
+  .contact-visitor-row {
+    grid-template-columns: 42px minmax(82px, 1.05fr) minmax(48px, 0.75fr) minmax(68px, 0.9fr);
+    gap: 3px;
+    padding-left: 3px;
+    padding-right: 3px;
+  }
+  .contact-visitor-row span {
+    font-size: 10px;
+  }
   .site-badge {
     height: 15px;
     padding: 0 3px;
@@ -1635,6 +1679,13 @@ td.num, th.num { text-align: right; }
       <span class="sub" id="allOrderPageInfo">-</span>
       <button type="button" id="allOrderNext" class="secondary">下一页</button>
     </div>
+  </section>
+
+  <section class="card visitor-card">
+    <div class="visitor-head">
+      <h2 style="position:static;margin:0;padding:0;border:0">联络客人 <span class="module-range" id="contactVisitorsUpdated">近 7 天</span></h2>
+    </div>
+    <div id="contactVisitors"><div class="empty">等待联络客人数据</div></div>
   </section>
 
   <section class="card metrics">
@@ -2279,6 +2330,27 @@ function visitorRowsHtml(rows) {
   '</div>';
 }
 
+function contactVisitorRowHtml(rowData) {
+  const fullTime = timeText(rowData.last_contact_at);
+  const siteGeo = [rowData.site_id || '-', geoLabel(rowData)].filter(Boolean).join(' · ');
+  const source = rowData.source || rowData.referrer_host || 'direct';
+  const landing = rowData.landing_path || '/';
+  return '<div class="contact-visitor-row" title="' + escapeHtml(fullTime) + '">' +
+    '<span title="' + escapeHtml(fullTime) + '">' + escapeHtml(relativeTime(rowData.last_contact_at)) + '</span>' +
+    '<span title="' + escapeHtml(siteGeo) + '">' + escapeHtml(siteGeo) + '</span>' +
+    '<span title="' + escapeHtml(source) + '">' + escapeHtml(sourceLabel(source)) + '</span>' +
+    '<span title="' + escapeHtml(landing) + '">' + escapeHtml(landing) + '</span>' +
+  '</div>';
+}
+
+function contactVisitorsHtml(rows) {
+  if (!rows || !rows.length) return '<div class="empty">当前窗口暂无联络客人</div>';
+  return '<div class="contact-visitor-table">' +
+    '<div class="contact-visitor-head"><span>时间</span><span>站点·国家·城市</span><span>来源</span><span>落地页</span></div>' +
+    rows.map(contactVisitorRowHtml).join('') +
+  '</div>';
+}
+
 function moneyText(order) {
   const amount = order.amount == null || order.amount === '' ? '' : String(order.amount);
   const currency = order.currency || '';
@@ -2816,12 +2888,16 @@ async function loadVisitors() {
     const data = await readJsonResponse(res);
     if (!res.ok || !data.ok) throw new Error(data.error || 'visitors API 请求失败');
     $('visitorUpdated').textContent = rangeLabel(data.days) + ' · 更新 ' + new Date(data.generated_at).toLocaleTimeString();
+    $('contactVisitorsUpdated').textContent = rangeLabel(data.days) + ' · 更新 ' + new Date(data.generated_at).toLocaleTimeString();
+    $('contactVisitors').innerHTML = contactVisitorsHtml(data.contact_visitors || []);
     const sites = data.sites || [];
     $('siteOverview').innerHTML = siteOverviewHtml(sites);
     $('siteDetail').innerHTML = siteDetailsHtml(sites) +
       '<details class="visitor-flow"><summary>访客明细流水 ' + n((data.visitor_rows || []).length) + '</summary>' + visitorRowsHtml(data.visitor_rows || []) + '</details>';
   } catch (e) {
     $('visitorUpdated').textContent = rangeLabel(visitorDays) + ' · 读取失败';
+    $('contactVisitorsUpdated').textContent = rangeLabel(visitorDays) + ' · 读取失败';
+    $('contactVisitors').innerHTML = '<div class="empty">联络客人读取失败：' + escapeHtml(e.message) + '</div>';
     $('siteOverview').innerHTML = '<div class="empty">访客数据读取失败：' + escapeHtml(e.message) + '</div>';
     $('siteDetail').innerHTML = '';
   }
