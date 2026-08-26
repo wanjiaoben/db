@@ -86,7 +86,9 @@ test('visitor dashboard returns ranged aggregate with sample protection', async 
         ui_lang: 'ja',
         browser_lang: 'ja',
         source: 'google.com',
-        landing_path: '/'
+        landing_path: '/',
+        page_paths: '/fishing-seasons/||/||/en/guides/where-to-stay-fishing/',
+        section_ids: 'hero,contact'
       }
     ],
     'GROUP_CONCAT(DISTINCT CASE WHEN event_type': [
@@ -146,6 +148,8 @@ test('visitor dashboard returns ranged aggregate with sample protection', async 
   assert.deepEqual(data.visitor_rows[0].section_ids, ['hero', 'price']);
   assert.equal(data.contact_visitors[0].source, 'google.com');
   assert.equal(data.contact_visitors[0].landing_path, '/');
+  assert.deepEqual(data.contact_visitors[0].page_paths, ['/fishing-seasons/', '/', '/en/guides/where-to-stay-fishing/']);
+  assert.deepEqual(data.contact_visitors[0].section_ids, ['hero', 'contact']);
   assert.match(db.calls[0].params[0], /^\d{4}-\d{2}-\d{2}T/);
 });
 
@@ -165,6 +169,13 @@ test('visitor dashboard accepts 1/7/30/180 day ranges and keeps legacy fallback'
     headers: { 'x-dashboard-key': 'test-token' }
   }), { DASHBOARD_KEY: 'test-token', DB: fakeDb(emptyFixtures) }, {});
   assert.equal((await fallback.json()).days, 28);
+
+  const month = await worker.fetch(new Request('https://analytics.nice.okinawa/visitors?range=month', {
+    headers: { 'x-dashboard-key': 'test-token' }
+  }), { DASHBOARD_KEY: 'test-token', DB: fakeDb(emptyFixtures) }, {});
+  const monthJson = await month.json();
+  assert.equal(monthJson.days, 28);
+  assert.equal(monthJson.range, 'month');
 });
 
 test('summary dashboard reads visitor_events for first-screen counters', async () => {

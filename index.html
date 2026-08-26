@@ -396,6 +396,147 @@ td.num, th.num { text-align: right; }
   background: var(--ink);
   color: white;
 }
+.boss-top-controls {
+  flex: 1 1 auto;
+}
+.boss-range-tabs,
+.business-mode-tabs {
+  width: min(100%, 330px);
+}
+.boss-range-tabs button,
+.business-mode-tabs button {
+  flex: 1 1 0;
+  min-width: 0;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.business-home {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.boss-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.boss-metric,
+.decision-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+.boss-metric {
+  padding: 8px;
+}
+.boss-metric span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.boss-metric strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 24px;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.decision-card {
+  padding: 9px;
+  overflow: hidden;
+}
+.decision-title {
+  margin-bottom: 7px;
+  font-size: 13px;
+  font-weight: 900;
+}
+.latest-card {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.latest-line {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 7px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.25;
+}
+.latest-line span {
+  color: var(--muted);
+  font-weight: 700;
+}
+.latest-line b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.latest-path {
+  color: var(--ink);
+}
+.focus-list {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.focus-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  font-size: 12px;
+}
+.focus-list span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.focus-list b {
+  white-space: nowrap;
+}
+.full-data-shell {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+}
+.full-data-shell > summary {
+  position: sticky;
+  top: 91px;
+  z-index: 7;
+  margin: 0 0 8px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--ink);
+  color: white;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.full-data-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  min-width: 0;
+}
+.full-data-controls select,
+.full-data-controls input {
+  min-width: 0;
+}
 .gsc-tools {
   display: flex;
   flex-wrap: wrap;
@@ -1316,6 +1457,46 @@ td.num, th.num { text-align: right; }
   .topline-cell {
     font-size: 11px;
   }
+  h1 {
+    font-size: 18px;
+  }
+  .boss-top-controls {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .boss-range-tabs,
+  .business-mode-tabs {
+    width: 100%;
+  }
+  .boss-range-tabs button,
+  .business-mode-tabs button {
+    height: 32px;
+    padding: 0 5px;
+  }
+  .boss-metric {
+    padding: 7px 6px;
+  }
+  .boss-metric strong {
+    font-size: 22px;
+  }
+  .latest-line {
+    grid-template-columns: 46px minmax(0, 1fr);
+    gap: 6px;
+  }
+  .full-data-shell > summary {
+    top: 0;
+  }
+  .full-data-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .full-data-controls .auth-controls,
+  .full-data-controls .pill,
+  .full-data-controls #days,
+  .full-data-controls #siteFilter,
+  .full-data-controls #pageFilter {
+    width: 100%;
+  }
   .card {
     padding: 7px;
   }
@@ -1596,30 +1777,18 @@ td.num, th.num { text-align: right; }
 <body>
 <header>
   <div>
-    <h1>Nice Okinawa Analytics</h1>
-    <div class="sub">translation.nice.okinawa 实时访问、来源、页面、停留与联系按钮</div>
+    <h1>经营看板</h1>
   </div>
-  <div class="controls">
-    <span class="pill"><span class="dot"></span><span id="status">等待连接</span></span>
-    <select id="days" class="days-control" aria-label="时间范围">
-      <option value="today">今天</option>
-      <option value="7" selected>7天</option>
-      <option value="30">30天</option>
-      <option value="180">180天</option>
-    </select>
-    <select id="siteFilter">
-      <option value="">全部站点</option>
-    </select>
-    <select id="pageFilter">
-      <option value="">全部页面</option>
-    </select>
-    <div class="auth-controls">
-      <span class="key-status" id="keyStatus">需要 Dashboard key</span>
-      <input id="key" type="password" placeholder="Dashboard key">
-      <button id="saveKey">保存</button>
+  <div class="controls boss-top-controls">
+    <div class="segmented boss-range-tabs" id="businessRangeTabs" aria-label="经营看板时间范围">
+      <button type="button" data-range="7" class="active">近 7 天</button>
+      <button type="button" data-range="30">30 天</button>
+      <button type="button" data-range="month">本月</button>
     </div>
-    <button id="syncGsc">同步搜索词</button>
-    <button id="refresh">刷新</button>
+    <div class="segmented business-mode-tabs" id="businessModeTabs" aria-label="业务类型">
+      <button type="button" data-mode="tourism" class="active">旅游</button>
+      <button type="button" data-mode="learning">学习</button>
+    </div>
   </div>
 </header>
 
@@ -1631,6 +1800,63 @@ td.num, th.num { text-align: right; }
     <div class="topline-cell" id="toplineOrders">今日订单 -</div>
     <div class="topline-cell" id="toplineVisitors">今日访客 -</div>
   </div>
+
+  <section class="business-home" id="tourismHome" data-business-panel="tourism">
+    <div class="boss-metrics">
+      <div class="boss-metric"><span>访客</span><strong id="tourismVisitors">-</strong></div>
+      <div class="boss-metric"><span>联络意向</span><strong id="tourismContactIntent">-</strong></div>
+      <div class="boss-metric"><span>联络率</span><strong id="tourismContactRate">-</strong></div>
+    </div>
+    <section class="decision-card">
+      <div class="decision-title">最新联络意向 <span class="module-range" id="tourismUpdated">读取中</span></div>
+      <div id="tourismLatestContact"><div class="empty">等待联络意向数据</div></div>
+    </section>
+    <section class="decision-card compact-decision">
+      <div class="decision-title">旅游业务加强点</div>
+      <div id="tourismFocus"><div class="empty">等待来源与落地页数据</div></div>
+    </section>
+  </section>
+
+  <section class="business-home" id="learningHome" data-business-panel="learning" hidden>
+    <div class="boss-metrics">
+      <div class="boss-metric"><span>学习访问</span><strong id="learningVisitors">-</strong></div>
+      <div class="boss-metric"><span>实付订单</span><strong id="learningOrders">-</strong></div>
+      <div class="boss-metric"><span>付款率</span><strong id="learningOrderRate">-</strong></div>
+    </div>
+    <section class="decision-card">
+      <div class="decision-title">最新实付订单 <span class="module-range" id="learningUpdated">读取中</span></div>
+      <div id="learningLatestOrder"><div class="empty">等待订单数据</div></div>
+    </section>
+    <section class="decision-card compact-decision">
+      <div class="decision-title">学习产品加强点</div>
+      <div id="learningFocus"><div class="empty">等待访问与搜索数据</div></div>
+    </section>
+  </section>
+
+  <details class="full-data-shell" id="fullData">
+    <summary>完整数据</summary>
+    <div class="full-data-controls">
+      <span class="pill"><span class="dot"></span><span id="status">等待连接</span></span>
+      <select id="days" class="days-control" aria-label="时间范围">
+        <option value="today">今天</option>
+        <option value="7" selected>7天</option>
+        <option value="30">30天</option>
+        <option value="180">180天</option>
+      </select>
+      <select id="siteFilter">
+        <option value="">全部站点</option>
+      </select>
+      <select id="pageFilter">
+        <option value="">全部页面</option>
+      </select>
+      <div class="auth-controls">
+        <span class="key-status" id="keyStatus">需要 Dashboard key</span>
+        <input id="key" type="password" placeholder="Dashboard key">
+        <button id="saveKey">保存</button>
+      </div>
+      <button id="syncGsc">同步搜索词</button>
+      <button id="refresh">刷新</button>
+    </div>
 
   <section class="card order-card">
     <div class="visitor-head">
@@ -1842,6 +2068,8 @@ td.num, th.num { text-align: right; }
     </table>
   </section>
 
+  </details>
+
 </main>
 
 <script>
@@ -1879,6 +2107,12 @@ const toplineState = {
   todayOrders: '-',
   todayVisitors: '-'
 };
+const TOURISM_SITES = new Set(['snorkel', 'fishing', 'rental', 'japanusedcars', 'golf', 'activity', 'translation', 'ev', 'nice-okinawa']);
+const LEARNING_SITES = new Set(['bjt', 'progress', 'kiso']);
+let businessMode = localStorage.getItem('nice_business_mode') === 'learning' ? 'learning' : 'tourism';
+let businessRange = normalizeBusinessRange(localStorage.getItem('nice_business_range') || '7');
+let businessVisitorData = null;
+let businessOrderData = null;
 
 const hash = new URLSearchParams((location.hash || '').replace(/^#/, ''));
 if (hash.get('key')) {
@@ -1939,6 +2173,41 @@ function renderTopline() {
     '<div class="topline-cell" id="toplinePath">' + toplineState.pathHtml + '</div>' +
     '<div class="topline-cell" id="toplineOrders">今日订单 <strong>' + escapeHtml(toplineState.todayOrders) + '</strong></div>' +
     '<div class="topline-cell" id="toplineVisitors">今日访客 <strong>' + escapeHtml(toplineState.todayVisitors) + '</strong></div>';
+}
+
+function normalizeBusinessRange(value) {
+  const text = String(value || '7');
+  return ['7', '30', 'month'].includes(text) ? text : '7';
+}
+
+function businessRangeLabel(value = businessRange) {
+  if (value === 'month') return '本月';
+  return value === '30' ? '30 天' : '近 7 天';
+}
+
+function businessVisitorQuery() {
+  return businessRange === 'month' ? 'range=month' : ('days=' + encodeURIComponent(businessRange));
+}
+
+function currentJstMonth() {
+  const jst = new Date(Date.now() + 9 * 3600000);
+  return jst.getUTCFullYear() + '-' + String(jst.getUTCMonth() + 1).padStart(2, '0');
+}
+
+function businessOrderQuery() {
+  return businessRange === 'month' ? ('month=' + encodeURIComponent(currentJstMonth())) : ('days=' + encodeURIComponent(businessRange));
+}
+
+function syncBusinessTabs() {
+  document.querySelectorAll('#businessRangeTabs button').forEach((button) => {
+    button.classList.toggle('active', button.dataset.range === businessRange);
+  });
+  document.querySelectorAll('#businessModeTabs button').forEach((button) => {
+    button.classList.toggle('active', button.dataset.mode === businessMode);
+  });
+  document.querySelectorAll('[data-business-panel]').forEach((panel) => {
+    panel.hidden = panel.dataset.businessPanel !== businessMode;
+  });
 }
 
 function timeText(value) {
@@ -2349,6 +2618,159 @@ function contactVisitorsHtml(rows) {
     '<div class="contact-visitor-head"><span>时间</span><span>站点·国家·城市</span><span>来源</span><span>落地页</span></div>' +
     rows.map(contactVisitorRowHtml).join('') +
   '</div>';
+}
+
+function businessSourceLabel(value) {
+  const h = String(value || '').toLowerCase().replace(/^www\./, '');
+  if (!h || h === 'direct') return 'Direct';
+  if (h.includes('google.')) return 'Google';
+  if (h.includes('chatgpt.') || h.includes('openai.')) return 'ChatGPT';
+  if (h.includes('instagram.')) return 'Instagram';
+  if (h.includes('facebook.') || h.includes('fb.')) return 'Facebook';
+  if (h.includes('reddit.')) return 'Reddit';
+  if (h.includes('bing.')) return 'Bing';
+  return '其他';
+}
+
+function pathTitle(path) {
+  const p = String(path || '/').replace(/[?#].*$/, '') || '/';
+  const labels = {
+    '/': '首页',
+    '/contact/': '联络',
+    '/fishing-seasons/': 'Fishing seasons',
+    '/en/guides/where-to-stay-fishing/': '住宿指南',
+    '/pro/buy/': 'BJT Pro 购买',
+    '/score-check/': '成绩判定'
+  };
+  if (labels[p]) return labels[p];
+  const parts = p.split('/').filter(Boolean);
+  if (!parts.length) return '首页';
+  return parts[parts.length - 1].replace(/[-_]+/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function contactActionLabel(channels) {
+  const map = { email: 'Email', whatsapp: 'WhatsApp', form: '表单', phone: '电话', line: 'LINE', wechat: '微信' };
+  const list = (channels || []).map((item) => map[item] || item).filter(Boolean);
+  return list.length ? Array.from(new Set(list)).join(' → ') : '联络意向';
+}
+
+function compactTrail(nodes, limit = 4) {
+  const unique = [];
+  (nodes || []).forEach((node) => {
+    const label = pathTitle(node);
+    if (label && unique[unique.length - 1] !== label) unique.push(label);
+  });
+  if (!unique.includes('联络')) unique.push('联络');
+  if (unique.length <= limit) return unique.join(' → ');
+  return unique.slice(0, limit - 1).join(' → ') + ' → …';
+}
+
+function safeRate(part, total) {
+  const denominator = Number(total || 0);
+  if (!denominator) return '—';
+  const value = Number(part || 0) / denominator * 100;
+  return Number.isFinite(value) ? value.toFixed(1) + '%' : '—';
+}
+
+function sumSiteMetric(data, siteSet, key) {
+  return ((data && data.sites) || [])
+    .filter((site) => siteSet.has(site.site_id))
+    .reduce((total, site) => total + Number(site[key] || 0), 0);
+}
+
+function latestContactHtml(rowData) {
+  if (!rowData) return '<div class="empty">当前范围暂无联络意向</div>';
+  const geo = geoLabel(rowData).replace('・', ' · ');
+  const landing = pathTitle(rowData.landing_path || '/');
+  const trail = compactTrail(rowData.page_paths || [rowData.landing_path || '/']);
+  return '<div class="latest-card">' +
+    '<div class="latest-line"><span>时间</span><b title="' + escapeHtml(timeText(rowData.last_contact_at)) + '">' + escapeHtml(relativeTime(rowData.last_contact_at)) + '</b></div>' +
+    '<div class="latest-line"><span>地区</span><b title="' + escapeHtml(geo) + '">' + escapeHtml(geo) + '</b></div>' +
+    '<div class="latest-line"><span>来源</span><b title="' + escapeHtml(rowData.source || 'direct') + '">' + escapeHtml(businessSourceLabel(rowData.source)) + '</b></div>' +
+    '<div class="latest-line"><span>入口</span><b title="' + escapeHtml(rowData.landing_path || '/') + '">' + escapeHtml(landing) + '</b></div>' +
+    '<div class="latest-line"><span>动作</span><b>' + escapeHtml(contactActionLabel(rowData.contact_channels)) + '</b></div>' +
+    '<div class="latest-line latest-path"><span>路径</span><b title="' + escapeHtml(trail) + '">' + escapeHtml(trail) + '</b></div>' +
+  '</div>';
+}
+
+function topValue(rows) {
+  const rowData = (rows || [])[0];
+  return rowData ? String(rowData.value || rowData.site_id || '-') : '-';
+}
+
+function tourismFocusHtml(data) {
+  const contacts = ((data && data.contact_visitors) || []).filter((rowData) => TOURISM_SITES.has(rowData.site_id));
+  if (contacts.length) {
+    const latest = contacts[0];
+    return '<ul class="focus-list">' +
+      '<li><span>当前最该追的入口</span><b title="' + escapeHtml(latest.landing_path || '/') + '">' + escapeHtml(pathTitle(latest.landing_path || '/')) + '</b></li>' +
+      '<li><span>来源</span><b title="' + escapeHtml(latest.source || 'direct') + '">' + escapeHtml(businessSourceLabel(latest.source)) + '</b></li>' +
+      '<li><span>联络动作</span><b>' + escapeHtml(contactActionLabel(latest.contact_channels)) + '</b></li>' +
+    '</ul>';
+  }
+  const topSite = ((data && data.sites) || []).filter((site) => TOURISM_SITES.has(site.site_id) && Number(site.uv || 0) > 0)[0];
+  if (!topSite) return '<div class="empty">当前范围暂无旅游访问</div>';
+  return '<ul class="focus-list">' +
+    '<li><span>先加强有访问站点</span><b>' + escapeHtml(topSite.site_id) + '</b></li>' +
+    '<li><span>主入口页</span><b title="' + escapeHtml(topValue(topSite.landing_pages)) + '">' + escapeHtml(pathTitle(topValue(topSite.landing_pages))) + '</b></li>' +
+    '<li><span>主来源</span><b>' + escapeHtml(businessSourceLabel(topValue(topSite.referrers))) + '</b></li>' +
+  '</ul>';
+}
+
+function paidOrdersFromData(data) {
+  const rows = (data && (data.captured_orders || data.recent_orders || data.orders)) || [];
+  return rows.filter((order) => ['captured', 'completed'].includes(String(order.status || '').toLowerCase()));
+}
+
+function latestOrderHtml(order) {
+  if (!order) return '<div class="empty">当前范围暂无实付订单</div>';
+  return '<div class="latest-card">' +
+    '<div class="latest-line"><span>时间</span><b title="' + escapeHtml(timeText(order.created_at)) + '">' + escapeHtml(relativeTime(order.created_at)) + '</b></div>' +
+    '<div class="latest-line"><span>产品</span><b title="' + escapeHtml(orderProductText(order)) + '">' + escapeHtml(orderProductText(order)) + '</b></div>' +
+    '<div class="latest-line"><span>金额</span><b>' + escapeHtml(moneyText(order)) + '</b></div>' +
+    '<div class="latest-line"><span>来源</span><b title="' + escapeHtml(order.first_ref || order.first_utm || '-') + '">' + escapeHtml(orderSourceText(order)) + '</b></div>' +
+    '<div class="latest-line"><span>地区</span><b>' + escapeHtml(orderCountryText(order)) + '</b></div>' +
+  '</div>';
+}
+
+function learningFocusHtml(visitorData, orderData) {
+  const paid = paidOrdersFromData(orderData);
+  if (paid.length) {
+    const latest = paid[0];
+    return '<ul class="focus-list">' +
+      '<li><span>已付款来源</span><b title="' + escapeHtml(latest.first_ref || latest.first_utm || '-') + '">' + escapeHtml(orderSourceText(latest)) + '</b></li>' +
+      '<li><span>已买产品</span><b title="' + escapeHtml(orderProductText(latest)) + '">' + escapeHtml(orderProductText(latest)) + '</b></li>' +
+      '<li><span>下一步</span><b>放大同来源入口</b></li>' +
+    '</ul>';
+  }
+  const topSite = ((visitorData && visitorData.sites) || []).filter((site) => LEARNING_SITES.has(site.site_id) && Number(site.uv || 0) > 0)[0];
+  if (!topSite) return '<div class="empty">当前范围暂无学习访问</div>';
+  return '<ul class="focus-list">' +
+    '<li><span>有访问无付款站点</span><b>' + escapeHtml(topSite.site_id) + '</b></li>' +
+    '<li><span>主入口页</span><b title="' + escapeHtml(topValue(topSite.landing_pages)) + '">' + escapeHtml(pathTitle(topValue(topSite.landing_pages))) + '</b></li>' +
+    '<li><span>主来源</span><b>' + escapeHtml(businessSourceLabel(topValue(topSite.referrers))) + '</b></li>' +
+  '</ul>';
+}
+
+function renderBusinessDashboard() {
+  if (!businessVisitorData) return;
+  const tourismUv = sumSiteMetric(businessVisitorData, TOURISM_SITES, 'uv');
+  const tourismContacts = new Set(((businessVisitorData.contact_visitors || []) || [])
+    .filter((rowData) => TOURISM_SITES.has(rowData.site_id))
+    .map((rowData) => rowData.site_id + ':' + rowData.visitor_id));
+  $('tourismVisitors').textContent = n(tourismUv);
+  $('tourismContactIntent').textContent = n(tourismContacts.size);
+  $('tourismContactRate').textContent = safeRate(tourismContacts.size, tourismUv);
+  $('tourismLatestContact').innerHTML = latestContactHtml(((businessVisitorData.contact_visitors || []) || []).find((rowData) => TOURISM_SITES.has(rowData.site_id)));
+  $('tourismFocus').innerHTML = tourismFocusHtml(businessVisitorData);
+
+  const learningUv = sumSiteMetric(businessVisitorData, LEARNING_SITES, 'uv');
+  const paid = paidOrdersFromData(businessOrderData);
+  $('learningVisitors').textContent = n(learningUv);
+  $('learningOrders').textContent = businessOrderData ? n(paid.length) : '-';
+  $('learningOrderRate').textContent = businessOrderData ? safeRate(paid.length, learningUv) : '—';
+  $('learningLatestOrder').innerHTML = latestOrderHtml(paid[0]);
+  $('learningFocus').innerHTML = learningFocusHtml(businessVisitorData, businessOrderData);
 }
 
 function moneyText(order) {
@@ -2874,6 +3296,64 @@ async function sendTestAlert() {
   }
 }
 
+async function loadBusinessVisitors() {
+  const key = localStorage.getItem('nice_dashboard_key') || '';
+  try {
+    const res = await fetch(VISITOR_API + '?' + businessVisitorQuery(), {
+      credentials: 'include',
+      headers: {
+        accept: 'application/json',
+        ...(key ? { 'x-dashboard-key': key } : {})
+      }
+    });
+    const data = await readJsonResponse(res);
+    if (!res.ok || !data.ok) throw new Error(data.error || 'visitors API 请求失败');
+    businessVisitorData = data;
+    const label = businessRangeLabel() + ' · 更新 ' + new Date(data.generated_at).toLocaleTimeString();
+    $('tourismUpdated').textContent = label;
+    renderBusinessDashboard();
+  } catch (e) {
+    businessVisitorData = null;
+    $('tourismUpdated').textContent = businessRangeLabel() + ' · 读取失败';
+    $('tourismVisitors').textContent = '-';
+    $('tourismContactIntent').textContent = '-';
+    $('tourismContactRate').textContent = '—';
+    $('tourismLatestContact').innerHTML = '<div class="empty">联络意向读取失败：' + escapeHtml(e.message) + '</div>';
+    $('tourismFocus').innerHTML = '<div class="empty">旅游业务数据读取失败</div>';
+    $('learningVisitors').textContent = '-';
+    $('learningOrderRate').textContent = '—';
+  }
+}
+
+async function loadBusinessOrders() {
+  const key = localStorage.getItem('nice_dashboard_key') || '';
+  try {
+    const res = await fetchWithTimeout(ORDER_API + '?' + businessOrderQuery(), {
+      credentials: 'include',
+      headers: {
+        accept: 'application/json',
+        ...(key ? { 'x-dashboard-key': key } : {})
+      }
+    }, 8000);
+    const data = await readJsonResponse(res);
+    if (!res.ok || !data.ok) throw new Error(data.error || 'orders API 请求失败');
+    businessOrderData = data;
+    $('learningUpdated').textContent = businessRangeLabel() + ' · 更新 ' + new Date(data.generated_at).toLocaleTimeString();
+    renderBusinessDashboard();
+  } catch (e) {
+    businessOrderData = null;
+    $('learningUpdated').textContent = businessRangeLabel() + ' · 读取失败';
+    $('learningOrders').textContent = '-';
+    $('learningLatestOrder').innerHTML = '<div class="empty">订单读取失败：' + escapeHtml(e.message) + '</div>';
+    $('learningFocus').innerHTML = '<div class="empty">学习产品数据读取失败</div>';
+  }
+}
+
+function loadBusinessDashboard() {
+  loadBusinessVisitors();
+  loadBusinessOrders();
+}
+
 async function loadVisitors() {
   const key = localStorage.getItem('nice_dashboard_key') || '';
   visitorDays = visitorDaysFromControl();
@@ -3087,6 +3567,7 @@ document.querySelectorAll('.mobile-collapse, .order-full-details').forEach((deta
 $('saveKey').addEventListener('click', () => {
   localStorage.setItem('nice_dashboard_key', $('key').value.trim());
   updateKeyStatus(true);
+  loadBusinessDashboard();
   load();
   loadSiteTable();
   loadControl();
@@ -3095,7 +3576,22 @@ $('saveKey').addEventListener('click', () => {
   loadOrders();
   loadAllOrders();
 });
-$('refresh').addEventListener('click', () => { load(); loadSiteTable(); loadControl(); loadVisitors(); loadOrders(); loadAllOrders(); loadSnsMetrics(); loadContentStats(); });
+$('refresh').addEventListener('click', () => { loadBusinessDashboard(); load(); loadSiteTable(); loadControl(); loadVisitors(); loadOrders(); loadAllOrders(); loadSnsMetrics(); loadContentStats(); });
+$('businessRangeTabs').addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-range]');
+  if (!button) return;
+  businessRange = normalizeBusinessRange(button.dataset.range || '7');
+  localStorage.setItem('nice_business_range', businessRange);
+  syncBusinessTabs();
+  loadBusinessDashboard();
+});
+$('businessModeTabs').addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-mode]');
+  if (!button) return;
+  businessMode = button.dataset.mode === 'learning' ? 'learning' : 'tourism';
+  localStorage.setItem('nice_business_mode', businessMode);
+  syncBusinessTabs();
+});
 $('syncGsc').addEventListener('click', async () => {
   $('error').style.display = 'none';
   $('status').textContent = '同步搜索词中';
@@ -3255,11 +3751,13 @@ $('sendTestAlert').addEventListener('click', sendTestAlert);
 $('key').value = localStorage.getItem('nice_dashboard_key') || '';
 updateKeyStatus();
 $('orderMonth').value = defaultOrderMonth();
+syncBusinessTabs();
 syncRangeTabs();
 renderTopline();
 syncMobileCollapses();
 renderOrderViewMode();
 window.addEventListener('resize', syncMobileCollapses);
+loadBusinessDashboard();
 load();
 loadSiteTable();
 loadControl();
@@ -3269,7 +3767,7 @@ loadOrders();
 loadAllOrders();
 loadSnsMetrics();
 loadContentStats();
-setInterval(() => { load(); loadSiteTable(); loadControl(); loadPathCheckStatus(); loadVisitors(); loadOrders(); loadAllOrders(); loadSnsMetrics(); loadContentStats(); }, 30000);
+setInterval(() => { loadBusinessDashboard(); load(); loadSiteTable(); loadControl(); loadPathCheckStatus(); loadVisitors(); loadOrders(); loadAllOrders(); loadSnsMetrics(); loadContentStats(); }, 30000);
 </script>
 </body>
 </html>
