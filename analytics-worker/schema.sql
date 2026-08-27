@@ -63,6 +63,24 @@ CREATE INDEX IF NOT EXISTS idx_visitor_events_site_ts ON visitor_events(site_id,
 CREATE INDEX IF NOT EXISTS idx_visitor_events_site_type_ts ON visitor_events(site_id, event_type, ts);
 CREATE INDEX IF NOT EXISTS idx_visitor_events_site_visitor_created ON visitor_events(site_id, visitor_id, created_at);
 
+CREATE TABLE IF NOT EXISTS audio_fail_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  site_id TEXT NOT NULL,
+  ts TEXT NOT NULL,
+  question_id TEXT,
+  failure_stage TEXT NOT NULL,
+  status_code TEXT NOT NULL,
+  browser_family TEXT NOT NULL,
+  country TEXT,
+  city TEXT,
+  timezone TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_audio_fail_events_created_at ON audio_fail_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_audio_fail_events_site_created ON audio_fail_events(site_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_audio_fail_events_question_created ON audio_fail_events(question_id, created_at);
+
 CREATE TABLE IF NOT EXISTS search_console_daily (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   imported_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
