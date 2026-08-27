@@ -19,7 +19,16 @@ const VISITOR_SAMPLE_MIN_EVENTS = 20;
 const VISITOR_DASHBOARD_DAY_OPTIONS = new Set([1, 7, 30, 180]);
 const VISITOR_EVENT_TYPES = new Set(['pageview', 'dwell', 'contact_click', 'section_view', 'audio_fail']);
 const AUDIO_FAIL_STAGES = new Set(['sign', 'media', 'range', 'unknown']);
-const AUDIO_FAIL_STATUS_CODES = new Set(['0', '200', '206', '401', '403', '404', '408', '429', '5xx', 'unknown']);
+const AUDIO_FAIL_STATUS_CODES = new Set(['0', '200', '206', '401', '403', '404', '408', '429', '5xx', 'schema_invalid', 'unknown']);
+const AUDIO_FAIL_EVENT_FIELDS = Object.freeze([
+  'question_id',
+  'failure_stage',
+  'status_code',
+  'browser_family',
+  'ts',
+  'site_id',
+  'country'
+]);
 const CONTACT_CHANNELS = new Set(['wechat', 'email', 'whatsapp', 'line', 'phone', 'form']);
 const VISITOR_EVENT_SITES = Object.freeze({
   snorkel: 'snorkel.nice.okinawa',
@@ -658,23 +667,21 @@ async function collectAudioFailEvent(request, env, ctx, body, siteId) {
     const cf = request.cf || {};
     const row = {
       site_id: siteId,
-      ts: safeTimestamp(body.ts),
+      ts: new Date().toISOString(),
       question_id: questionId,
       failure_stage: failureStage,
       status_code: statusCode,
       browser_family: browserFamily,
-      country: clean(cf.country, 10),
-      city: clean(cf.city, 120),
-      timezone: clean(cf.timezone, 80)
+      country: clean(cf.country, 10)
     };
 
     ctx.waitUntil(env.DB.prepare(`
       INSERT INTO audio_fail_events (
-        site_id, ts, question_id, failure_stage, status_code, browser_family, country, city, timezone
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        site_id, ts, question_id, failure_stage, status_code, browser_family, country
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
     `).bind(
       row.site_id, row.ts, row.question_id, row.failure_stage, row.status_code, row.browser_family,
-      row.country, row.city, row.timezone
+      row.country
     ).run().catch(() => null));
   } catch (e) {
     return emptyVisitorEventResponse(request);

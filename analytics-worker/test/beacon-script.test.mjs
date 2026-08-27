@@ -124,6 +124,10 @@ async function postAudioFail(env, body, headers = {}) {
       ...body
     })
   });
+  Object.defineProperty(request, 'cf', {
+    value: { country: 'JP', city: 'Tokyo', timezone: 'Asia/Tokyo' },
+    configurable: true
+  });
   const response = await worker.fetch(request, env, { waitUntil: (promise) => waits.push(promise) });
   await Promise.all(waits);
   return response;
@@ -141,6 +145,7 @@ test('audio_fail events are stored in the dedicated allowlisted table', async ()
   assert.equal(insert.params[3], 'media');
   assert.equal(insert.params[4], '403');
   assert.equal(insert.params[5], 'safari');
+  assert.equal(insert.params[6], 'JP');
   assert.equal(env.calls.some((call) => call.sql.includes('INSERT INTO visitor_events')), false);
 });
 
@@ -153,7 +158,11 @@ test('audio_fail drops non-allowlisted fields instead of storing sensitive paylo
     signed_url: 'https://bjt.nice.okinawa/pro/ps71301.mp3?token=secret',
     screen: '390x844',
     canvas: 'fingerprint',
-    user_agent: 'full user agent'
+    user_agent: 'full user agent',
+    timezone: 'Europe/Paris',
+    city: 'Paris',
+    country: 'FR',
+    ts: '1999-01-01T00:00:00.000Z'
   });
   assert.equal(response.status, 204);
 
@@ -162,7 +171,21 @@ test('audio_fail drops non-allowlisted fields instead of storing sensitive paylo
   const serialized = JSON.stringify({ sql: insert.sql, params: insert.params });
   assert.doesNotMatch(serialized, /student@example\.com/);
   assert.doesNotMatch(serialized, /jwt\.secret/);
-  assert.doesNotMatch(serialized, /signed_url|token=secret|390x844|fingerprint|full user agent/);
+  assert.doesNotMatch(serialized, /signed_url|token=secret|390x844|fingerprint|full user agent|Europe\/Paris|Paris|FR|1999-01-01/);
+  assert.equal(insert.params.length, 7);
+  assert.equal(insert.params[1] !== '1999-01-01T00:00:00.000Z', true);
+  assert.equal(insert.params[6], 'JP');
+});
+
+test('audio_fail accepts schema_invalid as a text status code', async () => {
+  const env = audioFailDb();
+  const response = await postAudioFail(env, { status_code: 'schema_invalid' });
+  assert.equal(response.status, 204);
+
+  const insert = env.calls.find((call) => call.sql.includes('INSERT INTO audio_fail_events'));
+  assert.ok(insert);
+  assert.equal(insert.params[4], 'schema_invalid');
+  assert.equal(typeof insert.params[4], 'string');
 });
 
 test('audio_fail rate limit returns 204 and skips inserts', async () => {

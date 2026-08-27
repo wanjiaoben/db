@@ -72,9 +72,7 @@ CREATE TABLE IF NOT EXISTS audio_fail_events (
   failure_stage TEXT NOT NULL,
   status_code TEXT NOT NULL,
   browser_family TEXT NOT NULL,
-  country TEXT,
-  city TEXT,
-  timezone TEXT
+  country TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_audio_fail_events_created_at ON audio_fail_events(created_at);
