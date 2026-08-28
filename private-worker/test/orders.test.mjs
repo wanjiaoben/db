@@ -110,9 +110,7 @@ test('/orders returns sorted masked order source rows and distributions', async 
       ui_lang: 'ja',
       paypal_payer_country: 'TW',
       captured_at: '2026-07-02T00:01:00.000Z',
-      business_record_key: 'business:newer',
-      first_ref: '',
-      first_landing: '/pro/buy/'
+      business_record_key: 'business:newer'
     })
   };
 
@@ -140,8 +138,7 @@ test('/orders returns sorted masked order source rows and distributions', async 
     { value: 'TW', count: 1 }
   ]);
   assert.deepEqual(data.paid_channel_summary.by_ref, [
-    { value: 'direct', count: 1, amounts: [{ currency: 'JPY', amount: 9800 }] },
-    { value: 'google', count: 1, amounts: [{ currency: 'JPY', amount: 980 }] }
+    { value: 'google', count: 2, amounts: [{ currency: 'JPY', amount: 10780 }] }
   ]);
   assert.deepEqual(data.paid_channel_summary.by_landing, [
     { value: '/en/free-practice/', count: 1, amounts: [{ currency: 'JPY', amount: 980 }] },

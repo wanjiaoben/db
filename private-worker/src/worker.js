@@ -414,12 +414,7 @@ function orderRow(keyName, meta) {
     paypal_transaction_id: text(meta.paypal_transaction_id || meta.paypal_capture_id || meta.capture_id || meta.transaction_id || meta.captureId),
     paypal_payer_country: text(meta.paypal_payer_country),
     captured_at: text(meta.captured_at),
-    business_record_key: text(meta.business_record_key),
-    first_ref: text(meta.first_ref),
-    first_landing: text(meta.first_landing),
-    first_utm: text(meta.first_utm),
-    first_seen: text(meta.first_seen),
-    ui_lang: text(meta.ui_lang)
+    business_record_key: text(meta.business_record_key)
   };
   row.location_mismatch = hasLocationMismatch(row);
   return row;
@@ -458,7 +453,9 @@ function orderDedupeRank(row) {
   const updatedMs = Date.parse(row.updated_at || '') || 0;
   const createdMs = Date.parse(row.created_at || '') || 0;
   return paid + Math.max(capturedMs, updatedMs, createdMs);
- function paidChannelSummary(rows) {
+}
+
+function paidChannelSummary(rows) {
   return {
     by_ref: moneyDistribution(rows, (row) => channelLabel(row.first_ref, row.first_utm)),
     by_landing: moneyDistribution(rows, (row) => row.first_landing || '未知')
