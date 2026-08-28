@@ -40,6 +40,7 @@ const PATH_CHECK_INTERVAL_MS = 15 * 60 * 1000;
 const PATH_CHECK_TIMEOUT_MS = 12000;
 const PATH_CHECK_FAILURE_DEBOUNCE = 3;
 const PATH_CHECK_FAST_FAILURE_DEBOUNCE = 2;
+const DEPLOYMENT_IN_PROGRESS_ALERT_MS = 30 * 60 * 1000;
 const PATH_CHECK_BASELINES = Object.freeze([
   pageCheck('site-snorkel-home', 'snorkel home', 'https://snorkel.nice.okinawa/', 'Okinawa Snorkeling Tours'),
   pageCheck('site-fishing-home', 'fishing home', 'https://fishing.nice.okinawa/', 'Okinawa Fishing Charter'),
@@ -1951,6 +1952,9 @@ function parsePage(siteUrl, page) {
     const parsed = new URL(page);
     return { site: siteIdFromHostname(parsed.hostname), path: parsed.pathname || '/' };
   } catch (e) {
+    if (siteUrl.startsWith('sc-domain:')) {
+      return { site: siteIdFromHostname(siteUrl.slice('sc-domain:'.length)), path: '/' };
+    }
     try {
       const fallback = new URL(siteUrl);
       return { site: siteIdFromHostname(fallback.hostname), path: '/' };
@@ -2876,11 +2880,13 @@ export function attachBackupHistory(item, history, now = new Date()) {
   const rows = Array.isArray(history) ? history : [];
   const successful = rows.filter((row) => row.ok).length;
   let consecutiveFailures = 0;
-  for (const row of rows) {
-    if (row.ok) break;
-    consecutiveFailures += 1;
+  if (!item.ok) {
+    for (const row of rows) {
+      if (row.ok) break;
+      consecutiveFailures += 1;
+    }
   }
-  const latestFailure = rows.find((row) => !row.ok);
+  const latestFailure = item.ok ? null : rows.find((row) => !row.ok);
   const today = jstDateKey(now);
   const silentToday = !item.ok && rows[0]?.date === today && !rows[0]?.ok && jstHour(now) >= 12;
   return {
@@ -2912,22 +2918,39 @@ function shiftDateKey(value, delta) {
   return date.toISOString().slice(0, 10);
 }
 
-async function readR2Json(bucket, key) {
+const R2_JSON_READ_ATTEMPTS = 3;
+
+export async function readR2Json(bucket, key) {
   if (!bucket) return { ok: false, status: 'manual', key, error: 'missing_r2_binding' };
-  try {
-    const object = await bucket.get(key);
-    if (!object) return { ok: false, status: 'missing', key, error: 'not_found' };
-    const text = await object.text();
-    return {
-      ok: true,
-      status: 'ok',
-      key,
-      updated_at: object.uploaded ? object.uploaded.toISOString() : '',
-      data: JSON.parse(text)
-    };
-  } catch (e) {
-    return { ok: false, status: 'error', key, error: clean(e.message || String(e), 300) };
+  let lastError = '';
+  for (let attempt = 1; attempt <= R2_JSON_READ_ATTEMPTS; attempt += 1) {
+    try {
+      const object = await bucket.get(key);
+      if (!object) return { ok: false, status: 'missing', key, error: 'not_found' };
+      const text = await object.text();
+      return {
+        ok: true,
+        status: 'ok',
+        key,
+        updated_at: object.uploaded ? object.uploaded.toISOString() : '',
+        data: JSON.parse(text),
+        attempts: attempt
+      };
+    } catch (e) {
+      lastError = clean(e.message || String(e), 300);
+      if (attempt >= R2_JSON_READ_ATTEMPTS || !isTransientR2ReadError(lastError)) break;
+      await sleep(100 * attempt);
+    }
   }
+  return { ok: false, status: 'error', key, error: lastError };
+}
+
+function isTransientR2ReadError(error) {
+  return /\\b10001\\b|internal error|try again|temporar/i.test(String(error || ''));
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 const DAILY_BACKUP_MAX_AGE_HOURS = 27;
@@ -3080,20 +3103,7 @@ async function getRepoDeploymentStatus(env, repo) {
       };
     }
     const run = selectDeploymentWorkflowRun(data.workflow_runs || []);
-    if (!run) {
-      return { repo, ok: false, status: 'unknown', conclusion: '', updated_at: '', url: '', error: 'no_deployment_runs', manual: false };
-    }
-    const conclusion = run.conclusion || run.status || '';
-    return {
-      repo,
-      ok: run.status === 'completed' && run.conclusion === 'success',
-      status: run.status || '',
-      conclusion,
-      workflow: run.name || '',
-      updated_at: run.updated_at || run.created_at || '',
-      url: run.html_url || '',
-      error: ''
-    };
+    return deploymentWorkflowStatus(repo, run, new Date());
   } catch (e) {
     return {
       repo,
@@ -3110,6 +3120,47 @@ async function getRepoDeploymentStatus(env, repo) {
 
 export function selectDeploymentWorkflowRun(runs) {
   return (runs || []).find((item) => item.head_branch === 'main' && isDeploymentStatusRun(item)) || null;
+}
+
+export function deploymentWorkflowStatus(repo, run, now = new Date()) {
+  if (!run) {
+    return {
+      repo,
+      ok: false,
+      status: 'no_data',
+      conclusion: '',
+      updated_at: '',
+      url: '',
+      error: '',
+      manual: true,
+      note: '无数据'
+    };
+  }
+
+  const status = run.status || '';
+  const conclusion = run.conclusion || status || '';
+  const startedAt = run.run_started_at || run.created_at || run.updated_at || '';
+  const updatedAt = run.updated_at || startedAt;
+  const startedMs = Date.parse(startedAt);
+  const ageMs = Number.isFinite(startedMs) ? Math.max(0, now.getTime() - startedMs) : 0;
+  const inProgress = status && status !== 'completed';
+  const inProgressTimedOut = inProgress && ageMs > DEPLOYMENT_IN_PROGRESS_ALERT_MS;
+  const completedFailure = status === 'completed' && conclusion === 'failure';
+
+  return {
+    repo,
+    ok: completedFailure || inProgressTimedOut ? false : true,
+    status,
+    conclusion,
+    workflow: run.name || '',
+    updated_at: updatedAt,
+    url: run.html_url || '',
+    error: inProgressTimedOut ? 'deployment_in_progress_timeout' : (completedFailure ? 'deployment_failed' : ''),
+    manual: false,
+    note: inProgress && !inProgressTimedOut ? '部署进行中' : '',
+    alert: completedFailure || inProgressTimedOut,
+    age_minutes: inProgress && Number.isFinite(ageMs) ? Math.round(ageMs / 60000) : null
+  };
 }
 
 function isDeploymentStatusRun(run) {
@@ -3450,7 +3501,7 @@ export function collectAlertItems(backups, deployments, probes) {
     }
   }
   for (const item of deployments?.items || []) {
-    if (!item.ok && !item.manual) {
+    if (item.alert === true || (!item.ok && !item.manual && item.alert !== false)) {
       items.push({
         type: 'deployment',
         key: item.repo || 'repo',
@@ -3685,11 +3736,13 @@ export {
   BEACON_SCRIPT,
   PATH_CHECK_BASELINES,
   bingDateOnly,
+  configuredSearchConsoleSites,
   configuredBingSites,
   checkPathContract,
   isFastPathCheckFailure,
   normalizeBingQueryRow,
   normalizeSearchTermSource,
+  parsePage,
   shouldSendPathCheckAlert,
   stableFingerprint
 };

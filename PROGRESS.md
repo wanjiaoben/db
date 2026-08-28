@@ -1,6 +1,14 @@
 # db.nice.okinawa Progress
 
-GATE-0824-13: 备份健康门禁的 stale/silent 测试改为显式注入时钟，固定在 13:00 JST 验证 silent；真实备份判定逻辑未放宽。Draft PR #50，未合并。
+BACKUP-0824-17 confirms the four simultaneous backup reds were a dashboard R2 read-side false alarm: all latest R2 backup objects were present, `readR2Json` now retries transient Cloudflare 10001 get errors, and fresh latest manifests clear same-day missing-history failure counters.
+
+ORDERS-0824-08追加② adds explicit range/status labels to every dashboard module and gives the site total table its own remembered 1/7/30/180-day range tabs independent of the visitor overview.
+
+ALERT-0824-16 fixes deployment dashboard alert semantics so no deployment runs render as gray no-data, in-progress runs alert only after 30 minutes, and only completed failures or timed-out deployments enter dashboard email candidates.
+
+GSC-0824-10 updates Google Search Console properties to the confirmed mixed domain/URL-prefix form and teaches search term parsing to keep sc-domain rows attributed to the correct site before production backfill.
+
+GATE-0824-13: 备份健康门禁的 stale/silent 测试改为显式注入时钟，固定在 13:00 JST 验证 silent；真实备份判定逻辑未放宽。PR #50 已合入 main。
 
 BACKUP-0823-01 adds whole-job retry and two-consecutive-failure dashboard alert triggering to the nice_analytics D1 backup workflow; token validation now reaches D1 export but still needs D1 export permission beyond D1 Read.
 

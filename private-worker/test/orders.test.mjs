@@ -150,7 +150,7 @@ test('/orders returns sorted masked order source rows and distributions', async 
 });
 
 test('/orders day mode counts only paid, deduped, non-test orders', async () => {
-  const fallbackBase = Date.now() - 3 * 86400000;
+  const fallbackBase = Math.floor((Date.now() - 3 * 86400000) / 60000) * 60000;
   const records = {
     'paypal_order_meta:paid-captured': JSON.stringify({
       order_id: 'paid-captured',
@@ -255,6 +255,62 @@ test('/orders day mode counts only paid, deduped, non-test orders', async () => 
   assert.equal(data.recent_orders.some((order) => order.email.includes('test')), false);
   assert.equal(data.range_counts.days_7, 3);
   assert.equal(data.range_counts.days_30, 3);
+});
+
+test('/orders detail mode paginates paid rows and can search all statuses', async () => {
+  const records = {
+    'paypal_order_meta:paid-alpha': JSON.stringify({
+      order_id: 'paid-alpha',
+      email: 'alpha@example.com',
+      plan: 'pro',
+      amount: '1900',
+      currency: 'JPY',
+      created_at: '2026-08-03T00:00:00.000Z',
+      status: 'captured',
+      paypal_capture_id: '9PAYPALALPHA'
+    }),
+    'paypal_order_meta:paid-beta': JSON.stringify({
+      order_id: 'paid-beta',
+      email: 'beta@example.com',
+      plan: 'score_check',
+      amount: '7200',
+      currency: 'JPY',
+      created_at: '2026-08-02T00:00:00.000Z',
+      status: 'completed'
+    }),
+    'paypal_order_meta:pending-gamma': JSON.stringify({
+      order_id: 'pending-gamma',
+      email: 'gamma@example.com',
+      plan: 'pro',
+      amount: '7200',
+      currency: 'JPY',
+      created_at: '2026-08-01T00:00:00.000Z',
+      status: 'pending'
+    })
+  };
+
+  const pageOne = await worker.fetch(new Request('https://db.nice.okinawa/orders?detail=1&page_size=1', {
+    headers: { authorization: AUTH, 'x-dashboard-key': 'dash' }
+  }), envWithKv(records), {});
+  const pageOneData = await pageOne.json();
+  assert.equal(pageOne.status, 200);
+  assert.equal(pageOneData.detail, true);
+  assert.equal(pageOneData.status_mode, 'paid');
+  assert.equal(pageOneData.total_orders, 2);
+  assert.equal(pageOneData.total_pages, 2);
+  assert.equal(pageOneData.has_next_page, true);
+  assert.deepEqual(pageOneData.orders.map((order) => order.order_id), ['paid-alpha']);
+  assert.equal(pageOneData.orders[0].paypal_transaction_id, '9PAYPALALPHA');
+  assert.deepEqual(pageOneData.totals, [{ currency: 'JPY', count: 2, amount: 9100 }]);
+
+  const searchAll = await worker.fetch(new Request('https://db.nice.okinawa/orders?detail=1&status=all&q=gamma', {
+    headers: { authorization: AUTH, 'x-dashboard-key': 'dash' }
+  }), envWithKv(records), {});
+  const searchAllData = await searchAll.json();
+  assert.equal(searchAll.status, 200);
+  assert.equal(searchAllData.status_mode, 'all');
+  assert.equal(searchAllData.total_orders, 1);
+  assert.deepEqual(searchAllData.orders.map((order) => order.order_id), ['pending-gamma']);
 });
 
 test('/orders follows BJT_KV pagination before building dashboard data', async () => {

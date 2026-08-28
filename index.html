@@ -232,6 +232,7 @@ td.num, th.num { text-align: right; }
 }
 .status-dot.ok { background: var(--green); }
 .status-dot.manual { background: var(--gold); }
+.status-dot.neutral { background: var(--muted); }
 .spark {
   display: inline-flex;
   gap: 2px;
@@ -350,6 +351,30 @@ td.num, th.num { text-align: right; }
 .visitor-head h2 {
   min-width: 0;
 }
+.module-range {
+  display: inline-block;
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: -9px -9px 6px;
+  padding: 8px 9px 5px;
+  background: var(--panel);
+  border-bottom: 1px solid #ece6da;
+}
+.section-head h2 {
+  position: static;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
 .days-control {
   display: none;
 }
@@ -397,6 +422,16 @@ td.num, th.num { text-align: right; }
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 4px;
+}
+.metrics .section-head,
+.metrics .site-table-wrap {
+  grid-column: 1 / -1;
+}
+.metrics-title {
+  grid-column: 1 / -1;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
 }
 .metric-item {
   min-width: 0;
@@ -834,6 +869,139 @@ td.num, th.num { text-align: right; }
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+.order-page-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  margin: 0 0 8px;
+  border: 1px solid var(--blue);
+  border-radius: 5px;
+  padding: 0 10px;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+}
+.all-orders-page[hidden] {
+  display: none;
+}
+.all-orders-page {
+  display: grid;
+  gap: 8px;
+}
+.all-order-controls,
+.all-order-pager {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+.all-order-search {
+  flex: 1 1 220px;
+  min-width: 0;
+  height: 31px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0 9px;
+  background: #fffdfa;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+.all-order-controls button,
+.all-order-pager button {
+  height: 31px;
+  border: 1px solid var(--ink);
+  border-radius: 5px;
+  padding: 0 10px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.all-order-controls button.secondary,
+.all-order-pager button.secondary {
+  background: #fffdfa;
+  color: var(--ink);
+}
+.all-order-controls button.active {
+  border-color: var(--blue);
+  background: var(--blue);
+}
+.all-order-controls button:disabled,
+.all-order-pager button:disabled {
+  border-color: #c9c5bc;
+  background: #d8d3c8;
+  color: #fff;
+  cursor: default;
+}
+.all-order-total {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.all-order-total-item {
+  min-width: 0;
+  border: 1px solid #ece6da;
+  border-radius: 5px;
+  padding: 7px 8px;
+  background: #fffdfa;
+}
+.all-order-total-item span {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+}
+.all-order-total-item strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.all-order-list {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+.all-order-row {
+  display: grid;
+  grid-template-columns: minmax(116px, 1fr) minmax(130px, 1.1fr) minmax(100px, 1fr) minmax(76px, .7fr) minmax(90px, .8fr) minmax(120px, 1fr) minmax(70px, .6fr);
+  gap: 6px;
+  align-items: start;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid #ece6da;
+  border-radius: 5px;
+  padding: 6px;
+  background: #fffdfa;
+  overflow: hidden;
+}
+.all-order-cell {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.2;
+}
+.all-order-cell span {
+  display: block;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+}
+.all-order-cell b {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
 .order-full-details {
   min-width: 0;
   max-width: 100%;
@@ -1098,6 +1266,17 @@ td.num, th.num { text-align: right; }
   .order-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .all-order-total {
+    grid-template-columns: 1fr;
+  }
+  .all-order-row {
+    grid-template-columns: 1fr;
+  }
+  .all-order-cell,
+  .all-order-cell b {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 @media (max-width: 680px) {
   header {
@@ -1214,6 +1393,21 @@ td.num, th.num { text-align: right; }
     flex-direction: column;
     align-items: stretch;
   }
+  .section-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .module-range {
+    display: block;
+    margin: 2px 0 0;
+    line-height: 1.35;
+  }
+  .metrics-title {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
   .order-summary {
     grid-template-columns: 1fr;
   }
@@ -1225,6 +1419,36 @@ td.num, th.num { text-align: right; }
   .order-row {
     grid-template-columns: 1fr;
     gap: 4px;
+  }
+  .all-order-total {
+    grid-template-columns: 1fr;
+  }
+  .all-order-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .all-order-search {
+    grid-column: 1 / -1;
+    flex-basis: auto;
+    width: 100%;
+  }
+  .all-order-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .all-order-cell {
+    display: grid;
+    grid-template-columns: 86px minmax(0, 1fr);
+    gap: 6px;
+    align-items: baseline;
+    white-space: normal;
+  }
+  .all-order-cell span,
+  .all-order-cell b {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .order-cell {
     display: grid;
@@ -1380,7 +1604,7 @@ td.num, th.num { text-align: right; }
 
   <section class="card order-card">
     <div class="visitor-head">
-      <h2 style="position:static;margin:0;padding:0;border:0">订单来源 <span class="sub" id="orderUpdated"></span></h2>
+      <h2 style="position:static;margin:0;padding:0;border:0">订单来源 <span class="module-range" id="orderUpdated">读取中</span></h2>
       <div class="segmented" id="orderRangeTabs" aria-label="订单时间范围">
         <button type="button" data-range="today">今天</button>
         <button type="button" data-range="7">7天</button>
@@ -1394,6 +1618,7 @@ td.num, th.num { text-align: right; }
       <div class="order-pulse-item"><span>30天</span><strong>-</strong></div>
     </div>
     <div class="recent-orders" id="recentOrders"><div class="empty">订单读取中</div></div>
+    <a class="order-page-link" href="#all-orders" id="allOrdersLink">查看全部订单</a>
     <details class="order-full-details">
       <summary>月度合计与完整订单</summary>
       <div class="order-tools">
@@ -1406,19 +1631,55 @@ td.num, th.num { text-align: right; }
     </details>
   </section>
 
+  <section class="card all-orders-page" id="allOrdersPage">
+    <div class="visitor-head">
+      <h2 style="position:static;margin:0;padding:0;border:0">订单明细 <span class="module-range" id="allOrderUpdated">实付 · 读取中</span></h2>
+      <a class="order-page-link" href="#" id="backToDashboard">返回首屏</a>
+    </div>
+    <div class="all-order-controls">
+      <button type="button" id="allOrderPaid" class="active">实付</button>
+      <button type="button" id="allOrderAll" class="secondary">全部含 pending/失败</button>
+      <input class="all-order-search" id="allOrderSearch" type="search" placeholder="邮箱或 PayPal 取引 ID">
+      <button type="button" id="allOrderSearchButton">搜索</button>
+    </div>
+    <div class="all-order-total" id="allOrderTotals"><div class="empty">等待订单明细</div></div>
+    <div class="all-order-list" id="allOrderRows"><div class="empty">等待订单明细</div></div>
+    <div class="all-order-pager">
+      <button type="button" id="allOrderPrev" class="secondary">上一页</button>
+      <span class="sub" id="allOrderPageInfo">-</span>
+      <button type="button" id="allOrderNext" class="secondary">下一页</button>
+    </div>
+  </section>
+
   <section class="card metrics">
+    <div class="metrics-title">站点总览表 <span class="module-range" id="metricsUpdated">实时</span></div>
     <div class="metric-item"><span>实时在线</span><strong id="online">-</strong></div>
     <div class="metric-item"><span>今日访问</span><strong id="todayViews">-</strong></div>
     <div class="metric-item"><span>区间访问</span><strong id="views">-</strong></div>
     <div class="metric-item"><span>访客</span><strong id="visitors">-</strong></div>
     <div class="metric-item"><span>平均停留</span><strong id="duration">-</strong></div>
     <div class="metric-item"><span>平均滚动</span><strong id="scroll">-</strong></div>
+    <div class="section-head">
+      <h2>站点总表 <span class="module-range" id="siteTableUpdated">近 7 天</span></h2>
+      <div class="segmented" id="siteTableRangeTabs" aria-label="站点总表时间范围">
+        <button type="button" data-range="today">今天</button>
+        <button type="button" data-range="7" class="active">7天</button>
+        <button type="button" data-range="30">30天</button>
+        <button type="button" data-range="180">180天</button>
+      </div>
+    </div>
+    <div class="site-table-wrap">
+      <table>
+        <thead><tr><th>站点</th><th class="num">访问</th><th class="num">访客</th><th>主来源</th><th>语言</th><th class="num">联系</th><th class="num">停留</th></tr></thead>
+        <tbody id="pageTable"></tbody>
+      </table>
+    </div>
   </section>
 
   <details class="card visitor-card mobile-collapse" open>
     <summary class="mobile-card-title">访客流水</summary>
     <div class="visitor-head">
-      <h2 style="position:static;margin:0;padding:0;border:0">站点总览 <span class="sub" id="visitorUpdated"></span></h2>
+      <h2 style="position:static;margin:0;padding:0;border:0">站点总览 <span class="module-range" id="visitorUpdated">近 7 天</span></h2>
       <div class="segmented" id="visitorRangeTabs" aria-label="访客时间范围">
         <button type="button" data-range="today">今天</button>
         <button type="button" data-range="7" class="active">7天</button>
@@ -1432,7 +1693,7 @@ td.num, th.num { text-align: right; }
 
   <details class="card inventory-card mobile-collapse" open>
     <summary class="mobile-card-title">内容库存</summary>
-    <h2>内容库存 <span class="sub" id="contentUpdated"></span></h2>
+    <h2>内容库存 <span class="module-range" id="contentUpdated">实时</span></h2>
     <div class="inventory-grid">
       <div class="inventory-row">
         <div class="inventory-title">BJT Pro</div>
@@ -1462,7 +1723,7 @@ td.num, th.num { text-align: right; }
     <summary class="mobile-card-title">系统健康</summary>
   <div class="control-grid">
     <section class="card control-card">
-      <h2>系统健康 <span class="sub" id="controlUpdated"></span></h2>
+      <h2>系统健康 <span class="module-range" id="controlUpdated">实时</span></h2>
       <div class="path-check-status" id="pathCheckStatus">
         <div class="path-check-main">上次巡检：读取中</div>
         <div class="path-check-meta">PASS - / FAIL -</div>
@@ -1487,7 +1748,7 @@ td.num, th.num { text-align: right; }
     </section>
 
     <section class="card control-card">
-      <h2>营收 / 会员</h2>
+      <h2>营收 / 会员 <span class="module-range" id="revenueUpdated">实时</span></h2>
       <table>
         <thead><tr><th>站点</th><th class="num">今日</th><th class="num">本月</th><th class="num">会员/用户</th><th>状态</th></tr></thead>
         <tbody id="revenueTable"><tr><td colspan="5" class="empty">等待营收会员数据</td></tr></tbody>
@@ -1496,17 +1757,9 @@ td.num, th.num { text-align: right; }
   </div>
   </details>
 
-  <section class="card">
-    <h2>站点总表</h2>
-    <table>
-      <thead><tr><th>站点</th><th class="num">访问</th><th class="num">访客</th><th>主来源</th><th>语言</th><th class="num">联系</th><th class="num">停留</th></tr></thead>
-      <tbody id="pageTable"></tbody>
-    </table>
-  </section>
-
   <details class="card mobile-collapse search-collapse" open>
     <summary class="mobile-card-title">搜索词</summary>
-    <h2>搜索词 <span class="sub" id="gscUpdated"></span></h2>
+    <h2>搜索词 <span class="module-range" id="gscUpdated">近 28 天</span></h2>
     <div class="gsc-tools">
       <select id="searchSourceFilter" aria-label="搜索来源">
         <option value="google" selected>Google</option>
@@ -1541,7 +1794,7 @@ td.num, th.num { text-align: right; }
   </details>
 
   <section class="card">
-    <h2>SNS 反馈</h2>
+    <h2>SNS 反馈 <span class="module-range" id="snsRangeUpdated">实时</span></h2>
     <table>
       <thead><tr><th>检查条数</th><th class="num">IG赞</th><th class="num">IG评论</th><th class="num">FB赞</th><th class="num">FB评论</th><th>DM状态</th><th>更新时间</th></tr></thead>
       <tbody><tr><td id="snsPosts">-</td><td class="num" id="snsIgLikes">-</td><td class="num" id="snsIgComments">-</td><td class="num" id="snsFbLikes">-</td><td class="num" id="snsFbComments">-</td><td id="snsDm">-</td><td id="snsUpdated">-</td></tr></tbody>
@@ -1569,9 +1822,20 @@ let selectedSite = '';
 let selectedPage = '';
 let selectedGscSite = '';
 let selectedSearchSource = 'google';
+let visitorRange = normalizeRangeValue(localStorage.getItem('nice_visitor_range') || '7');
+let siteTableRange = normalizeRangeValue(localStorage.getItem('nice_site_table_range') || '7');
+let orderRange = normalizeRangeValue(localStorage.getItem('nice_order_range') || '7');
 let visitorDays = 7;
 let orderMode = 'month';
 let lastOrderData = null;
+const allOrdersState = {
+  status: 'paid',
+  query: '',
+  page: 1,
+  pageSize: 50,
+  totalPages: 1,
+  loading: false
+};
 const toplineState = {
   pathHtml: '巡检 读取中',
   pathRed: false,
@@ -1626,8 +1890,8 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (s) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[s]));
 }
 
-function statusDot(ok, manual) {
-  return '<span class="status-dot ' + (ok ? 'ok' : (manual ? 'manual' : '')) + '"></span>';
+function statusDot(ok, manual, neutral) {
+  return '<span class="status-dot ' + (ok ? 'ok' : (neutral ? 'neutral' : (manual ? 'manual' : ''))) + '"></span>';
 }
 
 function renderTopline() {
@@ -1875,25 +2139,49 @@ function shortVisitor(id) {
 }
 
 function visitorDaysFromControl() {
-  const value = $('days').value;
+  return rangeValueToDays(visitorRange);
+}
+
+function siteTableDaysFromControl() {
+  return rangeValueToDays(siteTableRange);
+}
+
+function orderDaysFromControl() {
+  return rangeValueToDays(orderRange);
+}
+
+function rangeValueToDays(value) {
+  value = normalizeRangeValue(value);
   if (value === 'today') return 1;
   const days = Number(value || 7);
   return [1, 7, 30, 180].includes(days) ? days : 7;
 }
 
+function normalizeRangeValue(value) {
+  const text = String(value || '7');
+  return ['today', '7', '30', '180'].includes(text) ? text : '7';
+}
+
 function syncRangeTabs() {
-  const current = $('days').value || '7';
   document.querySelectorAll('#visitorRangeTabs button').forEach((button) => {
-    button.classList.toggle('active', button.dataset.range === current);
+    button.classList.toggle('active', button.dataset.range === visitorRange);
+  });
+  document.querySelectorAll('#siteTableRangeTabs button').forEach((button) => {
+    button.classList.toggle('active', button.dataset.range === siteTableRange);
   });
   document.querySelectorAll('#orderRangeTabs button').forEach((button) => {
-    button.classList.toggle('active', orderMode === 'days' && button.dataset.range === current);
+    button.classList.toggle('active', orderMode === 'days' && button.dataset.range === orderRange);
   });
 }
 
 function rangeLabel(days) {
   if (days === 1) return '今天';
-  return days + '天';
+  return '近 ' + days + ' 天';
+}
+
+function rangeQueryParams(rangeValue) {
+  const days = rangeValueToDays(rangeValue);
+  return rangeValue === 'today' ? { range: 'today', days: '1' } : { days: String(days) };
 }
 
 function defaultOrderMonth() {
@@ -2076,6 +2364,97 @@ function recentOrdersHtml(orders) {
     }).join('');
 }
 
+function paypalTransactionText(order) {
+  return order.paypal_transaction_id || order.order_id || order.business_record_key || '-';
+}
+
+function allOrderTotalsHtml(data) {
+  const totals = data.totals || [];
+  const amount = totals.length
+    ? totals.map((item) => escapeHtml(item.currency || '-') + ' ' + escapeHtml(String(item.amount || 0))).join(' / ')
+    : '-';
+  return '<div class="all-order-total-item"><span>当前筛选单数</span><strong>' + n(data.total_orders) + '</strong></div>' +
+    '<div class="all-order-total-item"><span>金额合计</span><strong>' + amount + '</strong></div>' +
+    '<div class="all-order-total-item"><span>范围</span><strong>' + (data.status_mode === 'all' ? '全部' : '实付') + '</strong></div>';
+}
+
+function allOrderRowHtml(order) {
+  const tx = paypalTransactionText(order);
+  const title = [
+    'order_id=' + (order.order_id || '-'),
+    'paypal_transaction_id=' + (order.paypal_transaction_id || '-'),
+    'business_record_key=' + (order.business_record_key || '-'),
+    'landing=' + (order.first_landing || '-'),
+    'utm=' + (order.first_utm || '-')
+  ].join(' | ');
+  return '<div class="all-order-row" title="' + escapeHtml(title) + '">' +
+    '<div class="all-order-cell"><span>下单时间(JST)</span><b>' + escapeHtml(timeText(order.created_at)) + '</b></div>' +
+    '<div class="all-order-cell"><span>邮箱</span><b>' + escapeHtml(order.email || order.email_masked || '-') + '</b></div>' +
+    '<div class="all-order-cell"><span>产品名</span><b>' + escapeHtml(orderProductText(order)) + '</b></div>' +
+    '<div class="all-order-cell"><span>金额</span><b>' + escapeHtml(moneyText(order)) + '</b></div>' +
+    '<div class="all-order-cell"><span>状态</span><b>' + escapeHtml(order.status || '-') + '</b></div>' +
+    '<div class="all-order-cell"><span>PayPal 取引 ID</span><b>' + escapeHtml(tx) + '</b></div>' +
+    '<div class="all-order-cell"><span>来源</span><b>' + escapeHtml(orderSourceText(order)) + '</b></div>' +
+  '</div>';
+}
+
+function allOrderRowsHtml(orders) {
+  if (!orders || !orders.length) return '<div class="empty">当前筛选暂无订单</div>';
+  return orders.map(allOrderRowHtml).join('');
+}
+
+function renderOrderViewMode() {
+  const allPage = $('allOrdersPage');
+  if (!allPage) return;
+  allPage.hidden = false;
+  if (location.hash.replace(/^#/, '') === 'all-orders') loadAllOrders();
+}
+
+function updateAllOrderControls() {
+  $('allOrderPaid').className = allOrdersState.status === 'paid' ? 'active' : 'secondary';
+  $('allOrderAll').className = allOrdersState.status === 'all' ? 'active' : 'secondary';
+  $('allOrderPrev').disabled = allOrdersState.loading || allOrdersState.page <= 1;
+  $('allOrderNext').disabled = allOrdersState.loading || allOrdersState.page >= allOrdersState.totalPages;
+  $('allOrderPageInfo').textContent = allOrdersState.loading ? '读取中' : ('第 ' + n(allOrdersState.page) + ' / ' + n(allOrdersState.totalPages) + ' 页');
+}
+
+async function loadAllOrders() {
+  if (!$('allOrdersPage')) return;
+  allOrdersState.loading = true;
+  updateAllOrderControls();
+  const key = localStorage.getItem('nice_dashboard_key') || '';
+  const qs = new URLSearchParams({
+    detail: '1',
+    status: allOrdersState.status,
+    page: String(allOrdersState.page),
+    page_size: String(allOrdersState.pageSize)
+  });
+  if (allOrdersState.query) qs.set('q', allOrdersState.query);
+  try {
+    const res = await fetch(ORDER_API + '?' + qs.toString(), {
+      credentials: 'include',
+      headers: {
+        accept: 'application/json',
+        ...(key ? { 'x-dashboard-key': key } : {})
+      }
+    });
+    const data = await readJsonResponse(res);
+    if (!res.ok || !data.ok) throw new Error(data.error || '订单明细 API 请求失败');
+    allOrdersState.totalPages = data.total_pages || 1;
+    allOrdersState.page = data.page || allOrdersState.page;
+    $('allOrderTotals').innerHTML = allOrderTotalsHtml(data);
+    $('allOrderRows').innerHTML = allOrderRowsHtml(data.orders || []);
+    $('allOrderUpdated').textContent = '共 ' + n(data.total_orders) + ' 单 · ' + (data.cache_status || '-') + ' · ' + new Date(data.generated_at).toLocaleTimeString();
+    updateKeyStatus(true);
+  } catch (e) {
+    $('allOrderTotals').innerHTML = '<div class="empty">订单明细读取失败：' + escapeHtml(e.message) + '</div>';
+    $('allOrderRows').innerHTML = '';
+  } finally {
+    allOrdersState.loading = false;
+    updateAllOrderControls();
+  }
+}
+
 function amountText(currency, amount) {
   return escapeHtml(currency || '-') + ' ' + escapeHtml(String(amount || 0));
 }
@@ -2245,7 +2624,7 @@ function sumStats(...stats) {
 }
 
 function setContentOpenedTime() {
-  $('contentUpdated').textContent = '更新 ' + new Date().toLocaleString();
+  $('contentUpdated').textContent = '实时 · 更新 ' + new Date().toLocaleTimeString();
 }
 
 async function loadContentStats() {
@@ -2270,7 +2649,7 @@ async function loadContentStats() {
     statCell('progTotal', pr.total || sumStats(pr.en, pr.jp, pr.cn));
     setContentOpenedTime();
   } catch (e) {
-    $('contentUpdated').textContent = '内容库存读取失败：' + e.message;
+    $('contentUpdated').textContent = '实时 · 读取失败';
   }
 }
 
@@ -2290,6 +2669,7 @@ async function loadSnsMetrics() {
     $('snsUpdated').textContent = data.updateMode === 'manual'
       ? '手动 ' + (data.lastManualUpdate ? new Date(data.lastManualUpdate).toLocaleString() : '-')
       : (data.generatedAt ? new Date(data.generatedAt).toLocaleString() : '-');
+    $('snsRangeUpdated').textContent = '实时 · 更新 ' + (data.generatedAt ? new Date(data.generatedAt).toLocaleTimeString() : new Date().toLocaleTimeString());
     renderRows('snsTable', (data.topPosts || []).slice(0, 10), (r) => row([
       { html: n(r.rank), num: true },
       escapeHtml(r.theme || '-'),
@@ -2303,6 +2683,7 @@ async function loadSnsMetrics() {
       ].filter(Boolean).join(' ') || '-' }
     ]));
   } catch (e) {
+    $('snsRangeUpdated').textContent = '实时 · 读取失败';
     $('snsTable').innerHTML = '<tr><td colspan="7" class="empty">SNS统计读取失败：' + escapeHtml(e.message) + '</td></tr>';
   }
 }
@@ -2320,7 +2701,9 @@ async function loadControl() {
     const data = await readJsonResponse(res);
     if (!res.ok || !data.ok) throw new Error(data.error || 'control API 请求失败');
 
-    $('controlUpdated').textContent = data.generated_at ? '更新 ' + new Date(data.generated_at).toLocaleTimeString() : '';
+    const controlTime = data.generated_at ? new Date(data.generated_at).toLocaleTimeString() : new Date().toLocaleTimeString();
+    $('controlUpdated').textContent = '实时 · 更新 ' + controlTime;
+    $('revenueUpdated').textContent = '实时 · 更新 ' + controlTime;
     const backups = ((data.backups || {}).items || []);
     renderRows('backupTable', backups, (r) => row([
       escapeHtml(r.label || r.key || '-'),
@@ -2333,7 +2716,7 @@ async function loadControl() {
     const deployments = ((data.deployments || {}).items || []);
     renderRows('deployTable', deployments, (r) => row([
       escapeHtml(r.repo || '-'),
-      { html: statusDot(r.ok, r.manual) + escapeHtml(r.ok ? '成功' : (r.manual ? (r.note || '未配 token') : (r.conclusion || r.status || '异常'))) },
+      { html: statusDot(r.ok, r.manual, r.status === 'no_data') + escapeHtml(r.status === 'no_data' ? '无数据' : (r.ok ? (r.note || '成功') : (r.manual ? (r.note || '未配 token') : (r.error === 'deployment_in_progress_timeout' ? '部署卡住超过 30 分钟' : (r.conclusion || r.status || '异常'))))) },
       escapeHtml(timeText(r.updated_at)),
       r.url ? '<a href="' + escapeHtml(r.url) + '" target="_blank">' + escapeHtml(r.workflow || 'workflow') + '</a>' : escapeHtml(r.error || r.workflow || '-')
     ]));
@@ -2355,6 +2738,8 @@ async function loadControl() {
       { html: statusDot(r.ok, r.manual) + escapeHtml(r.manual ? (r.note || '手动') : (r.note || '自动')) }
     ]));
   } catch (e) {
+    $('controlUpdated').textContent = '实时 · 读取失败';
+    $('revenueUpdated').textContent = '实时 · 读取失败';
     $('backupTable').innerHTML = '<tr><td colspan="5" class="empty">系统健康读取失败：' + escapeHtml(e.message) + '</td></tr>';
     $('deployTable').innerHTML = '<tr><td colspan="4" class="empty">部署状态读取失败</td></tr>';
     $('probeTable').innerHTML = '<tr><td colspan="4" class="empty">探针状态读取失败</td></tr>';
@@ -2467,7 +2852,7 @@ async function loadVisitors() {
     $('siteDetail').innerHTML = siteDetailsHtml(sites) +
       '<details class="visitor-flow"><summary>访客明细流水 ' + n((data.visitor_rows || []).length) + '</summary>' + visitorRowsHtml(data.visitor_rows || []) + '</details>';
   } catch (e) {
-    $('visitorUpdated').textContent = '';
+    $('visitorUpdated').textContent = rangeLabel(visitorDays) + ' · 读取失败';
     $('siteOverview').innerHTML = '<div class="empty">访客数据读取失败：' + escapeHtml(e.message) + '</div>';
     $('siteDetail').innerHTML = '';
   }
@@ -2477,7 +2862,7 @@ let orderRetryTimer = null;
 
 async function loadOrders() {
   const key = localStorage.getItem('nice_dashboard_key') || '';
-  const days = visitorDaysFromControl();
+  const days = orderDaysFromControl();
   const query = new URLSearchParams();
   if (orderMode === 'month') {
     query.set('month', orderMonthValue());
@@ -2537,7 +2922,7 @@ async function load() {
   const gscSite = $('gscSiteFilter').value || '';
   const searchSource = $('searchSourceFilter').value || 'google';
   const path = $('pageFilter').value || '';
-  const qs = new URLSearchParams(range === 'today' ? { range: 'today', days: '1' } : { days: range });
+  const qs = new URLSearchParams(rangeQueryParams(range));
   if (site) qs.set('site', site);
   if (gscSite) qs.set('gsc_site', gscSite);
   qs.set('search_source', searchSource);
@@ -2562,11 +2947,60 @@ async function load() {
     $('visitors').textContent = n(totals.visitors);
     $('duration').textContent = seconds(totals.avg_duration_ms);
     $('scroll').textContent = totals.avg_scroll ? Math.round(totals.avg_scroll) + '%' : '-';
+    $('metricsUpdated').textContent = rangeLabel(rangeValueToDays(range)) + ' · 更新 ' + new Date(data.generated_at).toLocaleTimeString();
     $('status').textContent = (site ? site + ' · ' : '') + (path ? path + ' · ' : '') + '已更新 ' + new Date(data.generated_at).toLocaleTimeString();
     updateKeyStatus(true);
     updateSiteOptions(data.sites);
     updatePageOptions(data.pages);
 
+    const searchConsole = data.search_console || {};
+    if (!searchConsole.ok) {
+      const gscEmptyText = searchSource === 'bing' ? 'Bing 收录中' : (searchConsole.configured === false ? '未接入 Search Console' : 'Search Console 尚未配置或还没有同步数据');
+      $('queryTable').innerHTML = '<tr><td colspan="7" class="empty">' + escapeHtml(gscEmptyText) + '</td></tr>';
+      $('gscNoClickTable').innerHTML = '<tr><td colspan="5" class="empty">' + escapeHtml(gscEmptyText) + '</td></tr>';
+      $('gscStrikingTable').innerHTML = '<tr><td colspan="5" class="empty">' + escapeHtml(gscEmptyText) + '</td></tr>';
+      $('gscUpdated').textContent = '近 28 天 · ' + (searchSource === 'bing' ? 'Bing 收录中' : '等待同步');
+    } else {
+      updateGscSiteOptions(searchConsole.sites);
+      const importedAt = (searchConsole.totals || {}).imported_at;
+      const sourceLabel = searchSource === 'bing' ? 'Bing' : (searchSource === 'all' ? '合计' : 'Google');
+      $('gscUpdated').textContent = '近 28 天 · ' + sourceLabel + ' · ' + (gscSite ? gscSite + ' · ' : '全部站点 · ') + (importedAt ? '同步 ' + timeText(importedAt) : '等待同步');
+      const emptyText = searchSource === 'bing' ? 'Bing 收录中' : '暂无搜索词数据';
+      renderSearchConsoleRows('queryTable', searchConsole.queries, false, emptyText);
+      renderSearchConsoleRows('gscNoClickTable', searchConsole.no_click, true, emptyText);
+      renderSearchConsoleRows('gscStrikingTable', searchConsole.striking_distance, true, emptyText);
+    }
+  } catch (e) {
+    $('metricsUpdated').textContent = rangeLabel(rangeValueToDays(range)) + ' · 读取失败';
+    $('gscUpdated').textContent = '近 28 天 · 读取失败';
+    $('status').textContent = e.message === 'unauthorized' ? '需要 Dashboard key' : '连接失败';
+    if (e.message === 'unauthorized') updateKeyStatus(false);
+    $('error').textContent = e.message === 'unauthorized'
+      ? '手机浏览器还没有保存 Dashboard key，或保存的是旧 key。请在上方输入最新 key 后点保存。'
+      : e.message + '。确认 Worker 已部署，DASHBOARD_KEY 正确。';
+    $('error').style.display = 'block';
+  }
+}
+
+async function loadSiteTable() {
+  const key = localStorage.getItem('nice_dashboard_key') || '';
+  const days = siteTableDaysFromControl();
+  const site = $('siteFilter').value || '';
+  const path = $('pageFilter').value || '';
+  const qs = new URLSearchParams(rangeQueryParams(siteTableRange));
+  if (site) qs.set('site', site);
+  if (path) qs.set('path', path);
+  try {
+    const res = await fetch(API + '?' + qs.toString(), {
+      credentials: 'include',
+      headers: {
+        accept: 'application/json',
+        ...(key ? { 'x-dashboard-key': key } : {})
+      }
+    });
+    const data = await readJsonResponse(res);
+    if (!res.ok || !data.ok) throw new Error(data.error || '站点总表 API 请求失败');
+    $('siteTableUpdated').textContent = rangeLabel(days) + ' · 更新 ' + new Date(data.generated_at).toLocaleTimeString();
     renderRows('pageTable', aggregateBySite(data.page_rows), (r) => row([
       '<button type="button" data-site="' + escapeHtml(r.site || '') + '">' + escapeHtml(r.site || '-') + '</button>',
       { html: n(r.views), num: true },
@@ -2576,30 +3010,9 @@ async function load() {
       { html: n(r.contact_clicks), num: true },
       { html: seconds(r.avg_duration_ms), num: true }
     ]));
-    const searchConsole = data.search_console || {};
-    if (!searchConsole.ok) {
-      const gscEmptyText = searchSource === 'bing' ? 'Bing 收录中' : (searchConsole.configured === false ? '未接入 Search Console' : 'Search Console 尚未配置或还没有同步数据');
-      $('queryTable').innerHTML = '<tr><td colspan="7" class="empty">' + escapeHtml(gscEmptyText) + '</td></tr>';
-      $('gscNoClickTable').innerHTML = '<tr><td colspan="5" class="empty">' + escapeHtml(gscEmptyText) + '</td></tr>';
-      $('gscStrikingTable').innerHTML = '<tr><td colspan="5" class="empty">' + escapeHtml(gscEmptyText) + '</td></tr>';
-      $('gscUpdated').textContent = '';
-    } else {
-      updateGscSiteOptions(searchConsole.sites);
-      const importedAt = (searchConsole.totals || {}).imported_at;
-      const sourceLabel = searchSource === 'bing' ? 'Bing' : (searchSource === 'all' ? '合计' : 'Google');
-      $('gscUpdated').textContent = sourceLabel + ' · ' + (gscSite ? gscSite + ' · ' : '全部站点 · ') + (importedAt ? '同步 ' + timeText(importedAt) : '等待同步');
-      const emptyText = searchSource === 'bing' ? 'Bing 收录中' : '暂无搜索词数据';
-      renderSearchConsoleRows('queryTable', searchConsole.queries, false, emptyText);
-      renderSearchConsoleRows('gscNoClickTable', searchConsole.no_click, true, emptyText);
-      renderSearchConsoleRows('gscStrikingTable', searchConsole.striking_distance, true, emptyText);
-    }
   } catch (e) {
-    $('status').textContent = e.message === 'unauthorized' ? '需要 Dashboard key' : '连接失败';
-    if (e.message === 'unauthorized') updateKeyStatus(false);
-    $('error').textContent = e.message === 'unauthorized'
-      ? '手机浏览器还没有保存 Dashboard key，或保存的是旧 key。请在上方输入最新 key 后点保存。'
-      : e.message + '。确认 Worker 已部署，DASHBOARD_KEY 正确。';
-    $('error').style.display = 'block';
+    $('siteTableUpdated').textContent = rangeLabel(days) + ' · 读取失败';
+    $('pageTable').innerHTML = '<tr><td colspan="7" class="empty">站点总表读取失败：' + escapeHtml(e.message) + '</td></tr>';
   }
 }
 
@@ -2630,12 +3043,14 @@ $('saveKey').addEventListener('click', () => {
   localStorage.setItem('nice_dashboard_key', $('key').value.trim());
   updateKeyStatus(true);
   load();
+  loadSiteTable();
   loadControl();
   loadPathCheckStatus();
   loadVisitors();
   loadOrders();
+  loadAllOrders();
 });
-$('refresh').addEventListener('click', () => { load(); loadControl(); loadVisitors(); loadOrders(); loadSnsMetrics(); loadContentStats(); });
+$('refresh').addEventListener('click', () => { load(); loadSiteTable(); loadControl(); loadVisitors(); loadOrders(); loadAllOrders(); loadSnsMetrics(); loadContentStats(); });
 $('syncGsc').addEventListener('click', async () => {
   $('error').style.display = 'none';
   $('status').textContent = '同步搜索词中';
@@ -2688,21 +3103,70 @@ $('sendGscWeekly').addEventListener('click', async () => {
     $('error').style.display = 'block';
   }
 });
-$('days').addEventListener('change', () => { syncRangeTabs(); load(); loadVisitors(); loadOrders(); });
+$('days').addEventListener('change', () => { syncRangeTabs(); load(); });
+$('allOrdersLink').addEventListener('click', () => {
+  allOrdersState.page = 1;
+});
+$('backToDashboard').addEventListener('click', (event) => {
+  event.preventDefault();
+  history.pushState(null, '', location.pathname + location.search);
+  renderOrderViewMode();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+$('allOrderPaid').addEventListener('click', () => {
+  allOrdersState.status = 'paid';
+  allOrdersState.page = 1;
+  loadAllOrders();
+});
+$('allOrderAll').addEventListener('click', () => {
+  allOrdersState.status = 'all';
+  allOrdersState.page = 1;
+  loadAllOrders();
+});
+$('allOrderSearchButton').addEventListener('click', () => {
+  allOrdersState.query = $('allOrderSearch').value.trim();
+  allOrdersState.page = 1;
+  loadAllOrders();
+});
+$('allOrderSearch').addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  allOrdersState.query = $('allOrderSearch').value.trim();
+  allOrdersState.page = 1;
+  loadAllOrders();
+});
+$('allOrderPrev').addEventListener('click', () => {
+  if (allOrdersState.page <= 1) return;
+  allOrdersState.page -= 1;
+  loadAllOrders();
+});
+$('allOrderNext').addEventListener('click', () => {
+  if (allOrdersState.page >= allOrdersState.totalPages) return;
+  allOrdersState.page += 1;
+  loadAllOrders();
+});
+window.addEventListener('hashchange', renderOrderViewMode);
 $('visitorRangeTabs').addEventListener('click', (event) => {
   const button = event.target.closest('button[data-range]');
   if (!button) return;
-  $('days').value = button.dataset.range || '7';
+  visitorRange = normalizeRangeValue(button.dataset.range || '7');
+  localStorage.setItem('nice_visitor_range', visitorRange);
   syncRangeTabs();
-  load();
   loadVisitors();
-  loadOrders();
+});
+$('siteTableRangeTabs').addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-range]');
+  if (!button) return;
+  siteTableRange = normalizeRangeValue(button.dataset.range || '7');
+  localStorage.setItem('nice_site_table_range', siteTableRange);
+  syncRangeTabs();
+  loadSiteTable();
 });
 $('orderRangeTabs').addEventListener('click', (event) => {
   const button = event.target.closest('button[data-range]');
   if (!button) return;
   orderMode = 'days';
-  $('days').value = button.dataset.range || '7';
+  orderRange = normalizeRangeValue(button.dataset.range || '7');
+  localStorage.setItem('nice_order_range', orderRange);
   syncRangeTabs();
   loadOrders();
 });
@@ -2717,6 +3181,7 @@ $('siteFilter').addEventListener('change', () => {
   $('pageFilter').value = '';
   selectedPage = '';
   load();
+  loadSiteTable();
 });
 $('gscSiteFilter').addEventListener('change', () => {
   selectedGscSite = $('gscSiteFilter').value;
@@ -2729,6 +3194,7 @@ $('searchSourceFilter').addEventListener('change', () => {
 $('pageFilter').addEventListener('change', () => {
   selectedPage = $('pageFilter').value;
   load();
+  loadSiteTable();
 });
 $('pageTable').addEventListener('click', (event) => {
   const siteButton = event.target.closest('button[data-site]');
@@ -2738,6 +3204,7 @@ $('pageTable').addEventListener('click', (event) => {
   $('pageFilter').value = '';
   selectedPage = '';
   load();
+  loadSiteTable();
 });
 $('sendTestAlert').addEventListener('click', sendTestAlert);
 $('key').value = localStorage.getItem('nice_dashboard_key') || '';
@@ -2746,15 +3213,18 @@ $('orderMonth').value = defaultOrderMonth();
 syncRangeTabs();
 renderTopline();
 syncMobileCollapses();
+renderOrderViewMode();
 window.addEventListener('resize', syncMobileCollapses);
 load();
+loadSiteTable();
 loadControl();
 loadPathCheckStatus();
 loadVisitors();
 loadOrders();
+loadAllOrders();
 loadSnsMetrics();
 loadContentStats();
-setInterval(() => { load(); loadControl(); loadPathCheckStatus(); loadVisitors(); loadOrders(); loadSnsMetrics(); loadContentStats(); }, 30000);
+setInterval(() => { load(); loadSiteTable(); loadControl(); loadPathCheckStatus(); loadVisitors(); loadOrders(); loadAllOrders(); loadSnsMetrics(); loadContentStats(); }, 30000);
 </script>
 </body>
 </html>

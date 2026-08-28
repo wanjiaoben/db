@@ -4,6 +4,8 @@ const ORDER_META_PREFIX = 'paypal_order_meta:';
 const ORDER_DAY_OPTIONS = new Set([1, 7, 30, 180]);
 const ORDER_ROWS_CACHE_TTL_MS = 60000;
 const ORDER_KV_BULK_GET_SIZE = 100;
+const ORDER_DETAIL_PAGE_SIZE_DEFAULT = 50;
+const ORDER_DETAIL_PAGE_SIZE_MAX = 100;
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
 const PAID_ORDER_STATUSES = new Set(['captured', 'completed']);
 const orderRowsCaches = new WeakMap();
@@ -142,9 +144,31 @@ async function orders(request, env) {
   const monthRange = MONTH_PATTERN.test(requestedMonth) ? jstMonthRange(requestedMonth) : null;
   const requestedDays = Number(url.searchParams.get('days') || 7);
   const days = ORDER_DAY_OPTIONS.has(requestedDays) ? requestedDays : 7;
-  const sinceMs = Date.now() - days * 86400000;
   const { rows: sourceRows, cacheStatus, loadedAt } = await getCachedOrderRows(env.BJT_KV);
   const allRows = dedupeOrderRows(sourceRows).filter((row) => !isTestOrder(row));
+  const paidAllRows = allRows.filter((row) => isPaidOrder(row));
+  const byCreatedDesc = (a, b) => {
+    const at = Date.parse(a.created_at || '') || 0;
+    const bt = Date.parse(b.created_at || '') || 0;
+    return bt - at;
+  };
+  const sortedPaidRows = [...paidAllRows].sort(byCreatedDesc);
+
+  if (url.searchParams.get('detail') === '1') {
+    return orderDetailResponse({
+      url,
+      startedAt,
+      sourceRows,
+      allRows,
+      paidAllRows,
+      sortedPaidRows,
+      cacheStatus,
+      loadedAt,
+      byCreatedDesc
+    });
+  }
+
+  const sinceMs = Date.now() - days * 86400000;
   const rows = [];
 
   for (const row of allRows) {
@@ -157,13 +181,6 @@ async function orders(request, env) {
     rows.push(row);
   }
 
-  const byCreatedDesc = (a, b) => {
-    const at = Date.parse(a.created_at || '') || 0;
-    const bt = Date.parse(b.created_at || '') || 0;
-    return bt - at;
-  };
-  const paidAllRows = allRows.filter((row) => isPaidOrder(row));
-  const sortedPaidRows = [...paidAllRows].sort(byCreatedDesc);
   rows.sort(byCreatedDesc);
 
   const capturedRows = rows.filter((row) => isPaidOrder(row));
@@ -202,6 +219,71 @@ async function orders(request, env) {
     captured_orders: capturedRows,
     excluded_orders: excludedRows
   });
+}
+
+function orderDetailResponse({ url, startedAt, sourceRows, allRows, paidAllRows, sortedPaidRows, cacheStatus, loadedAt, byCreatedDesc }) {
+  const statusMode = url.searchParams.get('status') === 'all' ? 'all' : 'paid';
+  const query = text(url.searchParams.get('q'));
+  const page = Math.max(1, Number.parseInt(url.searchParams.get('page') || '1', 10) || 1);
+  const requestedPageSize = Number.parseInt(url.searchParams.get('page_size') || String(ORDER_DETAIL_PAGE_SIZE_DEFAULT), 10);
+  const pageSize = Math.min(ORDER_DETAIL_PAGE_SIZE_MAX, Math.max(1, requestedPageSize || ORDER_DETAIL_PAGE_SIZE_DEFAULT));
+  const source = statusMode === 'all' ? [...allRows] : [...paidAllRows];
+  const filtered = source
+    .filter((row) => orderMatchesQuery(row, query))
+    .sort(byCreatedDesc);
+  const offset = (page - 1) * pageSize;
+  const pageRows = filtered.slice(offset, offset + pageSize);
+
+  return json({
+    ok: true,
+    source: 'bjt_kv',
+    source_prefix: ORDER_META_PREFIX,
+    detail: true,
+    status_mode: statusMode,
+    query,
+    page,
+    page_size: pageSize,
+    total_pages: Math.max(1, Math.ceil(filtered.length / pageSize)),
+    total_orders: filtered.length,
+    source_total_orders: sourceRows.length,
+    source_unique_orders: allRows.length,
+    source_paid_orders: paidAllRows.length,
+    paid_total_orders: sortedPaidRows.length,
+    all_total_orders: allRows.length,
+    has_next_page: offset + pageRows.length < filtered.length,
+    cache_status: cacheStatus,
+    cache_age_ms: loadedAt ? Math.max(0, Date.now() - loadedAt) : 0,
+    elapsed_ms: Date.now() - startedAt,
+    generated_at: new Date().toISOString(),
+    totals: orderDetailTotals(filtered),
+    orders: pageRows
+  });
+}
+
+function orderMatchesQuery(row, query) {
+  const needle = text(query).toLowerCase();
+  if (!needle) return true;
+  return [
+    row.email,
+    row.email_masked,
+    row.order_id,
+    row.paypal_transaction_id,
+    row.business_record_key,
+    row.key
+  ].some((value) => text(value).toLowerCase().includes(needle));
+}
+
+function orderDetailTotals(rows) {
+  const currencies = new Map();
+  for (const row of rows) {
+    const currency = text(row.currency) || '-';
+    if (!currencies.has(currency)) currencies.set(currency, { currency, count: 0, amount: 0 });
+    const bucket = currencies.get(currency);
+    bucket.count += 1;
+    const amount = Number(row.amount);
+    if (Number.isFinite(amount)) bucket.amount += amount;
+  }
+  return Array.from(currencies.values()).sort((a, b) => a.currency.localeCompare(b.currency));
 }
 
 async function getCachedOrderRows(kv) {
@@ -329,6 +411,7 @@ function orderRow(keyName, meta) {
     first_utm: text(meta.first_utm),
     first_seen: text(meta.first_seen),
     ui_lang: text(meta.ui_lang),
+    paypal_transaction_id: text(meta.paypal_transaction_id || meta.paypal_capture_id || meta.capture_id || meta.transaction_id || meta.captureId),
     paypal_payer_country: text(meta.paypal_payer_country),
     captured_at: text(meta.captured_at),
     business_record_key: text(meta.business_record_key),
