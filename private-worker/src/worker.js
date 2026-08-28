@@ -214,6 +214,7 @@ async function orders(request, env) {
       ip_country: distribution(countedRows, (row) => row.ip_country),
       paypal_payer_country: distribution(countedRows, (row) => row.paypal_payer_country)
     },
+    paid_channel_summary: paidChannelSummary(capturedRows),
     orders: capturedRows,
     captured_orders: capturedRows,
     excluded_orders: excludedRows
@@ -452,6 +453,48 @@ function orderDedupeRank(row) {
   const updatedMs = Date.parse(row.updated_at || '') || 0;
   const createdMs = Date.parse(row.created_at || '') || 0;
   return paid + Math.max(capturedMs, updatedMs, createdMs);
+}
+
+function paidChannelSummary(rows) {
+  return {
+    by_ref: moneyDistribution(rows, (row) => channelLabel(row.first_ref, row.first_utm)),
+    by_landing: moneyDistribution(rows, (row) => row.first_landing || '未知')
+  };
+}
+
+function moneyDistribution(rows, pick) {
+  const map = new Map();
+  for (const row of rows || []) {
+    const key = text(pick(row)) || '未知';
+    const currency = text(row.currency) || '-';
+    const amount = Number(row.amount);
+    const safeAmount = Number.isFinite(amount) ? amount : 0;
+    if (!map.has(key)) map.set(key, { value: key, count: 0, amounts: new Map() });
+    const item = map.get(key);
+    item.count += 1;
+    item.amounts.set(currency, (item.amounts.get(currency) || 0) + safeAmount);
+  }
+  return Array.from(map.values())
+    .map((item) => ({
+      value: item.value,
+      count: item.count,
+      amounts: Array.from(item.amounts.entries())
+        .map(([currency, amount]) => ({ currency, amount }))
+        .sort((a, b) => a.currency.localeCompare(b.currency))
+    }))
+    .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+}
+
+function channelLabel(firstRef, firstUtm) {
+  const ref = text(firstRef).toLowerCase();
+  const utm = text(firstUtm).toLowerCase();
+  const combined = `${ref} ${utm}`;
+  if (!combined.trim()) return 'direct';
+  if (combined.includes('google.')) return 'google';
+  if (combined.includes('chatgpt.com') || combined.includes('openai.com')) return 'chatgpt';
+  if (combined.includes('bing.')) return 'bing';
+  if (combined.includes('xiaohongshu') || combined.includes('xhs') || combined.includes('小红书')) return '小红书';
+  return ref ? ref.replace(/^www\./, '') : '其他';
 }
 
 function hasLocationMismatch(row) {

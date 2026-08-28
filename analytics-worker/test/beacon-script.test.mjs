@@ -29,6 +29,15 @@ test('beacon script keeps only UTM allowlist in landing_url', () => {
   assert.match(BEACON_SCRIPT, /location\.pathname/);
 });
 
+test('beacon script writes first touch attribution for checkout reuse', () => {
+  assert.match(BEACON_SCRIPT, /ftk='nice_ft'/);
+  assert.match(BEACON_SCRIPT, /localStorage\.setItem\(ftk,j\)/);
+  assert.match(BEACON_SCRIPT, /max-age=2592000/);
+  assert.match(BEACON_SCRIPT, /first_seen/);
+  assert.match(BEACON_SCRIPT, /ref_host/);
+  assert.match(BEACON_SCRIPT, /landing:location\.pathname/);
+});
+
 test('beacon dwell uses text/plain to avoid CORS preflight', () => {
   assert.match(BEACON_SCRIPT, /new Blob\(\[body\],\{type:'text\/plain'\}\)/);
   assert.doesNotMatch(BEACON_SCRIPT, /sendBeacon\(ep,new Blob\(\[body\],\{type:'application\/json'\}\)\)/);

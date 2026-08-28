@@ -1029,6 +1029,20 @@ td.num, th.num { text-align: right; }
   min-width: 0;
   max-width: 100%;
   overflow-x: hidden;
+.order-summary-block.wide {
+  grid-column: 1 / -1;
+}
+.order-mini-title {
+  margin-top: 4px;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+}
+.order-summary-block em {
+  display: block;
+  color: var(--muted);
+  font-style: normal;
+  font-size: 10px;
 }
 .order-tools {
   display: flex;
@@ -2450,6 +2464,22 @@ function orderSummaryList(items) {
   return '<ol>' + items.map((item) => '<li>' + escapeHtml(item.value || '-') + ' <b>' + n(item.count) + '</b></li>').join('') + '</ol>';
 }
 
+function channelSummaryList(items) {
+  if (!items || !items.length) return '<div class="empty">暂无数据</div>';
+  return '<ol>' + items.map((item) => {
+    const amounts = (item.amounts || []).map((amount) => amountText(amount.currency, amount.amount)).join(' / ');
+    return '<li><span>' + escapeHtml(item.value || '-') + '</span> <b>' + n(item.count) + '单</b> <em>' + amounts + '</em></li>';
+  }).join('') + '</ol>';
+}
+
+function paidChannelSummaryHtml(summary) {
+  const data = summary || {};
+  return '<div class="order-summary-block wide"><span>付费客人渠道榜</span>' +
+    '<div class="order-mini-title">按来源</div>' + channelSummaryList(data.by_ref || []) +
+    '<div class="order-mini-title">按落地页</div>' + channelSummaryList(data.by_landing || []) +
+    '</div>';
+}
+
 function orderSummaryHtml(data) {
   const dist = data.distributions || {};
   const totalLabel = data.mode === 'month' ? '计入单数' : '总单数';
@@ -2459,6 +2489,7 @@ function orderSummaryHtml(data) {
     '<div class="order-summary-block"><span>自选地区</span>' + orderSummaryList(dist.overseas_region) + '</div>' +
     '<div class="order-summary-block"><span>IP 国家</span>' + orderSummaryList(dist.ip_country) + '</div>' +
     '<div class="order-summary-block"><span>PayPal 国家</span>' + orderSummaryList(dist.paypal_payer_country) + '</div>' +
+    paidChannelSummaryHtml(data.paid_channel_summary) +
     totals;
 }
 
