@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { attachBackupHistory, backupHistoryFromIndex, backupItem, buildAlertEmailPreview, collectAlertItems, dailyD1BackupItem, deploymentWorkflowStatus, d1BackupItem, progressBackupItem, readR2Json, selectDeploymentWorkflowRun } from '../src/worker.js';
+import { attachBackupHistory, backupHistoryFromIndex, backupItem, buildAlertEmailPreview, collectAlertItems, dailyD1BackupItem, deploymentWorkflowStatus, d1BackupItem, getBackupStatus, progressBackupItem, readProgressBackupHistory, readR2Json, selectDeploymentWorkflowRun } from '../src/worker.js';
 
 const now = new Date('2026-07-18T21:00:00.000Z');
 
@@ -19,6 +19,90 @@ function result(environment, generatedAt, overrides = {}) {
     }
   };
 }
+
+function memoryBucket(label, objects = {}) {
+  const calls = [];
+  return {
+    calls,
+    async get(key) {
+      calls.push(`get:${key}`);
+      const value = objects[key];
+      if (value === undefined) return null;
+      return {
+        uploaded: new Date(value.uploaded || value.data?.generated_at || '2026-07-18T19:00:00.000Z'),
+        async text() { return typeof value.body === 'string' ? value.body : JSON.stringify(value.data); }
+      };
+    },
+    async list(options = {}) {
+      calls.push(`list:${options.prefix || ''}`);
+      return {
+        objects: Object.entries(objects)
+          .filter(([key]) => key.startsWith(options.prefix || ''))
+          .map(([key, value]) => ({ key, uploaded: new Date(value.uploaded || value.data?.generated_at || '2026-07-18T19:00:00.000Z') }))
+      };
+    }
+  };
+}
+
+test('preview Progress uses the dedicated R2 bucket and attaches history', async () => {
+  const generatedAt = '2026-07-18T19:00:00.000Z';
+  const previewKey = 'd1/progress/preview/2026-07-18T19-00-00-000Z.json';
+  const previewData = {
+    kind: 'progress-d1-backup', environment: 'preview', database: 'progress-otp-preview',
+    generated_at: generatedAt, object_key: previewKey
+  };
+  const canonical = memoryBucket('canonical', {
+    'd1/latest/manifest.json': { data: { ...result('production', generatedAt).data, kind: 'progress-d1-backup' } }
+  });
+  const dedicated = memoryBucket('dedicated', {
+    'd1/progress/preview/latest.json': { data: previewData },
+    [previewKey]: { data: previewData }
+  });
+  const empty = memoryBucket('empty');
+  const status = await getBackupStatus({
+    BJT_BACKUPS: empty,
+    PROGRESS_BACKUP: canonical,
+    PROGRESS_BACKUP_PREVIEW: dedicated
+  }, new Date(generatedAt));
+  const preview = status.items.find((item) => item.key === 'progress-preview');
+  assert.equal(preview.ok, true);
+  assert.equal(preview.history_7d[0].ok, true);
+  assert.ok(dedicated.calls.includes('get:d1/progress/preview/latest.json'));
+  assert.ok(dedicated.calls.includes('list:d1/progress/preview/'));
+  assert.ok(!canonical.calls.includes('get:d1/progress/preview/latest.json'));
+  assert.ok(canonical.calls.includes('get:d1/latest/manifest.json'));
+});
+
+test('preview missing latest is not green and does not rely on a zero failure default', async () => {
+  const dedicated = memoryBucket('dedicated');
+  const history = await readProgressBackupHistory(dedicated, 'preview', 'progress-otp-preview', now, 2);
+  const item = attachBackupHistory(
+    progressBackupItem('progress-preview', 'Progress preview', { ok: false, status: 'missing', key: 'd1/progress/preview/latest.json' }, 'preview', 'progress-otp-preview', now),
+    history,
+    now
+  );
+  assert.equal(item.ok, false);
+  assert.equal(item.history_7d[0].status, 'missing');
+  assert.notEqual(item.consecutive_failures, 0);
+});
+
+test('preview history counts consecutive manifest failures and resets at a success', async () => {
+  const preview = (timestamp, overrides = {}) => ({
+    kind: 'progress-d1-backup', environment: 'preview', database: 'progress-otp-preview',
+    generated_at: timestamp, object_key: `d1/progress/preview/${timestamp.replace(/[:.]/g, '-')}.json`, ...overrides
+  });
+  const bucket = memoryBucket('dedicated', {
+    'd1/progress/preview/2026-07-19T01-00-00-000Z.json': { data: { broken: true } },
+    'd1/progress/preview/2026-07-18T01-00-00-000Z.json': { data: preview('2026-07-18T01:00:00.000Z') },
+    'd1/progress/preview/2026-07-17T01-00-00-000Z.json': { data: preview('2026-07-17T01:00:00.000Z') }
+  });
+  const history = await readProgressBackupHistory(bucket, 'preview', 'progress-otp-preview', new Date('2026-07-19T04:00:00.000Z'), 3);
+  assert.equal(history[0].ok, false);
+  assert.equal(history[1].ok, true);
+  const item = attachBackupHistory({ key: 'progress-preview', ok: false, status: 'stale', latest_at: '' }, history);
+  assert.equal(item.consecutive_failures, 1);
+  assert.equal(item.last_success_at, '2026-07-18T01:00:00.000Z');
+});
 
 test('production and preview manifests pass independently inside 27h', () => {
   const production = progressBackupItem('production', 'production', result('production', '2026-07-17T18:17:01.000Z'), 'production', 'progress', now);

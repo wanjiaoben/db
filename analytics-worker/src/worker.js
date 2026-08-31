@@ -2767,15 +2767,16 @@ async function getProbeSummary(env) {
   };
 }
 
-async function getBackupStatus(env) {
-  const now = new Date();
-  const [bjt, progressProduction, progressPreview, niceAnalyticsProduction, bjtHistory, progressHistory, niceAnalyticsIndex] = await Promise.all([
+export async function getBackupStatus(env, now = new Date()) {
+  const previewProgressBucket = env.PROGRESS_BACKUP_PREVIEW || env.PROGRESS_BACKUP;
+  const [bjt, progressProduction, progressPreview, niceAnalyticsProduction, bjtHistory, progressHistory, previewHistory, niceAnalyticsIndex] = await Promise.all([
     readR2Json(env.BJT_BACKUPS, 'kv-snapshots/latest/manifest.json'),
     readR2JsonFallback(env.PROGRESS_BACKUP, ['d1/latest/manifest.json', 'd1/progress/production/latest.json']),
-    readR2Json(env.PROGRESS_BACKUP, 'd1/progress/preview/latest.json'),
+    readR2Json(previewProgressBucket, 'd1/progress/preview/latest.json'),
     readR2Json(env.PROGRESS_BACKUP, 'd1/nice_analytics/production/latest.json'),
     readDailyBackupHistory(env.BJT_BACKUPS, 'kv-snapshots', now),
     readDailyBackupHistory(env.PROGRESS_BACKUP, 'd1/daily', now),
+    readProgressBackupHistory(previewProgressBucket, 'preview', 'progress-otp-preview', now),
     readR2Json(env.PROGRESS_BACKUP, 'd1/nice_analytics/production/index.json')
   ]);
   const niceAnalyticsHistory = backupHistoryFromIndex(niceAnalyticsIndex, now);
@@ -2783,7 +2784,11 @@ async function getBackupStatus(env) {
     maxAgeHours: BJT_BACKUP_MAX_AGE_HOURS
   }), bjtHistory);
   const progressItem = attachBackupHistory(progressBackupItem('progress-production', 'Progress production D1 export', progressProduction, 'production', 'progress', now), progressHistory);
-  const previewItem = progressBackupItem('progress-preview', 'Progress preview D1 export', progressPreview, 'preview', 'progress-otp-preview', now);
+  const previewItem = attachBackupHistory(
+    progressBackupItem('progress-preview', 'Progress preview D1 export', progressPreview, 'preview', 'progress-otp-preview', now),
+    previewHistory,
+    now
+  );
   const niceItem = attachBackupHistory(d1BackupItem('nice-analytics-production', 'nice_analytics production D1 export', niceAnalyticsProduction, 'production', 'nice_analytics', 'd1/nice_analytics/production/', now), niceAnalyticsHistory);
   return {
     generated_at: now.toISOString(),
@@ -2820,6 +2825,59 @@ async function readDailyBackupHistory(bucket, prefix, now, days = 7) {
     });
   }
   return entries;
+}
+
+export async function readProgressBackupHistory(bucket, expectedEnvironment, expectedDatabase, now, days = 7) {
+  const today = jstDateKey(now);
+  if (!bucket || !today) return unknownBackupHistory(today, days, 'preview backup history unavailable');
+  let listed;
+  try {
+    listed = await bucket.list({ prefix: `d1/progress/${expectedEnvironment}/`, limit: 1000 });
+  } catch (error) {
+    return unknownBackupHistory(today, days, clean(error?.message || 'preview backup history list failed', 300));
+  }
+  const candidates = (listed.objects || [])
+    .filter((object) => /\/\d{4}-\d{2}-\d{2}T[^/]+\.json$/.test(String(object.key || '')))
+    .sort((a, b) => String(b.key).localeCompare(String(a.key)));
+  const byDate = new Map();
+  for (const object of candidates) {
+    const timestamp = timestampFromProgressBackupKey(object.key);
+    const date = jstDateKey(timestamp || object.uploaded || '');
+    if (!date || byDate.has(date)) continue;
+    byDate.set(date, object);
+  }
+  const rows = [];
+  for (let offset = 0; offset < days; offset += 1) {
+    const date = shiftDateKey(today, -offset);
+    const object = byDate.get(date);
+    if (!object) {
+      rows.push({ date, ok: false, status: 'missing', latest_at: '', error: 'no successful manifest for date' });
+      continue;
+    }
+    const result = await readR2Json(bucket, object.key);
+    const data = result.data || {};
+    const valid = result.ok
+      && data.kind === 'progress-d1-backup'
+      && data.environment === expectedEnvironment
+      && data.database === expectedDatabase
+      && String(data.object_key || '').startsWith(`d1/progress/${expectedEnvironment}/`);
+    rows.push({
+      date,
+      ok: valid,
+      status: valid ? 'complete' : (result.ok ? 'invalid' : result.status),
+      latest_at: firstDateValue(data, ['generated_at', 'generatedAt', 'created_at', 'date']) || result.updated_at || '',
+      error: valid ? '' : (result.error || 'preview manifest validation failed')
+    });
+  }
+  return rows;
+}
+
+function timestampFromProgressBackupKey(key) {
+  const match = /\/(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z\.json$/.exec(String(key || ''));
+  if (!match) return '';
+  const value = `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}.${match[7]}Z`;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString();
 }
 
 export function backupHistoryFromIndex(result, now, days = 7) {
