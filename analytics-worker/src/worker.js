@@ -2768,15 +2768,25 @@ async function getProbeSummary(env) {
 }
 
 export async function getBackupStatus(env, now = new Date()) {
-  const previewProgressBucket = env.PROGRESS_BACKUP_PREVIEW || env.PROGRESS_BACKUP;
+  const previewProgressBucket = env.PROGRESS_BACKUP_PREVIEW;
   const [bjt, progressProduction, progressPreview, niceAnalyticsProduction, bjtHistory, progressHistory, previewHistory, niceAnalyticsIndex] = await Promise.all([
     readR2Json(env.BJT_BACKUPS, 'kv-snapshots/latest/manifest.json'),
     readR2JsonFallback(env.PROGRESS_BACKUP, ['d1/latest/manifest.json', 'd1/progress/production/latest.json']),
-    readR2Json(previewProgressBucket, 'd1/progress/preview/latest.json'),
+    previewProgressBucket
+      ? readR2Json(previewProgressBucket, 'd1/progress/preview/latest.json')
+      : Promise.resolve({
+        ok: false,
+        status: 'MONITOR_BINDING_MISSING',
+        key: 'd1/progress/preview/latest.json',
+        error: 'MONITOR_BINDING_MISSING',
+        detail: 'missing PROGRESS_BACKUP_PREVIEW binding'
+      }),
     readR2Json(env.PROGRESS_BACKUP, 'd1/nice_analytics/production/latest.json'),
     readDailyBackupHistory(env.BJT_BACKUPS, 'kv-snapshots', now),
     readDailyBackupHistory(env.PROGRESS_BACKUP, 'd1/daily', now),
-    readProgressBackupHistory(previewProgressBucket, 'preview', 'progress-otp-preview', now),
+    previewProgressBucket
+      ? readProgressBackupHistory(previewProgressBucket, 'preview', 'progress-otp-preview', now)
+      : Promise.resolve(null),
     readR2Json(env.PROGRESS_BACKUP, 'd1/nice_analytics/production/index.json')
   ]);
   const niceAnalyticsHistory = backupHistoryFromIndex(niceAnalyticsIndex, now);
@@ -2784,11 +2794,12 @@ export async function getBackupStatus(env, now = new Date()) {
     maxAgeHours: BJT_BACKUP_MAX_AGE_HOURS
   }), bjtHistory);
   const progressItem = attachBackupHistory(progressBackupItem('progress-production', 'Progress production D1 export', progressProduction, 'production', 'progress', now), progressHistory);
-  const previewItem = attachBackupHistory(
-    progressBackupItem('progress-preview', 'Progress preview D1 export', progressPreview, 'preview', 'progress-otp-preview', now),
-    previewHistory,
-    now
-  );
+  const previewBase = progressBackupItem('progress-preview', 'Progress preview D1 export', progressPreview, 'preview', 'progress-otp-preview', now);
+  const previewItem = !previewProgressBucket
+    ? previewUnavailableItem(previewBase, 'MONITOR_BINDING_MISSING', 'missing PROGRESS_BACKUP_PREVIEW binding')
+    : previewHistory?.history_unavailable
+      ? previewUnavailableItem(previewBase, 'MONITOR_HISTORY_UNAVAILABLE', previewHistory.history_error || 'preview backup history unavailable')
+      : attachBackupHistory(previewBase, previewHistory, now);
   const niceItem = attachBackupHistory(d1BackupItem('nice-analytics-production', 'nice_analytics production D1 export', niceAnalyticsProduction, 'production', 'nice_analytics', 'd1/nice_analytics/production/', now), niceAnalyticsHistory);
   return {
     generated_at: now.toISOString(),
@@ -2834,15 +2845,18 @@ export async function readProgressBackupHistory(bucket, expectedEnvironment, exp
   try {
     listed = await bucket.list({ prefix: `d1/progress/${expectedEnvironment}/`, limit: 1000 });
   } catch (error) {
-    return unknownBackupHistory(today, days, clean(error?.message || 'preview backup history list failed', 300));
+    const rows = unknownBackupHistory(today, days, clean(error?.message || 'preview backup history list failed', 300));
+    rows.history_unavailable = true;
+    rows.history_error = rows[0]?.error || 'preview backup history list failed';
+    return rows;
   }
   const candidates = (listed.objects || [])
-    .filter((object) => /\/\d{4}-\d{2}-\d{2}T[^/]+\.json$/.test(String(object.key || '')))
+    .filter((object) => new RegExp(`^d1/progress/${expectedEnvironment}/\\d{4}-\\d{2}-\\d{2}T[^/]+\\.json$`).test(String(object.key || '')))
     .sort((a, b) => String(b.key).localeCompare(String(a.key)));
   const byDate = new Map();
   for (const object of candidates) {
     const timestamp = timestampFromProgressBackupKey(object.key);
-    const date = jstDateKey(timestamp || object.uploaded || '');
+    const date = jstDateKey(timestamp);
     if (!date || byDate.has(date)) continue;
     byDate.set(date, object);
   }
@@ -2873,11 +2887,19 @@ export async function readProgressBackupHistory(bucket, expectedEnvironment, exp
 }
 
 function timestampFromProgressBackupKey(key) {
-  const match = /\/(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z\.json$/.exec(String(key || ''));
+  const match = /^d1\/progress\/preview\/(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z\.json$/.exec(String(key || ''));
   if (!match) return '';
   const value = `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}.${match[7]}Z`;
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString();
+  if (Number.isNaN(parsed.getTime())) return '';
+  if (parsed.getUTCFullYear() !== Number(match[1])
+    || parsed.getUTCMonth() + 1 !== Number(match[2])
+    || parsed.getUTCDate() !== Number(match[3])
+    || parsed.getUTCHours() !== Number(match[4])
+    || parsed.getUTCMinutes() !== Number(match[5])
+    || parsed.getUTCSeconds() !== Number(match[6])
+    || parsed.getUTCMilliseconds() !== Number(match[7])) return '';
+  return parsed.toISOString();
 }
 
 export function backupHistoryFromIndex(result, now, days = 7) {
@@ -3101,6 +3123,25 @@ export function d1BackupItem(key, label, result, expectedEnvironment, expectedDa
     age_hours: Number.isFinite(ageMs) ? Math.round(ageMs / 36000) / 100 : null,
     error: result.error || validationError || (!fresh && result.ok ? `latest manifest is older than 27h: ${dateValue || '<missing>'}` : ''),
     source: 'R2'
+  };
+}
+
+function previewUnavailableItem(item, code, detail) {
+  const message = `${code}: ${detail}`;
+  return {
+    ...item,
+    ok: false,
+    status: code,
+    error: message,
+    detail,
+    history_7d: null,
+    success_days_7d: null,
+    success_rate_7d: null,
+    history_skipped: null,
+    last_success_at: '',
+    consecutive_failures: null,
+    failure_date: '',
+    failure_stage: 'monitor'
   };
 }
 

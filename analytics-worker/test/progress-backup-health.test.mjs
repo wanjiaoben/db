@@ -44,6 +44,21 @@ function memoryBucket(label, objects = {}) {
   };
 }
 
+function throwingBucket() {
+  const calls = [];
+  return {
+    calls,
+    async get(key) {
+      calls.push(`get:${key}`);
+      throw new Error('R2 read unavailable');
+    },
+    async list(options = {}) {
+      calls.push(`list:${options.prefix || ''}`);
+      throw new Error('R2 list unavailable');
+    }
+  };
+}
+
 test('preview Progress uses the dedicated R2 bucket and attaches history', async () => {
   const generatedAt = '2026-07-18T19:00:00.000Z';
   const previewKey = 'd1/progress/preview/2026-07-18T19-00-00-000Z.json';
@@ -71,6 +86,41 @@ test('preview Progress uses the dedicated R2 bucket and attaches history', async
   assert.ok(dedicated.calls.includes('list:d1/progress/preview/'));
   assert.ok(!canonical.calls.includes('get:d1/progress/preview/latest.json'));
   assert.ok(canonical.calls.includes('get:d1/latest/manifest.json'));
+});
+
+test('missing preview binding is an explicit red state and never probes the shared bucket for preview', async () => {
+  const shared = memoryBucket('shared');
+  const status = await getBackupStatus({
+    BJT_BACKUPS: memoryBucket('bjt'),
+    PROGRESS_BACKUP: shared
+  }, new Date('2026-07-18T19:00:00.000Z'));
+  const preview = status.items.find((item) => item.key === 'progress-preview');
+  assert.equal(preview.ok, false);
+  assert.equal(preview.status, 'MONITOR_BINDING_MISSING');
+  assert.equal(preview.error, 'MONITOR_BINDING_MISSING: missing PROGRESS_BACKUP_PREVIEW binding');
+  assert.equal(preview.detail, 'missing PROGRESS_BACKUP_PREVIEW binding');
+  assert.equal(preview.history_7d, null);
+  assert.equal(preview.success_rate_7d, null);
+  assert.equal(preview.consecutive_failures, null);
+  assert.equal(shared.calls.filter((call) => call.includes('d1/progress/preview/')).length, 0);
+});
+
+test('preview binding read errors stay non-healthy and never fall back to the shared bucket', async () => {
+  const shared = memoryBucket('shared');
+  const dedicated = throwingBucket();
+  const status = await getBackupStatus({
+    BJT_BACKUPS: memoryBucket('bjt'),
+    PROGRESS_BACKUP: shared,
+    PROGRESS_BACKUP_PREVIEW: dedicated
+  }, new Date('2026-07-18T19:00:00.000Z'));
+  const preview = status.items.find((item) => item.key === 'progress-preview');
+  assert.equal(preview.ok, false);
+  assert.equal(preview.status, 'MONITOR_HISTORY_UNAVAILABLE');
+  assert.match(preview.error, /^MONITOR_HISTORY_UNAVAILABLE:/);
+  assert.equal(preview.history_7d, null);
+  assert.equal(shared.calls.filter((call) => call.includes('d1/progress/preview/')).length, 0);
+  assert.ok(dedicated.calls.includes('get:d1/progress/preview/latest.json'));
+  assert.ok(dedicated.calls.includes('list:d1/progress/preview/'));
 });
 
 test('preview missing latest is not green and does not rely on a zero failure default', async () => {
@@ -102,6 +152,29 @@ test('preview history counts consecutive manifest failures and resets at a succe
   const item = attachBackupHistory({ key: 'progress-preview', ok: false, status: 'stale', latest_at: '' }, history);
   assert.equal(item.consecutive_failures, 1);
   assert.equal(item.last_success_at, '2026-07-18T01:00:00.000Z');
+});
+
+test('preview history accepts only strict timestamp keys and ignores invalid keys regardless of uploaded metadata', async () => {
+  const validKey = 'd1/progress/preview/2026-07-18T01-00-00-000Z.json';
+  const bucket = memoryBucket('dedicated', {
+    [validKey]: { data: {
+      kind: 'progress-d1-backup', environment: 'preview', database: 'progress-otp-preview',
+      generated_at: '2026-07-18T01:00:00.000Z', object_key: validKey
+    } },
+    'd1/progress/preview/latest.json': { uploaded: '2026-07-19T03:00:00.000Z', data: { status: 'complete' } },
+    'd1/progress/preview/2026-07-19T01-00-00Z.json': { uploaded: '2026-07-19T03:00:00.000Z', data: {} },
+    'd1/progress/preview/2026-07-19T01-00-00-000Z.json.bak': { uploaded: '2026-07-19T03:00:00.000Z', data: {} },
+    'd1/progress/preview/2026-07-32T01-00-00-000Z.json': { uploaded: '2026-07-19T03:00:00.000Z', data: {} },
+    'other/d1/progress/preview/2026-07-19T01-00-00-000Z.json': { uploaded: '2026-07-19T03:00:00.000Z', data: {} }
+  });
+  const history = await readProgressBackupHistory(bucket, 'preview', 'progress-otp-preview', new Date('2026-07-19T04:00:00.000Z'), 2);
+  assert.equal(history[0].ok, false);
+  assert.equal(history[1].ok, true);
+  assert.equal(history.filter((row) => row.ok).length, 1);
+  assert.deepEqual(bucket.calls.filter((call) => call.startsWith('get:')), [`get:${validKey}`]);
+  const item = attachBackupHistory({ key: 'progress-preview', ok: false, status: 'stale', latest_at: '' }, history, new Date('2026-07-19T04:00:00.000Z'));
+  assert.equal(item.consecutive_failures, 1);
+  assert.equal(item.success_rate_7d, 0.5);
 });
 
 test('production and preview manifests pass independently inside 27h', () => {
