@@ -69,6 +69,10 @@ bucket_name = "bjt-kv-backups"
 binding = "PROGRESS_BACKUP"
 bucket_name = "progress-backup"
 
+[[env.preview.r2_buckets]]
+binding = "PROGRESS_BACKUP_PREVIEW"
+bucket_name = "progress-backup-preview"
+
 [[env.preview.services]]
 binding = "BJT_API"
 service = "bjt-worker"
