@@ -2769,7 +2769,8 @@ async function getProbeSummary(env) {
 
 export async function getBackupStatus(env, now = new Date()) {
   const previewProgressBucket = env.PROGRESS_BACKUP_PREVIEW;
-  const [bjt, progressProduction, progressPreview, niceAnalyticsProduction, bjtHistory, progressHistory, previewHistory, niceAnalyticsIndex] = await Promise.all([
+  const previewProgressSqlBucket = env.PROGRESS_DB_BACKUP;
+  const [bjt, progressProduction, progressPreview, progressProductionSql, progressPreviewSql, niceAnalyticsProduction, bjtHistory, progressHistory, previewHistory, niceAnalyticsIndex] = await Promise.all([
     readR2Json(env.BJT_BACKUPS, 'kv-snapshots/latest/manifest.json'),
     readR2JsonFallback(env.PROGRESS_BACKUP, ['d1/latest/manifest.json', 'd1/progress/production/latest.json']),
     previewProgressBucket
@@ -2780,6 +2781,16 @@ export async function getBackupStatus(env, now = new Date()) {
         key: 'd1/progress/preview/latest.json',
         error: 'MONITOR_BINDING_MISSING',
         detail: 'missing PROGRESS_BACKUP_PREVIEW binding'
+      }),
+    readR2Json(env.PROGRESS_DB_BACKUP, 'd1/progress/production/latest.json'),
+    previewProgressSqlBucket
+      ? readR2Json(previewProgressSqlBucket, 'd1/progress/preview/latest.json')
+      : Promise.resolve({
+        ok: false,
+        status: 'MONITOR_BINDING_MISSING',
+        key: 'd1/progress/preview/latest.json',
+        error: 'MONITOR_BINDING_MISSING',
+        detail: 'missing PROGRESS_DB_BACKUP binding'
       }),
     readR2Json(env.PROGRESS_BACKUP, 'd1/nice_analytics/production/latest.json'),
     readDailyBackupHistory(env.BJT_BACKUPS, 'kv-snapshots', now),
@@ -2794,19 +2805,28 @@ export async function getBackupStatus(env, now = new Date()) {
     maxAgeHours: BJT_BACKUP_MAX_AGE_HOURS
   }), bjtHistory);
   const progressItem = attachBackupHistory(progressBackupItem('progress-production', 'Progress production D1 export', progressProduction, 'production', 'progress', now), progressHistory);
-  const previewBase = progressBackupItem('progress-preview', 'Progress preview D1 export', progressPreview, 'preview', 'progress-otp-preview', now);
+  const progressProductionSqlItem = d1BackupItem('progress-production-sql', 'Progress production SQL export', progressProductionSql, 'production', 'progress', 'd1/progress/production/', now, { expectedKind: 'progress-d1-sql-backup-manifest' });
+  const previewBase = progressBackupItem('progress-preview', 'Progress preview JSON export', progressPreview, 'preview', 'progress-otp-preview', now, { warningAgeHours: 36, criticalAgeHours: 48 });
   const previewItem = !previewProgressBucket
     ? previewUnavailableItem(previewBase, 'MONITOR_BINDING_MISSING', 'missing PROGRESS_BACKUP_PREVIEW binding')
     : previewHistory?.history_unavailable
       ? previewUnavailableItem(previewBase, 'MONITOR_HISTORY_UNAVAILABLE', previewHistory.history_error || 'preview backup history unavailable')
       : attachBackupHistory(previewBase, previewHistory, now);
+  const previewSqlBase = d1BackupItem('progress-preview-sql', 'Progress preview SQL export', progressPreviewSql, 'preview', 'progress-otp-preview', 'd1/progress/preview/', now, {
+    expectedKind: 'progress-d1-sql-backup-manifest', warningAgeHours: 36, criticalAgeHours: 48
+  });
+  const previewSqlItem = !previewProgressSqlBucket
+    ? previewUnavailableItem(previewSqlBase, 'MONITOR_BINDING_MISSING', 'missing PROGRESS_DB_BACKUP binding')
+    : previewSqlBase;
   const niceItem = attachBackupHistory(d1BackupItem('nice-analytics-production', 'nice_analytics production D1 export', niceAnalyticsProduction, 'production', 'nice_analytics', 'd1/nice_analytics/production/', now), niceAnalyticsHistory);
   return {
     generated_at: now.toISOString(),
     items: [
       bjtItem,
       progressItem,
+      progressProductionSqlItem,
       previewItem,
+      previewSqlItem,
       niceItem
     ]
   };
@@ -3064,11 +3084,11 @@ export function backupItem(key, label, result, dateFields, now = new Date(), opt
   };
 }
 
-export function progressBackupItem(key, label, result, expectedEnvironment, expectedDatabase, now = new Date()) {
+export function progressBackupItem(key, label, result, expectedEnvironment, expectedDatabase, now = new Date(), options = {}) {
   if (result?.ok && result.data?.kind === 'progress-d1-r2-daily-backup') {
     return dailyD1BackupItem(key, label, result, now);
   }
-  return d1BackupItem(key, label, result, expectedEnvironment, expectedDatabase, `d1/progress/${expectedEnvironment}/`, now);
+  return d1BackupItem(key, label, result, expectedEnvironment, expectedDatabase, `d1/progress/${expectedEnvironment}/`, now, options);
 }
 
 export function dailyD1BackupItem(key, label, result, now = new Date()) {
@@ -3095,10 +3115,12 @@ export function dailyD1BackupItem(key, label, result, now = new Date()) {
   };
 }
 
-export function d1BackupItem(key, label, result, expectedEnvironment, expectedDatabase, expectedPrefix, now = new Date()) {
+export function d1BackupItem(key, label, result, expectedEnvironment, expectedDatabase, expectedPrefix, now = new Date(), options = {}) {
   const data = result.data || {};
   const dateValue = firstDateValue(data, ['generated_at', 'generatedAt', 'created_at', 'date']) || result.updated_at || '';
-  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now, DAILY_BACKUP_MAX_AGE_HOURS);
+  const warningAgeHours = Number(options.warningAgeHours || 0) || null;
+  const maxAgeHours = Number(options.criticalAgeHours || DAILY_BACKUP_MAX_AGE_HOURS);
+  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now, maxAgeHours);
   let validationError = '';
   if (result.ok && data.environment !== expectedEnvironment) {
     validationError = `manifest environment mismatch: expected ${expectedEnvironment}, got ${data.environment || '<missing>'}`;
@@ -3106,9 +3128,13 @@ export function d1BackupItem(key, label, result, expectedEnvironment, expectedDa
     validationError = `manifest database mismatch: expected ${expectedDatabase}, got ${data.database || '<missing>'}`;
   } else if (result.ok && !String(data.object_key || '').startsWith(expectedPrefix)) {
     validationError = `manifest object key crosses environment boundary: ${data.object_key || '<missing>'}`;
+  } else if (result.ok && options.expectedKind && data.kind !== options.expectedKind) {
+    validationError = `manifest kind mismatch: expected ${options.expectedKind}, got ${data.kind || '<missing>'}`;
   }
   const fresh = result.ok && ageFresh;
   const ok = fresh && !validationError;
+  const ageHours = Number.isFinite(ageMs) ? ageMs / 3600000 : null;
+  const warning = Boolean(result.ok && !validationError && warningAgeHours && Number.isFinite(ageHours) && ageHours > warningAgeHours && ageHours <= maxAgeHours);
   return {
     key,
     label,
@@ -3116,12 +3142,17 @@ export function d1BackupItem(key, label, result, expectedEnvironment, expectedDa
     database: expectedDatabase,
     object_key: result.key,
     backup_object_key: data.object_key || '',
-    status: ok ? 'ok' : (validationError ? 'environment_mismatch' : (result.ok ? 'stale' : result.status)),
+    status: ok ? (warning ? 'warning' : 'ok') : (validationError ? 'environment_mismatch' : (result.ok ? 'stale' : result.status)),
     ok,
     latest_at: dateValue,
-    max_age_hours: DAILY_BACKUP_MAX_AGE_HOURS,
+    max_age_hours: maxAgeHours,
+    ...(warningAgeHours ? {
+      warning_age_hours: warningAgeHours,
+      critical_age_hours: maxAgeHours,
+      freshness_level: warning ? 'warning' : (ok ? 'ok' : 'critical')
+    } : {}),
     age_hours: Number.isFinite(ageMs) ? Math.round(ageMs / 36000) / 100 : null,
-    error: result.error || validationError || (!fresh && result.ok ? `latest manifest is older than 27h: ${dateValue || '<missing>'}` : ''),
+    error: result.error || validationError || (!fresh && result.ok ? `latest manifest is older than ${maxAgeHours}h: ${dateValue || '<missing>'}` : ''),
     source: 'R2'
   };
 }

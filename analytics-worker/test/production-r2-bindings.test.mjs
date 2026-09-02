@@ -53,8 +53,10 @@ const configPath = fileURLToPath(new URL('../wrangler.toml', import.meta.url));
 test('production and preview R2 bindings satisfy the isolated monitor contract', () => {
   const bindings = parseR2Bindings(readFileSync(configPath, 'utf8'));
   assert.equal(bindings.production.PROGRESS_BACKUP, 'progress-backup');
+  assert.equal(bindings.production.PROGRESS_DB_BACKUP, 'progress-db-backup');
   assert.equal(bindings.production.PROGRESS_BACKUP_PREVIEW, 'progress-backup-preview');
   assert.equal(bindings.preview.PROGRESS_BACKUP, 'progress-backup');
+  assert.equal(bindings.preview.PROGRESS_DB_BACKUP, 'progress-db-backup-preview');
   assert.equal(bindings.preview.PROGRESS_BACKUP_PREVIEW, 'progress-backup-preview');
 });
 
