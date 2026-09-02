@@ -123,6 +123,55 @@ test('preview binding read errors stay non-healthy and never fall back to the sh
   assert.ok(dedicated.calls.includes('list:d1/progress/preview/'));
 });
 
+test('preview JSON and SQL are displayed independently with daily warning/critical thresholds', async () => {
+  const now = new Date('2026-09-02T18:00:00.000Z');
+  const json = {
+    kind: 'progress-d1-backup-manifest', environment: 'preview', database: 'progress-otp-preview',
+    generated_at: '2026-09-01T00:00:00.000Z', object_key: 'd1/progress/preview/2026-09-01T00-00-00-000Z.json'
+  };
+  const sql = {
+    kind: 'progress-d1-sql-backup-manifest', environment: 'preview', database: 'progress-otp-preview',
+    generated_at: '2026-09-02T17:00:00.000Z', object_key: 'd1/progress/preview/2026-09-02T17-00-00-000Z.sql'
+  };
+  const status = await getBackupStatus({
+    BJT_BACKUPS: memoryBucket('bjt'),
+    PROGRESS_BACKUP: memoryBucket('production'),
+    PROGRESS_BACKUP_PREVIEW: memoryBucket('preview', {
+      'd1/progress/preview/latest.json': { data: json },
+      'd1/progress/preview/2026-09-01T00-00-00-000Z.json': { data: json }
+    }),
+    PROGRESS_DB_BACKUP: memoryBucket('sql', {
+      'd1/progress/preview/latest.json': { data: sql }
+    })
+  }, now);
+  const previewJson = status.items.find((item) => item.key === 'progress-preview');
+  const previewSql = status.items.find((item) => item.key === 'progress-preview-sql');
+  assert.equal(previewJson.status, 'warning');
+  assert.equal(previewJson.ok, true);
+  assert.equal(previewJson.warning_age_hours, 36);
+  assert.equal(previewJson.critical_age_hours, 48);
+  assert.equal(previewSql.status, 'ok');
+  assert.equal(previewSql.ok, true);
+  assert.equal(collectAlertItems({ items: [previewJson] }, { items: [] }, { targets: [] }).length, 0);
+});
+
+test('mutation guard: missing preview SQL latest is stale even when preview JSON is healthy', async () => {
+  const status = await getBackupStatus({
+    BJT_BACKUPS: memoryBucket('bjt'),
+    PROGRESS_BACKUP: memoryBucket('production'),
+    PROGRESS_BACKUP_PREVIEW: memoryBucket('preview', {
+      'd1/progress/preview/latest.json': { data: {
+        kind: 'progress-d1-backup-manifest', environment: 'preview', database: 'progress-otp-preview',
+        generated_at: '2026-07-18T19:00:00.000Z', object_key: 'd1/progress/preview/2026-07-18T19-00-00-000Z.json'
+      } }
+    }),
+    PROGRESS_DB_BACKUP: memoryBucket('sql')
+  }, new Date('2026-07-18T19:00:00.000Z'));
+  const sql = status.items.find((item) => item.key === 'progress-preview-sql');
+  assert.equal(sql.ok, false);
+  assert.equal(sql.status, 'missing');
+});
+
 test('preview missing latest is not green and does not rely on a zero failure default', async () => {
   const dedicated = memoryBucket('dedicated');
   const history = await readProgressBackupHistory(dedicated, 'preview', 'progress-otp-preview', now, 2);

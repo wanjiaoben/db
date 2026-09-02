@@ -232,6 +232,7 @@ td.num, th.num { text-align: right; }
 }
 .status-dot.ok { background: var(--green); }
 .status-dot.manual { background: var(--gold); }
+.status-dot.warn { background: var(--gold); }
 .status-dot.neutral { background: var(--muted); }
 .spark {
   display: inline-flex;
@@ -1890,8 +1891,8 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (s) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[s]));
 }
 
-function statusDot(ok, manual, neutral) {
-  return '<span class="status-dot ' + (ok ? 'ok' : (neutral ? 'neutral' : (manual ? 'manual' : ''))) + '"></span>';
+function statusDot(ok, manual, neutral, warning) {
+  return '<span class="status-dot ' + (warning ? 'warn' : (ok ? 'ok' : (neutral ? 'neutral' : (manual ? 'manual' : ''))) ) + '"></span>';
 }
 
 function renderTopline() {
@@ -2707,7 +2708,7 @@ async function loadControl() {
     const backups = ((data.backups || {}).items || []);
     renderRows('backupTable', backups, (r) => row([
       escapeHtml(r.label || r.key || '-'),
-      { html: statusDot(r.ok, r.status === 'manual') + escapeHtml(r.ok ? (r.max_age_hours ? r.max_age_hours + 'h内' : '当日有') : (r.status === 'manual' ? '手动' : '异常')) },
+      { html: statusDot(r.ok, r.status === 'manual', false, r.status === 'warning') + escapeHtml(r.status === 'warning' ? '预警' : (r.ok ? (r.max_age_hours ? r.max_age_hours + 'h内' : '当日有') : (r.status === 'manual' ? '手动' : '异常'))) },
       escapeHtml(timeText(r.last_success_at || r.latest_at)),
       { html: r.success_rate_7d == null ? '-' : Math.round(Number(r.success_rate_7d || 0) * 100) + '%', num: true },
       escapeHtml(r.source || r.object_key || r.error || '-')

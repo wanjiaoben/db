@@ -24,6 +24,10 @@ binding = "PROGRESS_BACKUP"
 bucket_name = "progress-backup"
 
 [[r2_buckets]]
+binding = "PROGRESS_DB_BACKUP"
+bucket_name = "progress-db-backup"
+
+[[r2_buckets]]
 binding = "PROGRESS_BACKUP_PREVIEW"
 bucket_name = "progress-backup-preview"
 
@@ -72,6 +76,10 @@ bucket_name = "bjt-kv-backups"
 [[env.preview.r2_buckets]]
 binding = "PROGRESS_BACKUP"
 bucket_name = "progress-backup"
+
+[[env.preview.r2_buckets]]
+binding = "PROGRESS_DB_BACKUP"
+bucket_name = "progress-db-backup-preview"
 
 [[env.preview.r2_buckets]]
 binding = "PROGRESS_BACKUP_PREVIEW"
