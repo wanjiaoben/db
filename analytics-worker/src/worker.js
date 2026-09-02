@@ -13,9 +13,22 @@ const DEFAULT_BING_SITE_URLS = 'https://bjt.nice.okinawa/,https://kiso.nice.okin
 const VISITOR_EVENT_PATH = '/events';
 const VISITOR_DASHBOARD_PATH = '/visitors';
 const VISITOR_EVENT_RATE_LIMIT_PER_MINUTE = 30;
+const AUDIO_FAIL_RATE_LIMIT_PER_MINUTE = 30;
+const AUDIO_FAIL_RETENTION_DAYS = 90;
 const VISITOR_SAMPLE_MIN_EVENTS = 20;
 const VISITOR_DASHBOARD_DAY_OPTIONS = new Set([1, 7, 30, 180]);
-const VISITOR_EVENT_TYPES = new Set(['pageview', 'dwell', 'contact_click', 'section_view']);
+const VISITOR_EVENT_TYPES = new Set(['pageview', 'dwell', 'contact_click', 'section_view', 'audio_fail']);
+const AUDIO_FAIL_STAGES = new Set(['sign', 'media', 'range', 'unknown']);
+const AUDIO_FAIL_STATUS_CODES = new Set(['0', '200', '206', '401', '403', '404', '408', '429', '5xx', 'schema_invalid', 'unknown']);
+const AUDIO_FAIL_EVENT_FIELDS = Object.freeze([
+  'question_id',
+  'failure_stage',
+  'status_code',
+  'browser_family',
+  'ts',
+  'site_id',
+  'country'
+]);
 const CONTACT_CHANNELS = new Set(['wechat', 'email', 'whatsapp', 'line', 'phone', 'form']);
 const VISITOR_EVENT_SITES = Object.freeze({
   snorkel: 'snorkel.nice.okinawa',
@@ -507,6 +520,33 @@ function deviceType(value) {
   return '';
 }
 
+function audioFailureStage(value) {
+  const stage = clean(value, 40).toLowerCase();
+  return AUDIO_FAIL_STAGES.has(stage) ? stage : 'unknown';
+}
+
+function audioStatusCode(value) {
+  const raw = clean(value, 20).toLowerCase();
+  if (AUDIO_FAIL_STATUS_CODES.has(raw)) return raw;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 'unknown';
+  const rounded = Math.round(n);
+  if (rounded >= 500 && rounded <= 599) return '5xx';
+  const text = String(rounded);
+  return AUDIO_FAIL_STATUS_CODES.has(text) ? text : 'unknown';
+}
+
+function browserFamilyFromUA(ua, fallback = '') {
+  const s = clean(ua, 500).toLowerCase();
+  if (/edg\//.test(s)) return 'edge';
+  if (/firefox\//.test(s) || /fxios\//.test(s)) return 'firefox';
+  if (/chrome\//.test(s) || /crios\//.test(s) || /chromium\//.test(s)) return 'chrome';
+  if (/safari\//.test(s)) return 'safari';
+  const hint = clean(fallback, 40).toLowerCase();
+  if (['safari', 'chrome', 'firefox', 'edge', 'other'].includes(hint)) return hint;
+  return 'other';
+}
+
 async function visitorEventBody(request) {
   const contentType = (request.headers.get('content-type') || '').toLowerCase();
   if (contentType.startsWith('application/json')) return request.json();
@@ -539,6 +579,10 @@ async function collectVisitorEvent(request, env, ctx) {
   const eventType = clean(body.event_type, 40).toLowerCase();
   if (!VISITOR_EVENT_TYPES.has(eventType)) {
     return emptyVisitorEventResponse(request, 400);
+  }
+
+  if (eventType === 'audio_fail') {
+    return collectAudioFailEvent(request, env, ctx, body, siteId);
   }
 
   const visitorId = clean(body.visitor_id, 120);
@@ -597,6 +641,51 @@ async function collectVisitorEvent(request, env, ctx) {
     row.contact_channel, row.device_type, row.viewport_width
   ).run());
 
+  return emptyVisitorEventResponse(request);
+}
+
+async function collectAudioFailEvent(request, env, ctx, body, siteId) {
+  try {
+    const questionId = clean(body.question_id, 80).replace(/[^a-z0-9:_-]/gi, '').slice(0, 80);
+    const failureStage = audioFailureStage(body.failure_stage);
+    const statusCode = audioStatusCode(body.status_code);
+    const browserFamily = browserFamilyFromUA(request.headers.get('user-agent') || '', body.browser_family);
+    const recent = await env.DB.prepare(`
+      SELECT COUNT(*) AS count
+      FROM audio_fail_events
+      WHERE site_id = ?
+        AND question_id = ?
+        AND failure_stage = ?
+        AND browser_family = ?
+        AND created_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-60 seconds')
+    `).bind(siteId, questionId, failureStage, browserFamily).first();
+
+    if (Number(recent?.count || 0) >= AUDIO_FAIL_RATE_LIMIT_PER_MINUTE) {
+      return emptyVisitorEventResponse(request);
+    }
+
+    const cf = request.cf || {};
+    const row = {
+      site_id: siteId,
+      ts: new Date().toISOString(),
+      question_id: questionId,
+      failure_stage: failureStage,
+      status_code: statusCode,
+      browser_family: browserFamily,
+      country: clean(cf.country, 10)
+    };
+
+    ctx.waitUntil(env.DB.prepare(`
+      INSERT INTO audio_fail_events (
+        site_id, ts, question_id, failure_stage, status_code, browser_family, country
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      row.site_id, row.ts, row.question_id, row.failure_stage, row.status_code, row.browser_family,
+      row.country
+    ).run().catch(() => null));
+  } catch (e) {
+    return emptyVisitorEventResponse(request);
+  }
   return emptyVisitorEventResponse(request);
 }
 
@@ -1020,6 +1109,12 @@ async function runScheduledTasks(event, env) {
   }
 
   try {
+    await cleanupAudioFailEvents(env);
+  } catch (e) {
+    errors.push(`audio-fail-retention:${e.message}`);
+  }
+
+  try {
     await runProbes(env, cron);
   } catch (e) {
     errors.push(`probes:${e.message}`);
@@ -1051,6 +1146,13 @@ async function runScheduledTasks(event, env) {
     errors.push(`alerts:${e.message}`);
   }
   return { ok: errors.length === 0, errors };
+}
+
+async function cleanupAudioFailEvents(env) {
+  await env.DB.prepare(`
+    DELETE FROM audio_fail_events
+    WHERE created_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?)
+  `).bind(`-${AUDIO_FAIL_RETENTION_DAYS} days`).run();
 }
 
 async function all(db, sql, params = []) {

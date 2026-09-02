@@ -91,3 +91,147 @@ test('visitor events accepts text/plain JSON bodies', async () => {
   assert.equal(insert.params[14], 'm0727_27');
   assert.equal(insert.params[15], 12345);
 });
+
+function audioFailDb(count = 0) {
+  const calls = [];
+  return {
+    calls,
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...params) {
+            calls.push({ sql, params });
+            return {
+              first: async () => ({ count }),
+              run: async () => ({ success: true })
+            };
+          }
+        };
+      }
+    }
+  };
+}
+
+async function postAudioFail(env, body, headers = {}) {
+  const waits = [];
+  const request = new Request('https://analytics.nice.okinawa/events', {
+    method: 'POST',
+    headers: {
+      origin: 'https://bjt.nice.okinawa',
+      'content-type': 'application/json',
+      'user-agent': 'Mozilla/5.0 Version/17.0 Mobile/15E148 Safari/604.1',
+      ...headers
+    },
+    body: JSON.stringify({
+      site_id: 'bjt',
+      event_type: 'audio_fail',
+      ts: '2026-08-27T03:00:00.000Z',
+      question_id: 'ps71301',
+      failure_stage: 'media',
+      status_code: 403,
+      browser_family: 'chrome',
+      ...body
+    })
+  });
+  Object.defineProperty(request, 'cf', {
+    value: { country: 'JP', city: 'Tokyo', timezone: 'Asia/Tokyo' },
+    configurable: true
+  });
+  const response = await worker.fetch(request, env, { waitUntil: (promise) => waits.push(promise) });
+  await Promise.all(waits);
+  return response;
+}
+
+test('audio_fail events are stored in the dedicated allowlisted table', async () => {
+  const env = audioFailDb();
+  const response = await postAudioFail(env);
+  assert.equal(response.status, 204);
+
+  const insert = env.calls.find((call) => call.sql.includes('INSERT INTO audio_fail_events'));
+  assert.ok(insert);
+  assert.equal(insert.params[0], 'bjt');
+  assert.equal(insert.params[2], 'ps71301');
+  assert.equal(insert.params[3], 'media');
+  assert.equal(insert.params[4], '403');
+  assert.equal(insert.params[5], 'safari');
+  assert.equal(insert.params[6], 'JP');
+  assert.equal(env.calls.some((call) => call.sql.includes('INSERT INTO visitor_events')), false);
+});
+
+test('audio_fail drops non-allowlisted fields instead of storing sensitive payload', async () => {
+  const env = audioFailDb();
+  const response = await postAudioFail(env, {
+    email: 'student@example.com',
+    token: 'jwt.secret',
+    url: 'https://bjt.nice.okinawa/pro/ps71301.mp3?token=secret',
+    signed_url: 'https://bjt.nice.okinawa/pro/ps71301.mp3?token=secret',
+    screen: '390x844',
+    canvas: 'fingerprint',
+    user_agent: 'full user agent',
+    timezone: 'Europe/Paris',
+    city: 'Paris',
+    country: 'FR',
+    ts: '1999-01-01T00:00:00.000Z'
+  });
+  assert.equal(response.status, 204);
+
+  const insert = env.calls.find((call) => call.sql.includes('INSERT INTO audio_fail_events'));
+  assert.ok(insert);
+  const serialized = JSON.stringify({ sql: insert.sql, params: insert.params });
+  assert.doesNotMatch(serialized, /student@example\.com/);
+  assert.doesNotMatch(serialized, /jwt\.secret/);
+  assert.doesNotMatch(serialized, /signed_url|token=secret|390x844|fingerprint|full user agent|Europe\/Paris|Paris|FR|1999-01-01/);
+  assert.equal(insert.params.length, 7);
+  assert.equal(insert.params[1] !== '1999-01-01T00:00:00.000Z', true);
+  assert.equal(insert.params[6], 'JP');
+});
+
+test('audio_fail accepts schema_invalid as a text status code', async () => {
+  const env = audioFailDb();
+  const response = await postAudioFail(env, { status_code: 'schema_invalid' });
+  assert.equal(response.status, 204);
+
+  const insert = env.calls.find((call) => call.sql.includes('INSERT INTO audio_fail_events'));
+  assert.ok(insert);
+  assert.equal(insert.params[4], 'schema_invalid');
+  assert.equal(typeof insert.params[4], 'string');
+});
+
+test('audio_fail rate limit returns 204 and skips inserts', async () => {
+  const env = audioFailDb(30);
+  const response = await postAudioFail(env);
+  assert.equal(response.status, 204);
+  assert.equal(env.calls.some((call) => call.sql.includes('INSERT INTO audio_fail_events')), false);
+});
+
+test('audio_fail never returns 5xx when storage is unavailable', async () => {
+  const env = {
+    DB: {
+      prepare() {
+        throw new Error('d1 unavailable');
+      }
+    }
+  };
+  const response = await postAudioFail(env);
+  assert.equal(response.status, 204);
+});
+
+test('unknown visitor event types still fail closed', async () => {
+  const env = audioFailDb();
+  const request = new Request('https://analytics.nice.okinawa/events', {
+    method: 'POST',
+    headers: {
+      origin: 'https://bjt.nice.okinawa',
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      site_id: 'bjt',
+      event_type: 'audio_debug',
+      visitor_id: 'v',
+      session_id: 's',
+      ts: '2026-08-27T03:00:00.000Z'
+    })
+  });
+  const response = await worker.fetch(request, env, { waitUntil: () => {} });
+  assert.equal(response.status, 400);
+});
