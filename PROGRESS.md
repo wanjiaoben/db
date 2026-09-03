@@ -1,5 +1,7 @@
 # db.nice.okinawa Progress
 
+AUTH-0903-01 adds Cloudflare Access JWT verification to db-private before falling back to Basic, with AUD/email env allowlist checks and beacon write-path regression tests.
+
 BACKUP-0824-17 confirms the four simultaneous backup reds were a dashboard R2 read-side false alarm: all latest R2 backup objects were present, `readR2Json` now retries transient Cloudflare 10001 get errors, and fresh latest manifests clear same-day missing-history failure counters.
 
 ORDERS-0824-08追加② adds explicit range/status labels to every dashboard module and gives the site total table its own remembered 1/7/30/180-day range tabs independent of the visitor overview.

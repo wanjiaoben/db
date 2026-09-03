@@ -8,7 +8,11 @@ const ORDER_DETAIL_PAGE_SIZE_DEFAULT = 50;
 const ORDER_DETAIL_PAGE_SIZE_MAX = 100;
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
 const PAID_ORDER_STATUSES = new Set(['captured', 'completed']);
+const DEFAULT_CF_ACCESS_CERTS_URL = 'https://orange-field-364e.cloudflareaccess.com/cdn-cgi/access/certs';
+const DEFAULT_CF_ACCESS_ISSUER = 'https://orange-field-364e.cloudflareaccess.com';
+const ACCESS_JWKS_CACHE_TTL_MS = 300000;
 const orderRowsCaches = new WeakMap();
+let accessJwksCache = null;
 const COUNTRY_REGION_ALIASES = {
   JP: 'japan',
   JAPAN: 'japan',
@@ -45,7 +49,7 @@ export default {
       });
     }
 
-    if (!isAuthorized(request, env)) {
+    if (!await isDashboardAuthenticated(request, env)) {
       return new Response('Authentication required', {
         status: 401,
         headers: {
@@ -614,6 +618,111 @@ function requireDashboard(request, env, options = {}) {
   if (!expected) return false;
   if (options.allowServiceKey) return true;
   return request.headers.get('x-dashboard-key') === expected;
+}
+
+async function isDashboardAuthenticated(request, env) {
+  if (await isCloudflareAccessAuthorized(request, env)) return true;
+  return isAuthorized(request, env);
+}
+
+async function isCloudflareAccessAuthorized(request, env) {
+  const token = text(request.headers.get('cf-access-jwt-assertion'));
+  if (!token) return false;
+  const expectedAud = text(env.CF_ACCESS_AUD);
+  const allowedEmails = allowedAccessEmails(env.CF_ACCESS_ALLOWED_EMAILS);
+  if (!expectedAud || !allowedEmails.size) return false;
+  try {
+    const payload = await verifyCloudflareAccessJwt(token, env);
+    if (!payload) return false;
+    if (!issuerMatches(payload.iss, env)) return false;
+    if (!audienceMatches(payload.aud, expectedAud)) return false;
+    if (!expiryValid(payload.exp)) return false;
+    const email = text(payload.email).toLowerCase();
+    return allowedEmails.has(email);
+  } catch (e) {
+    return false;
+  }
+}
+
+async function verifyCloudflareAccessJwt(token, env) {
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  const header = parseJwtJson(parts[0]);
+  const payload = parseJwtJson(parts[1]);
+  if (!header || !payload || header.alg !== 'RS256' || !header.kid) return null;
+  const jwk = (await cloudflareAccessJwks(env)).find((key) => key.kid === header.kid);
+  if (!jwk) return null;
+  const key = await crypto.subtle.importKey(
+    'jwk',
+    jwk,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['verify']
+  );
+  const verified = await crypto.subtle.verify(
+    { name: 'RSASSA-PKCS1-v1_5' },
+    key,
+    base64UrlBytes(parts[2]),
+    new TextEncoder().encode(`${parts[0]}.${parts[1]}`)
+  );
+  return verified ? payload : null;
+}
+
+async function cloudflareAccessJwks(env) {
+  const url = text(env.CF_ACCESS_CERTS_URL) || DEFAULT_CF_ACCESS_CERTS_URL;
+  const now = Date.now();
+  if (accessJwksCache && accessJwksCache.url === url && accessJwksCache.expiresAt > now) {
+    return accessJwksCache.keys;
+  }
+  const res = await fetch(url, { cf: { cacheTtl: 300 } });
+  if (!res.ok) throw new Error('cf_access_certs_unavailable');
+  const body = await res.json();
+  const keys = Array.isArray(body.keys) ? body.keys : [];
+  accessJwksCache = { url, keys, expiresAt: now + ACCESS_JWKS_CACHE_TTL_MS };
+  return keys;
+}
+
+function parseJwtJson(part) {
+  try {
+    return JSON.parse(new TextDecoder().decode(base64UrlBytes(part)));
+  } catch (e) {
+    return null;
+  }
+}
+
+function base64UrlBytes(value) {
+  const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function issuerMatches(actual, env) {
+  const expected = text(env.CF_ACCESS_ISSUER) || DEFAULT_CF_ACCESS_ISSUER;
+  return trimSlash(actual) === trimSlash(expected);
+}
+
+function trimSlash(value) {
+  return text(value).replace(/\/+$/, '');
+}
+
+function audienceMatches(actual, expected) {
+  if (Array.isArray(actual)) return actual.includes(expected);
+  return text(actual) === expected;
+}
+
+function expiryValid(exp) {
+  const value = Number(exp);
+  return Number.isFinite(value) && value > Math.floor(Date.now() / 1000);
+}
+
+function allowedAccessEmails(value) {
+  return new Set(String(value || '')
+    .split(',')
+    .map((email) => text(email).toLowerCase())
+    .filter(Boolean));
 }
 
 function json(body, status = 200) {
