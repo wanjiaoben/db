@@ -4,6 +4,9 @@ import test from 'node:test';
 import worker from '../src/worker.js';
 
 const AUTH = 'Basic ' + btoa('wan:pass');
+const ACCESS_AUD = 'db-dashboard-test-aud';
+const ACCESS_EMAIL = 'wan@example.test';
+const ACCESS_CERTS_URL = 'https://access.test/certs';
 
 function envWithKv(records, extra = {}) {
   return {
@@ -36,6 +39,99 @@ function request(headers = {}) {
   });
 }
 
+function unauthenticatedRequest(headers = {}) {
+  return new Request('https://db.nice.okinawa/orders?days=180', { headers });
+}
+
+function envWithAccess(records, extra = {}) {
+  return envWithKv(records, {
+    CF_ACCESS_AUD: ACCESS_AUD,
+    CF_ACCESS_ALLOWED_EMAILS: ACCESS_EMAIL,
+    CF_ACCESS_CERTS_URL: ACCESS_CERTS_URL,
+    CF_ACCESS_ISSUER: 'https://orange-field-364e.cloudflareaccess.com',
+    ...extra
+  });
+}
+
+function b64url(input) {
+  return Buffer.from(input)
+    .toString('base64')
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
+}
+
+async function accessJwt(overrides = {}) {
+  const { privateKey, publicKey } = await crypto.subtle.generateKey(
+    { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+    true,
+    ['sign', 'verify']
+  );
+  const jwk = await crypto.subtle.exportKey('jwk', publicKey);
+  jwk.kid = overrides.kid || 'access-test-key';
+  jwk.alg = 'RS256';
+  jwk.use = 'sig';
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT', kid: jwk.kid }));
+  const payload = b64url(JSON.stringify({
+    iss: 'https://orange-field-364e.cloudflareaccess.com',
+    aud: ACCESS_AUD,
+    exp: now + 300,
+    email: ACCESS_EMAIL,
+    ...overrides.payload
+  }));
+  const signature = await crypto.subtle.sign(
+    { name: 'RSASSA-PKCS1-v1_5' },
+    privateKey,
+    new TextEncoder().encode(`${header}.${payload}`)
+  );
+  return {
+    token: `${header}.${payload}.${b64url(Buffer.from(signature))}`,
+    jwk
+  };
+}
+
+async function withAccessCerts(jwk, fn, certsUrl = ACCESS_CERTS_URL) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input.url;
+    if (url === certsUrl) {
+      return new Response(JSON.stringify({ keys: [jwk] }), {
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    return await fn();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+async function withAccessCertsAndDashboard(jwk, fn, certsUrl = ACCESS_CERTS_URL) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input.url;
+    if (url === certsUrl) {
+      return new Response(JSON.stringify({ keys: [jwk] }), {
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+    if (url === 'https://dashboard.test/index.html') {
+      return new Response('<!doctype html><title>panel</title><main>Dashboard</main>', {
+        headers: { 'content-type': 'text/html; charset=utf-8' }
+      });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    return await fn();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
 function isoDaysAgo(days, extraMs = 0) {
   return new Date(Date.now() - days * 86400000 + extraMs).toISOString();
 }
@@ -43,6 +139,66 @@ function isoDaysAgo(days, extraMs = 0) {
 test('/orders keeps Basic protection before dashboard key checks', async () => {
   const res = await worker.fetch(new Request('https://db.nice.okinawa/orders'), envWithKv({}), {});
   assert.equal(res.status, 401);
+});
+
+test('/orders accepts verified Cloudflare Access JWT without Basic', async () => {
+  const { token, jwk } = await accessJwt();
+  await withAccessCerts(jwk, async () => {
+    const res = await worker.fetch(unauthenticatedRequest({
+      'cf-access-jwt-assertion': token
+    }), envWithAccess({}), {});
+    const data = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(data.ok, true);
+  });
+});
+
+test('dashboard accepts verified Cloudflare Access JWT without Basic', async () => {
+  const { token, jwk } = await accessJwt();
+  const certsUrl = 'https://access.test/certs-dashboard';
+  await withAccessCertsAndDashboard(jwk, async () => {
+    const response = await worker.fetch(
+      new Request('https://db.nice.okinawa/', {
+        headers: { 'cf-access-jwt-assertion': token }
+      }),
+      envWithAccess({}, { CF_ACCESS_CERTS_URL: certsUrl, DASHBOARD_ORIGIN: 'https://dashboard.test' }),
+      {}
+    );
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /Dashboard/);
+  }, certsUrl);
+});
+
+test('/orders falls back to Basic challenge when Cloudflare Access JWT is absent or invalid', async () => {
+  const absent = await worker.fetch(unauthenticatedRequest(), envWithAccess({}), {});
+  assert.equal(absent.status, 401);
+
+  const wrongAud = await accessJwt({ payload: { aud: 'wrong-aud' } });
+  const wrongAudUrl = ACCESS_CERTS_URL + '/wrong-aud';
+  await withAccessCerts(wrongAud.jwk, async () => {
+    const res = await worker.fetch(unauthenticatedRequest({
+      'cf-access-jwt-assertion': wrongAud.token
+    }), envWithAccess({}, { CF_ACCESS_CERTS_URL: wrongAudUrl }), {});
+    assert.equal(res.status, 401);
+  }, wrongAudUrl);
+
+  const expired = await accessJwt({ payload: { exp: Math.floor(Date.now() / 1000) - 60 } });
+  const expiredUrl = ACCESS_CERTS_URL + '/expired';
+  await withAccessCerts(expired.jwk, async () => {
+    const res = await worker.fetch(unauthenticatedRequest({
+      'cf-access-jwt-assertion': expired.token
+    }), envWithAccess({}, { CF_ACCESS_CERTS_URL: expiredUrl }), {});
+    assert.equal(res.status, 401);
+  }, expiredUrl);
+
+  const wrongEmail = await accessJwt({ payload: { email: 'other@example.test' } });
+  const wrongEmailUrl = ACCESS_CERTS_URL + '/wrong-email';
+  await withAccessCerts(wrongEmail.jwk, async () => {
+    const res = await worker.fetch(unauthenticatedRequest({
+      'cf-access-jwt-assertion': wrongEmail.token
+    }), envWithAccess({}, { CF_ACCESS_CERTS_URL: wrongEmailUrl }), {});
+    assert.equal(res.status, 401);
+  }, wrongEmailUrl);
 });
 
 test('/orders allows Basic-authenticated dashboard requests without x-dashboard-key', async () => {

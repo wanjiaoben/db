@@ -91,3 +91,42 @@ test('visitor events accepts text/plain JSON bodies', async () => {
   assert.equal(insert.params[14], 'm0727_27');
   assert.equal(insert.params[15], 12345);
 });
+
+test('visitor events write path remains public and does not require dashboard auth', async () => {
+  const calls = [];
+  const waits = [];
+  const env = {
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...params) {
+            calls.push({ sql, params });
+            return {
+              first: async () => ({ count: 0 }),
+              run: async () => ({ success: true })
+            };
+          }
+        };
+      }
+    }
+  };
+  const request = new Request('https://analytics.nice.okinawa/events', {
+    method: 'POST',
+    headers: {
+      origin: 'https://snorkel.nice.okinawa',
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      site_id: 'snorkel',
+      event_type: 'pageview',
+      visitor_id: 'auth-0903-01-public-visitor',
+      session_id: 'auth-0903-01-public-session',
+      ts: '2026-09-03T00:00:00.000Z',
+      landing_url: '/auth-0903-01'
+    })
+  });
+  const response = await worker.fetch(request, env, { waitUntil: (promise) => waits.push(promise) });
+  await Promise.all(waits);
+  assert.equal(response.status, 204);
+  assert.ok(calls.some((call) => call.sql.includes('INSERT INTO visitor_events')));
+});
