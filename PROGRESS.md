@@ -74,3 +74,4 @@ M0718-19 splits Progress backup health into production/preview manifests, valida
 M0807-69 db：新增 nice_analytics 生产 D1 每日备份 workflow，UTC 18:29 导出到 `progress-backup/d1/nice_analytics/production/`，manifest 记录时间、大小、sha256、表行数、failures 与 30 天游走+月留一份保留策略；上传后立即读回校验 sha256；dashboard 备份健康加入 nice_analytics manifest 校验。
 BACKUP-0902-03 db：监控分别展示 Progress preview JSON/SQL 专用桶，按每日 17:18 UTC cadence 增加 36h warning / 48h critical freshness；新增只读 `PROGRESS_DB_BACKUP` binding，production 既有 JSON bucket/key/freshness 语义保持不变。
 MON-0904-01 db：Draft 修复 Progress preview SQL 监控读桶为 `PROGRESS_DB_BACKUP_PREVIEW`，并将 db-private 浏览器面板鉴权改为 Cloudflare Access JWT，程序接口继续走 `x-dashboard-key`。
+EXP-0904-01 db：Draft 新增配置文件驱动的到期提醒，30 天内面板黄灯、7 天内/已过期走现有 dashboard 告警线，首批覆盖 nice.okinawa 域名、GitHub PAT nice-dashboard、Cloudflare token db-config-read。
