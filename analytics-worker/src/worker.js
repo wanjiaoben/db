@@ -3292,7 +3292,7 @@ async function getProbeSummary(env) {
 
 export async function getBackupStatus(env, now = new Date()) {
   const previewProgressBucket = env.PROGRESS_BACKUP_PREVIEW;
-  const previewProgressSqlBucket = env.PROGRESS_DB_BACKUP;
+  const previewProgressSqlBucket = env.PROGRESS_DB_BACKUP_PREVIEW;
   const [bjt, progressProduction, progressPreview, progressProductionSql, progressPreviewSql, niceAnalyticsProduction, bjtHistory, progressHistory, previewHistory, niceAnalyticsIndex] = await Promise.all([
     readR2Json(env.BJT_BACKUPS, 'kv-snapshots/latest/manifest.json'),
     readR2JsonFallback(env.PROGRESS_BACKUP, ['d1/latest/manifest.json', 'd1/progress/production/latest.json']),
@@ -3313,7 +3313,7 @@ export async function getBackupStatus(env, now = new Date()) {
         status: 'MONITOR_BINDING_MISSING',
         key: 'd1/progress/preview/latest.json',
         error: 'MONITOR_BINDING_MISSING',
-        detail: 'missing PROGRESS_DB_BACKUP binding'
+        detail: 'missing PROGRESS_DB_BACKUP_PREVIEW binding'
       }),
     readR2Json(env.PROGRESS_BACKUP, 'd1/nice_analytics/production/latest.json'),
     readDailyBackupHistory(env.BJT_BACKUPS, 'kv-snapshots', now),
@@ -3339,7 +3339,7 @@ export async function getBackupStatus(env, now = new Date()) {
     expectedKind: 'progress-d1-sql-backup-manifest', warningAgeHours: 36, criticalAgeHours: 48
   });
   const previewSqlItem = !previewProgressSqlBucket
-    ? previewUnavailableItem(previewSqlBase, 'MONITOR_BINDING_MISSING', 'missing PROGRESS_DB_BACKUP binding')
+    ? previewUnavailableItem(previewSqlBase, 'MONITOR_BINDING_MISSING', 'missing PROGRESS_DB_BACKUP_PREVIEW binding')
     : previewSqlBase;
   const niceItem = attachBackupHistory(d1BackupItem('nice-analytics-production', 'nice_analytics production D1 export', niceAnalyticsProduction, 'production', 'nice_analytics', 'd1/nice_analytics/production/', now), niceAnalyticsHistory);
   return {

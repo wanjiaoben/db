@@ -1,4 +1,3 @@
-const REALM = 'Nice Okinawa Dashboard';
 const DEFAULT_ANALYTICS_ORIGIN = 'https://analytics.nice.okinawa';
 const ORDER_META_PREFIX = 'paypal_order_meta:';
 const ORDER_DAY_OPTIONS = new Set([1, 7, 30, 180]);
@@ -11,6 +10,21 @@ const PAID_ORDER_STATUSES = new Set(['captured', 'completed']);
 const DEFAULT_CF_ACCESS_CERTS_URL = 'https://orange-field-364e.cloudflareaccess.com/cdn-cgi/access/certs';
 const DEFAULT_CF_ACCESS_ISSUER = 'https://orange-field-364e.cloudflareaccess.com';
 const ACCESS_JWKS_CACHE_TTL_MS = 300000;
+const BROWSER_ANALYTICS_PROXY_PATHS = new Set([
+  '/summary',
+  '/control',
+  '/visitors',
+  '/alerts/test',
+  '/path-checks/status',
+  '/search-console/status'
+]);
+const PROGRAM_ANALYTICS_PROXY_PATHS = new Set([
+  '/probes/run',
+  '/alerts/check',
+  '/alerts/self-check',
+  '/search-console/sync',
+  '/search-console/weekly-report'
+]);
 const orderRowsCaches = new WeakMap();
 let accessJwksCache = null;
 const COUNTRY_REGION_ALIASES = {
@@ -49,24 +63,17 @@ export default {
       });
     }
 
-    if (!await isDashboardAuthenticated(request, env)) {
-      return new Response('Authentication required', {
-        status: 401,
-        headers: {
-          'www-authenticate': `Basic realm="${REALM}", charset="UTF-8"`,
-          'cache-control': 'no-store',
-          'x-robots-tag': 'noindex, nofollow'
-        }
-      });
-    }
-
     if (url.pathname === '/orders') {
-      return orders(request, env);
+      const accessAuthorized = await isCloudflareAccessAuthorized(request, env);
+      if (!accessAuthorized && !hasDashboardKey(request, env)) return forbidden();
+      return orders(request, env, { accessAuthorized });
     }
 
     if (isAnalyticsProxyPath(url.pathname)) {
       return proxyAnalytics(request, env, url);
     }
+
+    if (!await isCloudflareAccessAuthorized(request, env)) return forbidden();
 
     const target = targetUrl(url, env);
     const upstream = await fetch(target, {
@@ -87,20 +94,14 @@ export default {
 };
 
 function isAnalyticsProxyPath(pathname) {
-  return pathname === '/summary'
-    || pathname === '/control'
-    || pathname === '/visitors'
-    || pathname === '/probes/run'
-    || pathname === '/alerts/check'
-    || pathname === '/alerts/test'
-    || pathname === '/alerts/self-check'
-    || pathname === '/path-checks/status'
-    || pathname === '/search-console/status'
-    || pathname === '/search-console/sync'
-    || pathname === '/search-console/weekly-report';
+  return BROWSER_ANALYTICS_PROXY_PATHS.has(pathname)
+    || PROGRAM_ANALYTICS_PROXY_PATHS.has(pathname);
 }
 
 async function proxyAnalytics(request, env, url) {
+  const isBrowserPath = BROWSER_ANALYTICS_PROXY_PATHS.has(url.pathname);
+  const accessAuthorized = isBrowserPath ? await isCloudflareAccessAuthorized(request, env) : false;
+  if (!accessAuthorized && !hasDashboardKey(request, env)) return forbidden();
   const origin = String(env.ANALYTICS_ORIGIN || DEFAULT_ANALYTICS_ORIGIN).replace(/\/+$/, '');
   const target = origin + url.pathname + url.search;
   const headers = new Headers();
@@ -131,12 +132,12 @@ async function proxyAnalytics(request, env, url) {
   });
 }
 
-async function orders(request, env) {
+async function orders(request, env, options = {}) {
   const startedAt = Date.now();
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     return json({ ok: false, error: 'method_not_allowed' }, 405);
   }
-  if (!requireDashboard(request, env, { allowServiceKey: true })) {
+  if (!options.accessAuthorized && !requireDashboard(request, env, { allowServiceKey: true })) {
     return json({ ok: false, error: 'unauthorized' }, 403);
   }
   if (!env.BJT_KV) {
@@ -620,9 +621,9 @@ function requireDashboard(request, env, options = {}) {
   return request.headers.get('x-dashboard-key') === expected;
 }
 
-async function isDashboardAuthenticated(request, env) {
-  if (await isCloudflareAccessAuthorized(request, env)) return true;
-  return isAuthorized(request, env);
+function hasDashboardKey(request, env) {
+  const expected = env.DASHBOARD_KEY || '';
+  return Boolean(expected && request.headers.get('x-dashboard-key') === expected);
 }
 
 async function isCloudflareAccessAuthorized(request, env) {
@@ -736,6 +737,17 @@ function json(body, status = 200) {
   });
 }
 
+function forbidden() {
+  return new Response('forbidden', {
+    status: 403,
+    headers: {
+      'content-type': 'text/plain; charset=utf-8',
+      'cache-control': 'no-store',
+      'x-robots-tag': 'noindex, nofollow'
+    }
+  });
+}
+
 function targetUrl(url, env) {
   let pathname = url.pathname;
   if (pathname === '/' || pathname.endsWith('/')) pathname += 'index.html';
@@ -753,20 +765,4 @@ function contentTypeFor(target) {
   if (pathname.endsWith('.jpg') || pathname.endsWith('.jpeg')) return 'image/jpeg';
   if (pathname.endsWith('.webp')) return 'image/webp';
   return 'application/octet-stream';
-}
-
-function isAuthorized(request, env) {
-  const header = request.headers.get('authorization') || '';
-  if (!header.startsWith('Basic ')) return false;
-  let decoded = '';
-  try {
-    decoded = atob(header.slice(6));
-  } catch (e) {
-    return false;
-  }
-  const index = decoded.indexOf(':');
-  if (index < 0) return false;
-  const user = decoded.slice(0, index);
-  const pass = decoded.slice(index + 1);
-  return user === env.BASIC_USER && pass === env.BASIC_PASS;
 }

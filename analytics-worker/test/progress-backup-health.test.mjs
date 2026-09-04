@@ -140,7 +140,7 @@ test('preview JSON and SQL are displayed independently with daily warning/critic
       'd1/progress/preview/latest.json': { data: json },
       'd1/progress/preview/2026-09-01T00-00-00-000Z.json': { data: json }
     }),
-    PROGRESS_DB_BACKUP: memoryBucket('sql', {
+    PROGRESS_DB_BACKUP_PREVIEW: memoryBucket('sql', {
       'd1/progress/preview/latest.json': { data: sql }
     })
   }, now);
@@ -165,11 +165,34 @@ test('mutation guard: missing preview SQL latest is stale even when preview JSON
         generated_at: '2026-07-18T19:00:00.000Z', object_key: 'd1/progress/preview/2026-07-18T19-00-00-000Z.json'
       } }
     }),
-    PROGRESS_DB_BACKUP: memoryBucket('sql')
+    PROGRESS_DB_BACKUP_PREVIEW: memoryBucket('sql')
   }, new Date('2026-07-18T19:00:00.000Z'));
   const sql = status.items.find((item) => item.key === 'progress-preview-sql');
   assert.equal(sql.ok, false);
   assert.equal(sql.status, 'missing');
+});
+
+test('mutation guard: preview SQL must not read the production SQL bucket', async () => {
+  const sql = {
+    kind: 'progress-d1-sql-backup-manifest', environment: 'preview', database: 'progress-otp-preview',
+    generated_at: '2026-09-02T17:00:00.000Z', object_key: 'd1/progress/preview/2026-09-02T17-00-00-000Z.sql'
+  };
+  const productionSql = memoryBucket('production-sql', {
+    'd1/progress/preview/latest.json': { data: sql }
+  });
+  const dedicatedPreviewSql = memoryBucket('preview-sql');
+  const status = await getBackupStatus({
+    BJT_BACKUPS: memoryBucket('bjt'),
+    PROGRESS_BACKUP: memoryBucket('production-json'),
+    PROGRESS_BACKUP_PREVIEW: memoryBucket('preview-json'),
+    PROGRESS_DB_BACKUP: productionSql,
+    PROGRESS_DB_BACKUP_PREVIEW: dedicatedPreviewSql
+  }, new Date('2026-09-02T18:00:00.000Z'));
+  const previewSql = status.items.find((item) => item.key === 'progress-preview-sql');
+  assert.equal(previewSql.ok, false);
+  assert.equal(previewSql.status, 'missing');
+  assert.equal(productionSql.calls.filter((call) => call.includes('d1/progress/preview/')).length, 0);
+  assert.ok(dedicatedPreviewSql.calls.includes('get:d1/progress/preview/latest.json'));
 });
 
 test('preview missing latest is not green and does not rely on a zero failure default', async () => {

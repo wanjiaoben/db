@@ -34,6 +34,7 @@ function request(headers = {}) {
   return new Request('https://db.nice.okinawa/orders?days=180', {
     headers: {
       authorization: AUTH,
+      'x-dashboard-key': 'dash',
       ...headers
     }
   });
@@ -136,9 +137,10 @@ function isoDaysAgo(days, extraMs = 0) {
   return new Date(Date.now() - days * 86400000 + extraMs).toISOString();
 }
 
-test('/orders keeps Basic protection before dashboard key checks', async () => {
+test('/orders rejects unauthenticated requests without Basic challenge', async () => {
   const res = await worker.fetch(new Request('https://db.nice.okinawa/orders'), envWithKv({}), {});
-  assert.equal(res.status, 401);
+  assert.equal(res.status, 403);
+  assert.equal(res.headers.has('www-authenticate'), false);
 });
 
 test('/orders accepts verified Cloudflare Access JWT without Basic', async () => {
@@ -169,9 +171,42 @@ test('dashboard accepts verified Cloudflare Access JWT without Basic', async () 
   }, certsUrl);
 });
 
-test('/orders falls back to Basic challenge when Cloudflare Access JWT is absent or invalid', async () => {
+test('dashboard rejects forged or invalid Cloudflare Access JWTs', async () => {
+  const absent = await worker.fetch(new Request('https://db.nice.okinawa/'), envWithAccess({}), {});
+  assert.equal(absent.status, 403);
+  assert.equal(absent.headers.has('www-authenticate'), false);
+
+  const signed = await accessJwt();
+  const otherKey = await accessJwt();
+  const forgedUrl = ACCESS_CERTS_URL + '/forged-dashboard';
+  await withAccessCerts(otherKey.jwk, async () => {
+    const forged = await worker.fetch(new Request('https://db.nice.okinawa/', {
+      headers: { 'cf-access-jwt-assertion': signed.token }
+    }), envWithAccess({}, { CF_ACCESS_CERTS_URL: forgedUrl }), {});
+    assert.equal(forged.status, 403);
+  }, forgedUrl);
+
+  const cases = [
+    await accessJwt({ payload: { aud: 'wrong-aud' } }),
+    await accessJwt({ payload: { exp: Math.floor(Date.now() / 1000) - 60 } }),
+    await accessJwt({ payload: { iss: 'https://wrong.cloudflareaccess.com' } }),
+    await accessJwt({ payload: { email: 'other@example.test' } })
+  ];
+  for (const [index, item] of cases.entries()) {
+    const certsUrl = ACCESS_CERTS_URL + '/invalid-dashboard-' + index;
+    await withAccessCerts(item.jwk, async () => {
+      const res = await worker.fetch(new Request('https://db.nice.okinawa/', {
+        headers: { 'cf-access-jwt-assertion': item.token }
+      }), envWithAccess({}, { CF_ACCESS_CERTS_URL: certsUrl }), {});
+      assert.equal(res.status, 403);
+    }, certsUrl);
+  }
+});
+
+test('/orders rejects absent or invalid Cloudflare Access JWT without Basic challenge', async () => {
   const absent = await worker.fetch(unauthenticatedRequest(), envWithAccess({}), {});
-  assert.equal(absent.status, 401);
+  assert.equal(absent.status, 403);
+  assert.equal(absent.headers.has('www-authenticate'), false);
 
   const wrongAud = await accessJwt({ payload: { aud: 'wrong-aud' } });
   const wrongAudUrl = ACCESS_CERTS_URL + '/wrong-aud';
@@ -179,7 +214,7 @@ test('/orders falls back to Basic challenge when Cloudflare Access JWT is absent
     const res = await worker.fetch(unauthenticatedRequest({
       'cf-access-jwt-assertion': wrongAud.token
     }), envWithAccess({}, { CF_ACCESS_CERTS_URL: wrongAudUrl }), {});
-    assert.equal(res.status, 401);
+    assert.equal(res.status, 403);
   }, wrongAudUrl);
 
   const expired = await accessJwt({ payload: { exp: Math.floor(Date.now() / 1000) - 60 } });
@@ -188,7 +223,7 @@ test('/orders falls back to Basic challenge when Cloudflare Access JWT is absent
     const res = await worker.fetch(unauthenticatedRequest({
       'cf-access-jwt-assertion': expired.token
     }), envWithAccess({}, { CF_ACCESS_CERTS_URL: expiredUrl }), {});
-    assert.equal(res.status, 401);
+    assert.equal(res.status, 403);
   }, expiredUrl);
 
   const wrongEmail = await accessJwt({ payload: { email: 'other@example.test' } });
@@ -197,12 +232,12 @@ test('/orders falls back to Basic challenge when Cloudflare Access JWT is absent
     const res = await worker.fetch(unauthenticatedRequest({
       'cf-access-jwt-assertion': wrongEmail.token
     }), envWithAccess({}, { CF_ACCESS_CERTS_URL: wrongEmailUrl }), {});
-    assert.equal(res.status, 401);
+    assert.equal(res.status, 403);
   }, wrongEmailUrl);
 });
 
-test('/orders allows Basic-authenticated dashboard requests without x-dashboard-key', async () => {
-  const res = await worker.fetch(request(), envWithKv({}), {});
+test('/orders allows dashboard-key program requests', async () => {
+  const res = await worker.fetch(unauthenticatedRequest({ 'x-dashboard-key': 'dash' }), envWithKv({}), {});
   const data = await res.json();
   assert.equal(res.status, 200);
   assert.equal(data.ok, true);
@@ -212,7 +247,53 @@ test('/orders allows Basic-authenticated dashboard requests without x-dashboard-
 test('/orders remains fail-closed when DASHBOARD_KEY is missing', async () => {
   const res = await worker.fetch(request(), envWithKv({}, { DASHBOARD_KEY: '' }), {});
   assert.equal(res.status, 403);
-  assert.deepEqual(await res.json(), { ok: false, error: 'unauthorized' });
+  assert.equal(await res.text(), 'forbidden');
+});
+
+test('browser data endpoints accept verified Cloudflare Access JWT and proxy with server dashboard key', async () => {
+  const { token, jwk } = await accessJwt();
+  const seen = [];
+  await withAccessCerts(jwk, async () => {
+    const res = await worker.fetch(new Request('https://db.nice.okinawa/control', {
+      headers: { 'cf-access-jwt-assertion': token }
+    }), {
+      ...envWithAccess({}),
+      ANALYTICS: {
+        async fetch(request) {
+          seen.push({
+            url: request.url,
+            key: request.headers.get('x-dashboard-key')
+          });
+          return Response.json({ ok: true });
+        }
+      }
+    }, {});
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true });
+  });
+  assert.deepEqual(seen, [{ url: 'https://analytics.nice.okinawa/control', key: 'dash' }]);
+});
+
+test('program analytics endpoints require x-dashboard-key even with a valid Access JWT', async () => {
+  const { token, jwk } = await accessJwt();
+  await withAccessCerts(jwk, async () => {
+    const res = await worker.fetch(new Request('https://db.nice.okinawa/alerts/check', {
+      headers: { 'cf-access-jwt-assertion': token }
+    }), envWithAccess({}), {});
+    assert.equal(res.status, 403);
+  });
+
+  const withKey = await worker.fetch(new Request('https://db.nice.okinawa/alerts/check', {
+    headers: { 'x-dashboard-key': 'dash' }
+  }), {
+    ...envWithKv({}),
+    ANALYTICS: {
+      async fetch() {
+        return Response.json({ ok: true });
+      }
+    }
+  }, {});
+  assert.equal(withKey.status, 200);
 });
 
 test('/orders returns sorted masked order source rows and distributions', async () => {
