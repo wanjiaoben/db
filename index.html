@@ -1746,6 +1746,10 @@ td.num, th.num { text-align: right; }
         <tbody id="configSnapshotTable"><tr><td colspan="4" class="empty">等待配置快照</td></tr></tbody>
       </table>
       <table style="margin-top:8px">
+        <thead><tr><th>AUDIT 数据</th><th>上次月份</th><th>时间</th><th>状态</th></tr></thead>
+        <tbody id="auditHumanMetricsTable"><tr><td colspan="4" class="empty">等待 AUDIT 数据</td></tr></tbody>
+      </table>
+      <table style="margin-top:8px">
         <thead><tr><th>到期提醒</th><th>状态</th><th>剩余</th><th>负责人</th></tr></thead>
         <tbody id="expiryTable"><tr><td colspan="4" class="empty">等待到期提醒</td></tr></tbody>
       </table>
@@ -2726,6 +2730,14 @@ async function loadControl() {
       escapeHtml((r.sha256 || '-').slice(0, 16))
     ]));
 
+    const auditHumanMetrics = data.audit_human_metrics || {};
+    renderRows('auditHumanMetricsTable', [auditHumanMetrics], (r) => row([
+      escapeHtml(r.source || 'audit-human-data-plan'),
+      escapeHtml(r.latest_month || '-'),
+      escapeHtml(timeText(r.latest_at)),
+      { html: statusDot(r.ok, false, !r.configured && !r.error) + escapeHtml(auditHumanMetricsStatusText(r)) }
+    ]));
+
     const expiries = data.expiries || {};
     const nearestExpiry = expiries.nearest || {};
     renderRows('expiryTable', [expiries], (r) => row([
@@ -2750,9 +2762,18 @@ async function loadControl() {
     $('deployTable').innerHTML = '<tr><td colspan="4" class="empty">部署状态读取失败</td></tr>';
     $('probeTable').innerHTML = '<tr><td colspan="4" class="empty">探针状态读取失败</td></tr>';
     $('configSnapshotTable').innerHTML = '<tr><td colspan="4" class="empty">配置快照读取失败</td></tr>';
+    $('auditHumanMetricsTable').innerHTML = '<tr><td colspan="4" class="empty">AUDIT 数据读取失败</td></tr>';
     $('expiryTable').innerHTML = '<tr><td colspan="4" class="empty">到期提醒读取失败</td></tr>';
     $('revenueTable').innerHTML = '<tr><td colspan="5" class="empty">营收会员读取失败：' + escapeHtml(e.message) + '</td></tr>';
   }
+}
+
+function auditHumanMetricsStatusText(row) {
+  if (row.error) return '错误：' + row.error;
+  if (!row.configured) return '未生成';
+  const summary = row.evidence_summary || {};
+  const parts = Object.keys(summary).sort().map((key) => key + ' ' + summary[key]);
+  return parts.length ? parts.join(' / ') : '已生成';
 }
 
 function expiryStatusText(status) {

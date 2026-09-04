@@ -1,4 +1,5 @@
 import expiriesConfig from '../expiries.json' with { type: 'json' };
+import auditHumanDataPlan from '../audit-human-data-plan.json' with { type: 'json' };
 
 const COLLECT_ORIGIN = 'https://translation.nice.okinawa';
 const DASHBOARD_ORIGIN = 'https://db.nice.okinawa';
@@ -8,6 +9,7 @@ const PATH_CHECK_PREVIEW_INJECT_CRON = '11 29 7 29 *';
 const PATH_CHECK_PREVIEW_TEST_EMAIL_CRON = '12 29 7 29 *';
 const GSC_DAILY_SYNC_CRON = '0 0 * * *';
 const CONFIG_SNAPSHOT_CRON = '7 0 * * *';
+const AUDIT_HUMAN_METRICS_CRON = '0 0 1 * *';
 const GSC_DEFAULT_SYNC_DAYS = 28;
 const GSC_REPORT_WINDOW_DAYS = 7;
 const BING_SYNC_DAYS = 7;
@@ -47,6 +49,8 @@ const DEPLOYMENT_IN_PROGRESS_ALERT_MS = 30 * 60 * 1000;
 const CONFIG_SNAPSHOT_SOURCE = 'cloudflare-github-config';
 const CONFIG_SNAPSHOT_ALERT_KEY = 'config-snapshot';
 const CONFIG_SNAPSHOT_ALERT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const AUDIT_HUMAN_METRICS_SOURCE = 'audit-human-data-plan';
+const AUDIT_HUMAN_METRICS_ARTIFACT_KEY_PREFIX = 'audit/human-metrics/';
 const EXPIRY_KIND_ALLOWLIST = new Set(['domain', 'token', 'cert', 'subscription']);
 const EXPIRY_WARNING_DAYS = 30;
 const EXPIRY_RED_DAYS = 7;
@@ -275,6 +279,14 @@ export default {
       } catch (error) {
         return json({ ok: false, error: clean(error.message || String(error), 300) }, request, 502);
       }
+    }
+
+    if (url.pathname === '/audit/human-metrics' && request.method === 'GET') {
+      return auditHumanMetrics(request, env);
+    }
+
+    if (url.pathname === '/audit/human-metrics/run' && request.method === 'POST') {
+      return runAuditHumanMetricsEndpoint(request, env);
     }
 
     if (url.pathname === '/search-console/sync' && request.method === 'POST') {
@@ -1082,6 +1094,13 @@ async function runScheduledTasks(event, env) {
       await runConfigSnapshot(env, cron, { notify: dashboardAlertsEnabled(env) });
     } catch (e) {
       errors.push(`config-snapshot:${e.message}`);
+    }
+  }
+  if (cron === AUDIT_HUMAN_METRICS_CRON) {
+    try {
+      await runAuditHumanMetrics(env, { month: previousJstMonthKey(scheduledAt), reason: cron });
+    } catch (e) {
+      errors.push(`audit-human-metrics:${e.message}`);
     }
   }
   try {
@@ -2649,13 +2668,14 @@ async function controlDashboard(request, env) {
     return json({ ok: false, error: 'unauthorized' }, request, 403);
   }
 
-  const [backups, deployments, probes, revenue, configSnapshot, expiries] = await Promise.all([
+  const [backups, deployments, probes, revenue, configSnapshot, expiries, auditHumanMetrics] = await Promise.all([
     getBackupStatus(env),
     getDeploymentStatus(env),
     getProbeSummary(env),
     getRevenueSummary(env),
     getConfigSnapshotStatus(env),
-    getExpiryStatus()
+    getExpiryStatus(),
+    getAuditHumanMetricsStatus(env)
   ]);
 
   return json({
@@ -2666,7 +2686,8 @@ async function controlDashboard(request, env) {
     probes,
     revenue,
     config_snapshot: configSnapshot,
-    expiries
+    expiries,
+    audit_human_metrics: auditHumanMetrics
   }, request);
 }
 
@@ -2861,6 +2882,188 @@ function daysUntilDate(dateKey, now) {
 function containsSensitiveExpiryNote(value) {
   return /\b(token|password|passwd|secret|card|cvv|otp|jwt)\s*[:=]/i.test(String(value || ''))
     || /[?&](token|password|secret|key|otp|jwt)=/i.test(String(value || ''));
+}
+
+async function ensureAuditHumanMetricsTable(env) {
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS audit_human_metrics (month TEXT NOT NULL, question_id TEXT NOT NULL, value TEXT NOT NULL, source TEXT NOT NULL, computed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), evidence_status TEXT NOT NULL, PRIMARY KEY (month, question_id))").run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_audit_human_metrics_computed_at ON audit_human_metrics(computed_at)').run();
+}
+
+function validateAuditHumanDataPlan(input = auditHumanDataPlan) {
+  if (!Array.isArray(input)) return { ok: false, error: 'audit human data plan must be an array' };
+  const rows = [];
+  const seen = new Set();
+  for (const [index, row] of input.entries()) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return { ok: false, error: 'audit plan[' + index + '] must be an object' };
+    const item = {
+      question_id: clean(row.question_id, 20),
+      module: clean(row.module, 80),
+      question: clean(row.question, 500),
+      monthly_metric: clean(row.monthly_metric, 800),
+      data_source: clean(row.data_source, 800),
+      privacy_boundary: clean(row.privacy_boundary, 800),
+      evidence_status: clean(row.evidence_status, 40),
+      required_read_access: clean(row.required_read_access || '', 800)
+    };
+    for (const field of ['question_id', 'module', 'question', 'monthly_metric', 'data_source', 'privacy_boundary', 'evidence_status']) {
+      if (!item[field]) return { ok: false, error: 'audit plan[' + index + '].' + field + ' missing' };
+    }
+    if (!/^q(?:[1-9]|1[0-2])$/.test(item.question_id)) return { ok: false, error: 'audit plan[' + index + '].question_id invalid' };
+    if (!['OK', 'EI', 'WAN_PENDING'].includes(item.evidence_status)) return { ok: false, error: 'audit plan[' + index + '].evidence_status invalid' };
+    if (seen.has(item.question_id)) return { ok: false, error: 'audit plan[' + index + '].question_id duplicate' };
+    seen.add(item.question_id);
+    rows.push(item);
+  }
+  if (rows.length !== 12) return { ok: false, error: 'audit human data plan must contain 12 questions' };
+  return { ok: true, rows: rows.sort((a, b) => Number(a.question_id.slice(1)) - Number(b.question_id.slice(1))) };
+}
+
+function auditMonthRangeJst(month) {
+  if (!/^\d{4}-\d{2}$/.test(String(month || ''))) throw new Error('invalid_month');
+  const [year, monthNumber] = month.split('-').map(Number);
+  if (monthNumber < 1 || monthNumber > 12) throw new Error('invalid_month');
+  const start = new Date(Date.UTC(year, monthNumber - 1, 1, -9, 0, 0, 0));
+  const end = new Date(Date.UTC(year, monthNumber, 1, -9, 0, 0, 0));
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
+function previousJstMonthKey(date = new Date()) {
+  const jst = new Date(date.getTime() + 9 * 3600000);
+  const previous = new Date(Date.UTC(jst.getUTCFullYear(), jst.getUTCMonth() - 1, 1));
+  return previous.toISOString().slice(0, 7);
+}
+
+async function collectAuditVisitorAggregates(env, month) {
+  const range = auditMonthRangeJst(month);
+  if (!env.DB) return { ok: false, range, error: 'missing_nice_analytics_D1', trial: null, content: null };
+  try {
+    const trial = await first(env.DB, "/* audit:trial */ SELECT COUNT(DISTINCT visitor_id) AS visitors, COUNT(*) AS pageviews FROM visitor_events WHERE created_at >= ? AND created_at < ? AND site_id IN ('bjt', 'progress', 'kiso') AND event_type = 'pageview' AND (landing_path LIKE '%trial%' OR landing_path LIKE '%free%' OR landing_path LIKE '%study%' OR landing_path LIKE '%mogi%' OR landing_path LIKE '%pro%')", [range.start, range.end]);
+    const content = await first(env.DB, "/* audit:content */ SELECT COUNT(DISTINCT visitor_id) AS visitors, COUNT(*) AS pageviews FROM visitor_events WHERE created_at >= ? AND created_at < ? AND site_id IN ('bjt', 'progress', 'kiso') AND event_type = 'pageview' AND (landing_path LIKE '%guide%' OR landing_path LIKE '%article%' OR landing_path LIKE '%column%' OR landing_path LIKE '%blog%')", [range.start, range.end]);
+    return { ok: true, range, trial: normalizeAuditCountRow(trial), content: normalizeAuditCountRow(content) };
+  } catch (e) {
+    return { ok: false, range, error: clean(e.message || String(e), 200), trial: null, content: null };
+  }
+}
+
+function normalizeAuditCountRow(row) {
+  return { visitors: Number(row?.visitors || 0), pageviews: Number(row?.pageviews || 0) };
+}
+
+function buildAuditHumanMetricRows(planRows, month, computedAt, aggregates = {}) {
+  const rows = [];
+  for (const item of planRows) {
+    const value = {
+      schema_version: 1,
+      month,
+      question_id: item.question_id,
+      module: item.module,
+      question: item.question,
+      monthly_metric: item.monthly_metric,
+      privacy_boundary: item.privacy_boundary,
+      evidence_status: item.evidence_status,
+      metrics: {},
+      missing_read_access: item.required_read_access ? [item.required_read_access] : [],
+      notes: []
+    };
+    if (item.question_id === 'q3' && aggregates.trial) {
+      value.metrics.anonymous_trial_or_study_visitors = aggregates.trial.visitors;
+      value.metrics.anonymous_trial_or_study_pageviews = aggregates.trial.pageviews;
+      value.notes.push('visitor_events anonymous aggregate only; paid conversion numerator requires order read access.');
+    }
+    if (item.question_id === 'q12' && aggregates.content) {
+      value.metrics.learning_content_visitors = aggregates.content.visitors;
+      value.metrics.learning_content_pageviews = aggregates.content.pageviews;
+      value.notes.push('visitor_events anonymous aggregate only; captured-order join requires order read access.');
+    }
+    if (item.question_id === 'q9') {
+      value.metrics = { denominator_policy: 'excluded_until_wan_fills' };
+      value.missing_read_access = ['Wan monthly manual aggregate'];
+    }
+    if (aggregates.error && (item.question_id === 'q3' || item.question_id === 'q12')) value.notes.push('analytics aggregate unavailable: ' + aggregates.error);
+    rows.push({ month, question_id: item.question_id, value, source: AUDIT_HUMAN_METRICS_SOURCE, computed_at: computedAt, evidence_status: item.evidence_status });
+  }
+  return rows;
+}
+
+function assertAuditPayloadPrivacy(payload) {
+  const text = JSON.stringify(payload);
+  const forbidden = [/email/i, /order[_-]?id/i, /\bip\b/i, /visitor_id/i, /name/i];
+  for (const pattern of forbidden) if (pattern.test(text)) throw new Error('audit payload contains forbidden personal field: ' + pattern.source);
+}
+
+async function runAuditHumanMetrics(env, options = {}) {
+  const month = options.month || previousJstMonthKey(options.now || new Date());
+  const computedAt = (options.now || new Date()).toISOString();
+  const validated = validateAuditHumanDataPlan(options.plan || auditHumanDataPlan);
+  if (!validated.ok) throw new Error(validated.error);
+  const aggregates = Object.hasOwn(options, 'aggregates') ? options.aggregates : await collectAuditVisitorAggregates(env, month);
+  const rows = buildAuditHumanMetricRows(validated.rows, month, computedAt, aggregates);
+  const payload = { schema_version: 1, month, source: AUDIT_HUMAN_METRICS_SOURCE, computed_at: computedAt, evidence_summary: summarizeAuditEvidence(rows), metrics: rows.map((row) => row.value) };
+  assertAuditPayloadPrivacy(payload);
+  await ensureAuditHumanMetricsTable(env);
+  for (const row of rows) {
+    await env.DB.prepare('INSERT INTO audit_human_metrics (month, question_id, value, source, computed_at, evidence_status) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(month, question_id) DO UPDATE SET value = excluded.value, source = excluded.source, computed_at = excluded.computed_at, evidence_status = excluded.evidence_status').bind(row.month, row.question_id, JSON.stringify(row.value), row.source, row.computed_at, row.evidence_status).run();
+  }
+  const artifact = await writeAuditHumanMetricsArtifact(env, month, payload);
+  return { ok: true, month, computed_at: computedAt, rows: rows.length, evidence_summary: payload.evidence_summary, artifact, payload };
+}
+
+function summarizeAuditEvidence(rows) {
+  return rows.reduce((summary, row) => {
+    summary[row.evidence_status] = (summary[row.evidence_status] || 0) + 1;
+    return summary;
+  }, {});
+}
+
+async function writeAuditHumanMetricsArtifact(env, month, payload) {
+  const key = AUDIT_HUMAN_METRICS_ARTIFACT_KEY_PREFIX + month + '.json';
+  if (!env.AUDIT_ARTIFACTS) return { ok: false, status: 'ARTIFACT_R2_PENDING', key, reason: 'missing_AUDIT_ARTIFACTS_binding' };
+  await env.AUDIT_ARTIFACTS.put(key, JSON.stringify(payload, null, 2), { httpMetadata: { contentType: 'application/json; charset=utf-8' } });
+  return { ok: true, status: 'written', key };
+}
+
+async function getAuditHumanMetricsStatus(env) {
+  try {
+    await ensureAuditHumanMetricsTable(env);
+    const latest = await first(env.DB, 'SELECT month, computed_at, source, evidence_status FROM audit_human_metrics ORDER BY computed_at DESC, month DESC LIMIT 1');
+    if (!latest) return { ok: true, configured: false, source: AUDIT_HUMAN_METRICS_SOURCE, latest_month: '', latest_at: '', evidence_summary: {} };
+    const rows = await all(env.DB, 'SELECT evidence_status, COUNT(*) AS count FROM audit_human_metrics WHERE month = ? GROUP BY evidence_status ORDER BY evidence_status', [latest.month]);
+    return { ok: true, configured: true, source: latest.source || AUDIT_HUMAN_METRICS_SOURCE, latest_month: latest.month, latest_at: latest.computed_at, evidence_summary: Object.fromEntries(rows.map((row) => [row.evidence_status, Number(row.count || 0)])) };
+  } catch (e) {
+    return { ok: false, configured: false, source: AUDIT_HUMAN_METRICS_SOURCE, error: clean(e.message || String(e), 200) };
+  }
+}
+
+async function getAuditHumanMetrics(env, month) {
+  await ensureAuditHumanMetricsTable(env);
+  const rows = await all(env.DB, 'SELECT month, question_id, value, source, computed_at, evidence_status FROM audit_human_metrics WHERE month = ? ORDER BY CAST(substr(question_id, 2) AS INTEGER)', [month]);
+  return rows.map((row) => ({ month: row.month, question_id: row.question_id, value: JSON.parse(row.value), source: row.source, computed_at: row.computed_at, evidence_status: row.evidence_status }));
+}
+
+async function auditHumanMetrics(request, env) {
+  if (!requireDashboard(request, env)) return json({ ok: false, error: 'unauthorized' }, request, 403);
+  const url = new URL(request.url);
+  const month = clean(url.searchParams.get('month') || previousJstMonthKey(new Date()), 20);
+  if (!/^\d{4}-\d{2}$/.test(month)) return json({ ok: false, error: 'invalid_month' }, request, 400);
+  try {
+    const metrics = await getAuditHumanMetrics(env, month);
+    return json({ ok: true, month, count: metrics.length, metrics }, request);
+  } catch (e) {
+    return json({ ok: false, error: clean(e.message || String(e), 300) }, request, 500);
+  }
+}
+
+async function runAuditHumanMetricsEndpoint(request, env) {
+  if (!requireDashboard(request, env)) return json({ ok: false, error: 'unauthorized' }, request, 403);
+  const url = new URL(request.url);
+  const month = clean(url.searchParams.get('month') || previousJstMonthKey(new Date()), 20);
+  if (!/^\d{4}-\d{2}$/.test(month)) return json({ ok: false, error: 'invalid_month' }, request, 400);
+  try {
+    const result = await runAuditHumanMetrics(env, { month, reason: 'manual' });
+    return json(result, request);
+  } catch (e) {
+    return json({ ok: false, error: clean(e.message || String(e), 300) }, request, 500);
+  }
 }
 
 async function runConfigSnapshot(env, reason = 'manual', options = {}) {
@@ -4551,16 +4754,21 @@ export {
   checkPathContract,
   diffSnapshotJson,
   evaluateDashboardAlerts,
+  auditMonthRangeJst,
+  buildAuditHumanMetricRows,
+  getAuditHumanMetricsStatus,
   getExpiryStatus,
   isFastPathCheckFailure,
   normalizeSnapshot,
   normalizeBingQueryRow,
   normalizeSearchTermSource,
   parsePage,
+  runAuditHumanMetrics,
   runConfigSnapshot,
   sanitizeSecretName,
   sha256Hex,
   shouldSendPathCheckAlert,
   stableFingerprint,
+  validateAuditHumanDataPlan,
   validateExpiryConfig
 };

@@ -1,0 +1,122 @@
+[
+  {
+    "question_id": "q1",
+    "module": "收钱",
+    "question": "上个月新客数是多少？",
+    "monthly_metric": "首购邮箱数；captured/completed；按 JST 自然月；同邮箱首笔为新客。",
+    "data_source": "bjt KV paypal_order_meta:；db /orders?month=YYYY-MM&detail=1&status=paid",
+    "privacy_boundary": "只出聚合数，不输出邮箱、姓名、网络地址、订单号。",
+    "evidence_status": "EI",
+    "required_read_access": "analytics Worker 需要 BJT_KV 只读 binding，或 db-private /orders 聚合服务 binding/admin 只读端点。"
+  },
+  {
+    "question_id": "q2",
+    "module": "收钱",
+    "question": "续费率是多少？",
+    "monthly_metric": "同邮箱历史 captured/completed 第 2 笔及以上 ÷ 当月 captured/completed 订单邮箱数。",
+    "data_source": "bjt KV paypal_order_meta:；db /orders?month=YYYY-MM&detail=1&status=paid",
+    "privacy_boundary": "只出聚合数，不输出邮箱、姓名、网络地址、订单号。",
+    "evidence_status": "EI",
+    "required_read_access": "analytics Worker 需要 BJT_KV 历史 captured 只读聚合。"
+  },
+  {
+    "question_id": "q3",
+    "module": "转化",
+    "question": "免费体验到付费转化是多少？",
+    "monthly_metric": "当月匿名 study/trial 活跃 → 当月首购 captured；不能跨身份硬猜。",
+    "data_source": "nice_analytics visitor_events + BJT captured orders",
+    "privacy_boundary": "只出匿名聚合与转化分子/分母，不输出 访客标识、邮箱、网络地址。",
+    "evidence_status": "EI",
+    "required_read_access": "visitor_events 已可读；订单首购聚合仍需 BJT_KV 或订单 admin 只读接入。"
+  },
+  {
+    "question_id": "q4",
+    "module": "趋势",
+    "question": "新客、续费、转化相对 7 月变化多少？",
+    "monthly_metric": "q1/q2/q3 与前月同口径环比。",
+    "data_source": "q1/q2/q3 同源",
+    "privacy_boundary": "只出聚合数与百分比，不输出个人记录。",
+    "evidence_status": "EI",
+    "required_read_access": "依赖 q1/q2/q3 所需只读接入。"
+  },
+  {
+    "question_id": "q5",
+    "module": "内容",
+    "question": "这个月加了多少题、课、语言？",
+    "monthly_metric": "按车/PR 的新增题、课程、语言资产聚合；只统计上线口径。",
+    "data_source": "bjt PROGRESS.md / records.md / git history",
+    "privacy_boundary": "只出内容资产聚合，不含用户数据。",
+    "evidence_status": "EI",
+    "required_read_access": "analytics Worker 需要 GitHub contents/logs 只读接入，或 wan-rules 预计算 artifact。"
+  },
+  {
+    "question_id": "q6",
+    "module": "质量",
+    "question": "解析四语覆盖率与缺口是多少？",
+    "monthly_metric": "各 set/bank explanation_* 覆盖率与缺 explanation_* 题数。",
+    "data_source": "BJT question JSON / gates / QA-0903-02",
+    "privacy_boundary": "只出题库聚合，不含学员数据。",
+    "evidence_status": "EI",
+    "required_read_access": "analytics Worker 需要 BJT 题库 JSON 只读接入，或 QA gate 聚合 artifact。"
+  },
+  {
+    "question_id": "q7",
+    "module": "学习",
+    "question": "月活跃 15+ 天人数是多少？",
+    "monthly_metric": "上月自然月内学习活跃天数 >= 15 的去重人数。",
+    "data_source": "protected Progress/BJT learning activity D1/KV aggregate",
+    "privacy_boundary": "只出人数，不输出邮箱、姓名、网络地址、学习记录明细。",
+    "evidence_status": "EI",
+    "required_read_access": "需要 Progress/BJT 学习活动只读聚合端点或 D1/KV 只读 binding。"
+  },
+  {
+    "question_id": "q8",
+    "module": "学习",
+    "question": "累计 300 题以上人数是多少？",
+    "monthly_metric": "截至月末累计答题数 >= 300 的去重人数。",
+    "data_source": "protected Progress/BJT learning activity D1/KV aggregate",
+    "privacy_boundary": "只出人数，不输出个人记录。",
+    "evidence_status": "EI",
+    "required_read_access": "需要 Progress/BJT 学习活动只读聚合端点或 D1/KV 只读 binding。"
+  },
+  {
+    "question_id": "q9",
+    "module": "成果",
+    "question": "红榜出分条数是多少？",
+    "monthly_metric": "Wan 人审确认后的红榜出分条数；默认 WAN_PENDING，不进自动分母。",
+    "data_source": "score-check/admin；Wan 手填",
+    "privacy_boundary": "只出聚合条数，不输出姓名、邮箱、准考号、截图。",
+    "evidence_status": "WAN_PENDING",
+    "required_read_access": "Wan 手填或提供脱敏聚合。"
+  },
+  {
+    "question_id": "q10",
+    "module": "渠道",
+    "question": "首触归因订单占比是多少？",
+    "monthly_metric": "当月 captured 订单中 first_ref/first_landing/first_utm 已落字段占比。",
+    "data_source": "BJT order first_* fields, captured only",
+    "privacy_boundary": "只出聚合占比，不输出订单明细或邮箱。",
+    "evidence_status": "EI",
+    "required_read_access": "analytics Worker 需要 BJT_KV 订单 first_* 只读聚合。"
+  },
+  {
+    "question_id": "q11",
+    "module": "渠道",
+    "question": "来源 Top3 是什么？",
+    "monthly_metric": "当月 captured 订单按 first_ref/first_utm 归一后的 Top3。",
+    "data_source": "BJT order first_* fields, captured only",
+    "privacy_boundary": "只出来源聚合，不输出个人订单。",
+    "evidence_status": "EI",
+    "required_read_access": "analytics Worker 需要 BJT_KV 订单 first_* 只读聚合。"
+  },
+  {
+    "question_id": "q12",
+    "module": "内容成交",
+    "question": "哪些内容页带来成交？",
+    "monthly_metric": "guide/article landing → captured 的内容页成交数；无法跨身份则标 EI。",
+    "data_source": "nice_analytics visitor_events + BJT captured orders",
+    "privacy_boundary": "只出页面聚合，不输出 访客标识、邮箱、网络地址、订单明细。",
+    "evidence_status": "EI",
+    "required_read_access": "visitor_events 可读；成交归因仍需 BJT_KV 订单或首触字段只读接入。"
+  }
+]
