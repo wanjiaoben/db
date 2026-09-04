@@ -1746,6 +1746,10 @@ td.num, th.num { text-align: right; }
         <thead><tr><th>探针</th><th>24h</th><th class="num">成功率</th><th>最近</th></tr></thead>
         <tbody id="probeTable"><tr><td colspan="4" class="empty">等待探针结果</td></tr></tbody>
       </table>
+      <table style="margin-top:8px">
+        <thead><tr><th>配置快照</th><th>上次时间</th><th>是否变化</th><th>最新 sha256</th></tr></thead>
+        <tbody id="configSnapshotTable"><tr><td colspan="4" class="empty">等待配置快照</td></tr></tbody>
+      </table>
     </section>
 
     <section class="card control-card">
@@ -2730,6 +2734,14 @@ async function loadControl() {
       { html: statusDot(r.ok, false) + escapeHtml(r.latest ? ((r.latest.status || '-') + ' / ' + (r.latest.duration_ms || 0) + 'ms') : '无数据') }
     ]));
 
+    const configSnapshot = data.config_snapshot || {};
+    renderRows('configSnapshotTable', [configSnapshot], (r) => row([
+      escapeHtml(r.source || 'cloudflare-github-config'),
+      escapeHtml(timeText(r.latest_at)),
+      { html: statusDot(r.ok && !r.changed, false, !r.configured, r.changed) + escapeHtml(!r.configured ? '未建立基线' : (r.changed ? '有变化' : '无变化')) },
+      escapeHtml((r.sha256 || '-').slice(0, 16))
+    ]));
+
     const revenue = ((data.revenue || {}).items || []);
     renderRows('revenueTable', revenue, (r) => row([
       escapeHtml((r.site || '-').toUpperCase()),
@@ -2744,6 +2756,7 @@ async function loadControl() {
     $('backupTable').innerHTML = '<tr><td colspan="5" class="empty">系统健康读取失败：' + escapeHtml(e.message) + '</td></tr>';
     $('deployTable').innerHTML = '<tr><td colspan="4" class="empty">部署状态读取失败</td></tr>';
     $('probeTable').innerHTML = '<tr><td colspan="4" class="empty">探针状态读取失败</td></tr>';
+    $('configSnapshotTable').innerHTML = '<tr><td colspan="4" class="empty">配置快照读取失败</td></tr>';
     $('revenueTable').innerHTML = '<tr><td colspan="5" class="empty">营收会员读取失败：' + escapeHtml(e.message) + '</td></tr>';
   }
 }
