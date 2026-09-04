@@ -73,6 +73,24 @@ test('visitor dashboard returns ranged aggregate with sample protection', async 
       { site_id: 'snorkel', field: 'referrer_host', value: 'google.com', count: 2 },
       { site_id: 'snorkel', field: 'referrer_host', value: 'direct', count: 1 }
     ],
+    'HAVING contact_clicks > 0\n      ),\n      latest_contact': [
+      {
+        site_id: 'snorkel',
+        visitor_id: 'visitor-123',
+        last_contact_at: '2026-07-27T04:03:00.000Z',
+        contact_clicks: 1,
+        contact_channels: 'email',
+        country: 'JP',
+        city: 'Okinawa',
+        timezone: 'Asia/Tokyo',
+        ui_lang: 'ja',
+        browser_lang: 'ja',
+        source: 'google.com',
+        landing_path: '/',
+        page_paths: '/fishing-seasons/||/||/en/guides/where-to-stay-fishing/',
+        section_ids: 'hero,contact'
+      }
+    ],
     'GROUP_CONCAT(DISTINCT CASE WHEN event_type': [
       {
         site_id: 'snorkel',
@@ -128,6 +146,10 @@ test('visitor dashboard returns ranged aggregate with sample protection', async 
   assert.deepEqual(data.visitor_rows[0].bot_reasons, ['city:Council Bluffs']);
   assert.deepEqual(data.visitor_rows[0].contact_channels, ['email']);
   assert.deepEqual(data.visitor_rows[0].section_ids, ['hero', 'price']);
+  assert.equal(data.contact_visitors[0].source, 'google.com');
+  assert.equal(data.contact_visitors[0].landing_path, '/');
+  assert.deepEqual(data.contact_visitors[0].page_paths, ['/fishing-seasons/', '/', '/en/guides/where-to-stay-fishing/']);
+  assert.deepEqual(data.contact_visitors[0].section_ids, ['hero', 'contact']);
   assert.match(db.calls[0].params[0], /^\d{4}-\d{2}-\d{2}T/);
 });
 
@@ -147,6 +169,13 @@ test('visitor dashboard accepts 1/7/30/180 day ranges and keeps legacy fallback'
     headers: { 'x-dashboard-key': 'test-token' }
   }), { DASHBOARD_KEY: 'test-token', DB: fakeDb(emptyFixtures) }, {});
   assert.equal((await fallback.json()).days, 28);
+
+  const month = await worker.fetch(new Request('https://analytics.nice.okinawa/visitors?range=month', {
+    headers: { 'x-dashboard-key': 'test-token' }
+  }), { DASHBOARD_KEY: 'test-token', DB: fakeDb(emptyFixtures) }, {});
+  const monthJson = await month.json();
+  assert.equal(monthJson.days, 28);
+  assert.equal(monthJson.range, 'month');
 });
 
 test('summary dashboard reads visitor_events for first-screen counters', async () => {
@@ -185,4 +214,8 @@ test('summary dashboard reads visitor_events for first-screen counters', async (
   assert.equal(data.sites[0].site, 'bjt');
   assert.equal(db.calls.some((call) => /FROM\s+events\b/i.test(call.sql)), false);
   assert.equal(db.calls.some((call) => /FROM\s+visitor_events\b/i.test(call.sql)), true);
+  const pageRowQuery = db.calls.find((call) => call.sql.includes('page_source_events'));
+  assert.ok(pageRowQuery);
+  assert.match(pageRowQuery.sql, /NOT LIKE '%\.nice\.okinawa'/);
+  assert.match(pageRowQuery.sql, /THEN utm_source/);
 });
