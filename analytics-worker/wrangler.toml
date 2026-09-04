@@ -15,6 +15,19 @@ binding = "DB"
 database_name = "nice_analytics"
 database_id = "fbcc9bc2-3556-4ac4-8168-8611940114d3"
 
+[[d1_databases]]
+binding = "PROGRESS_D1"
+database_name = "progress"
+database_id = "bb1b2b68-ace0-4855-8b1c-2e6611c944dd"
+
+[[kv_namespaces]]
+binding = "BJT_KV"
+id = "fc382800625e42b7bbfe13830dd39e82"
+
+[[r2_buckets]]
+binding = "AUDIT_ARTIFACTS"
+bucket_name = "nice-audit-artifacts"
+
 [[r2_buckets]]
 binding = "BJT_BACKUPS"
 bucket_name = "bjt-kv-backups"
@@ -57,6 +70,7 @@ ALERT_FROM_EMAIL = "Nice Okinawa Inquiry <noreply@nice.okinawa>"
 ALERT_SUBJECT_PREFIX = ""
 PATH_CHECK_ALERTS_ENABLED = "1"
 DASHBOARD_ALERTS_ENABLED = "1"
+AUDIT_ARTIFACTS_PREFIX = "audit/human-metrics/"
 # Monthly alert-channel self-check records status only; green runs do not send email.
 
 [env.preview]
@@ -72,6 +86,19 @@ crons = ["*/15 * * * *"]
 binding = "DB"
 database_name = "nice_analytics_m0727_09_preview"
 database_id = "827e8987-4ce8-4a44-ae1c-938a5c052ae8"
+
+[[env.preview.d1_databases]]
+binding = "PROGRESS_D1"
+database_name = "progress-otp-preview"
+database_id = "1b912362-95bc-4866-b3d3-652cee57dbe4"
+
+[[env.preview.kv_namespaces]]
+binding = "BJT_KV"
+id = "4a016f0e1eb94e14a08d6aa53add61e3"
+
+[[env.preview.r2_buckets]]
+binding = "AUDIT_ARTIFACTS"
+bucket_name = "nice-audit-artifacts"
 
 [[env.preview.r2_buckets]]
 binding = "BJT_BACKUPS"
@@ -111,3 +138,4 @@ ALERT_FROM_EMAIL = "Nice Okinawa Inquiry <noreply@nice.okinawa>"
 ALERT_SUBJECT_PREFIX = "[TEST] "
 PATH_CHECK_ALERTS_ENABLED = "0"
 DASHBOARD_ALERTS_ENABLED = "0"
+AUDIT_ARTIFACTS_PREFIX = "audit/human-metrics/preview/"
