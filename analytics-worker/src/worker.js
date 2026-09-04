@@ -51,6 +51,8 @@ const CONFIG_SNAPSHOT_ALERT_KEY = 'config-snapshot';
 const CONFIG_SNAPSHOT_ALERT_WINDOW_MS = 24 * 60 * 60 * 1000;
 const AUDIT_HUMAN_METRICS_SOURCE = 'audit-human-data-plan';
 const AUDIT_HUMAN_METRICS_ARTIFACT_KEY_PREFIX = 'audit/human-metrics/';
+const BJT_ORDER_META_PREFIX = 'paypal_order_meta:';
+const AUDIT_PAID_ORDER_STATUSES = new Set(['captured', 'completed']);
 const EXPIRY_KIND_ALLOWLIST = new Set(['domain', 'token', 'cert', 'subscription']);
 const EXPIRY_WARNING_DAYS = 30;
 const EXPIRY_RED_DAYS = 7;
@@ -2949,46 +2951,356 @@ function normalizeAuditCountRow(row) {
   return { visitors: Number(row?.visitors || 0), pageviews: Number(row?.pageviews || 0) };
 }
 
-function buildAuditHumanMetricRows(planRows, month, computedAt, aggregates = {}) {
+function createReadOnlyKv(kv, label = 'KV') {
+  if (!kv) return null;
+  return Object.freeze({
+    get: (...args) => kv.get(...args),
+    list: (...args) => kv.list(...args),
+    put() { throw new Error(label + '_write_forbidden'); },
+    delete() { throw new Error(label + '_write_forbidden'); }
+  });
+}
+
+function createReadOnlyD1(db, label = 'D1') {
+  if (!db) return null;
+  return Object.freeze({
+    prepare(sql) {
+      assertReadOnlySql(sql, label);
+      const statement = db.prepare(sql);
+      return {
+        bind: (...params) => {
+          const bound = statement.bind(...params);
+          return {
+            first: (...args) => bound.first(...args),
+            all: (...args) => bound.all(...args),
+            raw: (...args) => bound.raw(...args),
+            run() { throw new Error(label + '_write_forbidden'); }
+          };
+        },
+        first: (...args) => statement.first(...args),
+        all: (...args) => statement.all(...args),
+        raw: (...args) => statement.raw(...args),
+        run() { throw new Error(label + '_write_forbidden'); }
+      };
+    },
+    exec() { throw new Error(label + '_write_forbidden'); },
+    batch() { throw new Error(label + '_write_forbidden'); }
+  });
+}
+
+function assertReadOnlySql(sql, label = 'D1') {
+  const normalized = String(sql || '')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/--.*$/gm, ' ')
+    .trim()
+    .toLowerCase();
+  if (!normalized) throw new Error(label + '_empty_sql_forbidden');
+  if (!/^(select|with|pragma)\b/.test(normalized)) throw new Error(label + '_non_select_forbidden');
+  if (/\b(insert|update|delete|drop|alter|create|replace|attach|detach|vacuum|reindex|analyze)\b/.test(normalized)) throw new Error(label + '_write_sql_forbidden');
+}
+
+function auditMonthDayRangeJst(month) {
+  if (!/^\d{4}-\d{2}$/.test(String(month || ''))) throw new Error('invalid_month');
+  const [year, monthNumber] = month.split('-').map(Number);
+  const start = String(year).padStart(4, '0') + '-' + String(monthNumber).padStart(2, '0') + '-01';
+  const endDate = new Date(Date.UTC(year, monthNumber, 1));
+  const end = endDate.toISOString().slice(0, 10);
+  return { start, end };
+}
+
+function previousAuditMonth(month) {
+  const [year, monthNumber] = month.split('-').map(Number);
+  return new Date(Date.UTC(year, monthNumber - 2, 1)).toISOString().slice(0, 7);
+}
+
+function isAuditPaidStatus(status) {
+  return AUDIT_PAID_ORDER_STATUSES.has(String(status || '').trim().toLowerCase());
+}
+
+function normalizeAuditEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function auditOrderTimestamp(order) {
+  return order.captured_at || order.created_at || order.updated_at || '';
+}
+
+function auditOrderTimeMs(order) {
+  const ms = Date.parse(auditOrderTimestamp(order));
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function isAuditTestOrder(order, key = '') {
+  const text = [key, order.source, order.status, order.plan, order.product_type, order.service, order.email]
+    .map((value) => String(value || '').toLowerCase())
+    .join(' ');
+  return /cctest|regtest|internal|demo|probe|synthetic/.test(text);
+}
+
+function auditDedupeKey(order, key = '') {
+  const explicit = clean(order.order_id || '', 80);
+  if (explicit) return 'explicit:' + explicit;
+  const timestamp = auditOrderTimestamp(order);
+  const minute = timestamp ? timestamp.slice(0, 16) : '';
+  return ['fallback', normalizeAuditEmail(order.email), order.currency || '', order.amount || '', minute].join(':');
+}
+
+function auditDedupeRank(order) {
+  const paid = isAuditPaidStatus(order.status) ? 1 : 0;
+  return paid * 1000000000000000 + auditOrderTimeMs(order);
+}
+
+async function listAuditKvJson(kv, prefix) {
+  const rows = [];
+  let cursor;
+  do {
+    const page = await kv.list({ prefix, cursor, limit: 1000 });
+    for (const item of page.keys || []) rows.push(item.name);
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+  const out = [];
+  for (let i = 0; i < rows.length; i += 20) {
+    const chunk = await Promise.all(rows.slice(i, i + 20).map(async (key) => {
+      const value = await kv.get(key, { type: 'json' }).catch(() => null);
+      return value && typeof value === 'object' && !Array.isArray(value) ? { key, value } : null;
+    }));
+    out.push(...chunk.filter(Boolean));
+  }
+  return out;
+}
+
+function normalizeAuditSource(order) {
+  const ref = String(order.first_ref || order.ref_host || '').trim().toLowerCase();
+  const utm = String(order.first_utm?.utm_source || order.utm_source || '').trim().toLowerCase();
+  const combined = (ref + ' ' + utm).trim();
+  if (!combined) return 'unknown';
+  if (/chatgpt|openai/.test(combined)) return 'chatgpt';
+  if (/google/.test(combined)) return 'google';
+  if (/bing/.test(combined)) return 'bing';
+  if (/xiaohongshu|小红书|xhs/.test(combined)) return 'xiaohongshu';
+  if (/facebook|instagram|reddit|twitter|x\.com/.test(combined)) return 'sns';
+  if (/direct|none|unknown/.test(combined)) return 'direct';
+  return clean(ref || utm || 'other', 80);
+}
+
+function isContentLanding(order) {
+  return /guide|article|column|blog|tips|lesson/.test(String(order.first_landing || '').toLowerCase());
+}
+
+function topEntries(map, limit = 3) {
+  return [...map.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([key, count]) => ({ key, count }));
+}
+
+function sumAmountByCurrency(orders) {
+  const sums = new Map();
+  for (const order of orders) {
+    const currency = clean(order.currency || 'unknown', 10).toUpperCase();
+    const amount = Number(order.amount || 0);
+    if (!Number.isFinite(amount)) continue;
+    sums.set(currency, (sums.get(currency) || 0) + amount);
+  }
+  return Object.fromEntries([...sums.entries()].sort(([a], [b]) => a.localeCompare(b)));
+}
+
+function rate(numerator, denominator) {
+  if (!denominator) return null;
+  return Number((numerator / denominator).toFixed(4));
+}
+
+async function collectAuditBjtOrderAggregates(env, month) {
+  const kv = createReadOnlyKv(env.BJT_KV, 'BJT_KV');
+  const range = auditMonthRangeJst(month);
+  if (!kv) return { ok: false, error: 'missing_BJT_KV_binding' };
+  try {
+    const pairs = await listAuditKvJson(kv, BJT_ORDER_META_PREFIX);
+    const byKey = new Map();
+    for (const { key, value } of pairs) {
+      if (isAuditTestOrder(value, key)) continue;
+      const dedupeKey = auditDedupeKey(value, key);
+      const existing = byKey.get(dedupeKey);
+      if (!existing || auditDedupeRank(value) > auditDedupeRank(existing)) byKey.set(dedupeKey, { ...value });
+    }
+    const orders = [...byKey.values()];
+    const paid = orders.filter((order) => isAuditPaidStatus(order.status));
+    const currentPaid = paid.filter((order) => {
+      const ts = auditOrderTimestamp(order);
+      return ts >= range.start && ts < range.end;
+    });
+    const previousMonth = previousAuditMonth(month);
+    const previousRange = auditMonthRangeJst(previousMonth);
+    const previousPaid = paid.filter((order) => {
+      const ts = auditOrderTimestamp(order);
+      return ts >= previousRange.start && ts < previousRange.end;
+    });
+    const firstPaidByAccount = new Map();
+    for (const order of paid) {
+      const account = normalizeAuditEmail(order.email);
+      if (!account) continue;
+      const ts = auditOrderTimestamp(order);
+      const existing = firstPaidByAccount.get(account);
+      if (!existing || ts < existing) firstPaidByAccount.set(account, ts);
+    }
+    const currentAccounts = new Set(currentPaid.map((order) => normalizeAuditEmail(order.email)).filter(Boolean));
+    const previousAccounts = new Set(previousPaid.map((order) => normalizeAuditEmail(order.email)).filter(Boolean));
+    const newAccounts = new Set([...currentAccounts].filter((account) => {
+      const firstTs = firstPaidByAccount.get(account) || '';
+      return firstTs >= range.start && firstTs < range.end;
+    }));
+    const repeatAccounts = new Set([...currentAccounts].filter((account) => !newAccounts.has(account)));
+    const previousNewAccounts = new Set([...previousAccounts].filter((account) => {
+      const firstTs = firstPaidByAccount.get(account) || '';
+      return firstTs >= previousRange.start && firstTs < previousRange.end;
+    }));
+    const previousRepeatAccounts = new Set([...previousAccounts].filter((account) => !previousNewAccounts.has(account)));
+    const attributed = currentPaid.filter((order) => order.first_ref || order.first_landing || order.first_utm || order.utm_source);
+    const sourceCounts = new Map();
+    const landingCounts = new Map();
+    for (const order of currentPaid) {
+      sourceCounts.set(normalizeAuditSource(order), (sourceCounts.get(normalizeAuditSource(order)) || 0) + 1);
+      const landing = clean(order.first_landing || 'unknown', 160) || 'unknown';
+      landingCounts.set(landing, (landingCounts.get(landing) || 0) + 1);
+    }
+    const contentPaid = currentPaid.filter(isContentLanding);
+    return {
+      ok: true,
+      range,
+      scanned_keys: pairs.length,
+      deduped_records: orders.length,
+      current_paid_count: currentPaid.length,
+      previous_paid_count: previousPaid.length,
+      current_paid_accounts: currentAccounts.size,
+      previous_paid_accounts: previousAccounts.size,
+      current_new_accounts: newAccounts.size,
+      previous_new_accounts: previousNewAccounts.size,
+      current_repeat_accounts: repeatAccounts.size,
+      previous_repeat_accounts: previousRepeatAccounts.size,
+      renewal_rate: rate(repeatAccounts.size, currentAccounts.size),
+      amount_by_currency: sumAmountByCurrency(currentPaid),
+      attributed_count: attributed.length,
+      attribution_rate: rate(attributed.length, currentPaid.length),
+      top_sources: topEntries(sourceCounts, 3),
+      top_landings: topEntries(landingCounts, 5),
+      content_paid_count: contentPaid.length,
+      content_amount_by_currency: sumAmountByCurrency(contentPaid)
+    };
+  } catch (e) {
+    return { ok: false, error: clean(e.message || String(e), 200) };
+  }
+}
+
+async function collectAuditProgressAggregates(env, month) {
+  const db = createReadOnlyD1(env.PROGRESS_D1, 'PROGRESS_D1');
+  if (!db) return { ok: false, error: 'missing_PROGRESS_D1_binding' };
+  const dayRange = auditMonthDayRangeJst(month);
+  try {
+    const active = await first(db, "/* audit:progress_active */ SELECT COUNT(*) AS count FROM (SELECT email FROM daily_activity WHERE ymd >= ? AND ymd < ? AND review_count > 0 GROUP BY email HAVING COUNT(DISTINCT ymd) >= 15)", [dayRange.start, dayRange.end]);
+    const cumulative = await first(db, "/* audit:progress_cumulative */ SELECT COUNT(*) AS count FROM (SELECT email FROM events WHERE event_type = 'answer' AND created_at < ? GROUP BY email HAVING COUNT(*) >= 300)", [auditMonthRangeJst(month).end]);
+    return { ok: true, active_15_day_accounts: Number(active?.count || 0), cumulative_300_answer_accounts: Number(cumulative?.count || 0) };
+  } catch (e) {
+    return { ok: false, error: clean(e.message || String(e), 200) };
+  }
+}
+
+function metricEvidenceStatus(questionId, sources) {
+  if (questionId === 'q9') return 'WAN_PENDING';
+  if (['q1', 'q2', 'q10', 'q11'].includes(questionId)) return sources.orders?.ok ? 'OK' : 'EI';
+  if (['q3', 'q4', 'q12'].includes(questionId)) return sources.orders?.ok && sources.visitors?.ok ? 'OK' : 'EI';
+  if (['q7', 'q8'].includes(questionId)) return sources.progress?.ok ? 'OK' : 'EI';
+  return 'EI';
+}
+
+function metricSource(questionId, status) {
+  if (status === 'WAN_PENDING') return 'WAN_PENDING';
+  if (['q1', 'q2', 'q10', 'q11'].includes(questionId)) return 'BJT_KV';
+  if (['q3', 'q4', 'q12'].includes(questionId)) return 'nice_analytics_D1+BJT_KV';
+  if (['q7', 'q8'].includes(questionId)) return 'PROGRESS_D1';
+  return AUDIT_HUMAN_METRICS_SOURCE;
+}
+
+function missingAuditAccess(questionId, status, item, sources) {
+  if (status === 'OK') return [];
+  if (status === 'WAN_PENDING') return ['Wan monthly manual aggregate'];
+  if (['q1', 'q2', 'q10', 'q11'].includes(questionId) && sources.orders?.error) return [sources.orders.error];
+  if (['q7', 'q8'].includes(questionId) && sources.progress?.error) return [sources.progress.error];
+  if (['q3', 'q4', 'q12'].includes(questionId)) {
+    const missing = [];
+    if (sources.visitors?.error) missing.push(sources.visitors.error);
+    if (sources.orders?.error) missing.push(sources.orders.error);
+    return missing.length ? missing : (item.required_read_access ? [item.required_read_access] : []);
+  }
+  return item.required_read_access ? [item.required_read_access] : [];
+}
+
+function addAuditMetrics(value, questionId, sources) {
+  const orders = sources.orders || {};
+  const visitors = sources.visitors || {};
+  const progress = sources.progress || {};
+  if (questionId === 'q1') {
+    value.metrics = { new_paid_count: orders.current_new_accounts || 0, paid_accounts: orders.current_paid_accounts || 0, paid_records: orders.current_paid_count || 0, amount_by_currency: orders.amount_by_currency || {} };
+  } else if (questionId === 'q2') {
+    value.metrics = { repeat_paid_count: orders.current_repeat_accounts || 0, paid_accounts: orders.current_paid_accounts || 0, renewal_rate: orders.renewal_rate };
+  } else if (questionId === 'q3') {
+    const trialVisitors = visitors.trial?.visitors || 0;
+    value.metrics = { anonymous_trial_or_study_visitors: trialVisitors, anonymous_trial_or_study_pageviews: visitors.trial?.pageviews || 0, new_paid_count: orders.current_new_accounts || 0, aggregate_conversion_rate: rate(orders.current_new_accounts || 0, trialVisitors) };
+    value.notes.push('aggregate conversion only; no personal identity join.');
+  } else if (questionId === 'q4') {
+    value.metrics = { current_new_paid_count: orders.current_new_accounts || 0, previous_new_paid_count: orders.previous_new_accounts || 0, current_repeat_paid_count: orders.current_repeat_accounts || 0, previous_repeat_paid_count: orders.previous_repeat_accounts || 0, current_paid_records: orders.current_paid_count || 0, previous_paid_records: orders.previous_paid_count || 0, current_trial_visitors: visitors.trial?.visitors || 0, current_conversion_rate: rate(orders.current_new_accounts || 0, visitors.trial?.visitors || 0) };
+  } else if (questionId === 'q7') {
+    value.metrics = { active_15_day_count: progress.active_15_day_accounts || 0 };
+  } else if (questionId === 'q8') {
+    value.metrics = { cumulative_300_answer_count: progress.cumulative_300_answer_accounts || 0 };
+  } else if (questionId === 'q9') {
+    value.metrics = { denominator_policy: 'excluded_until_wan_fills' };
+  } else if (questionId === 'q10') {
+    value.metrics = { paid_records: orders.current_paid_count || 0, attributed_records: orders.attributed_count || 0, attribution_rate: orders.attribution_rate };
+  } else if (questionId === 'q11') {
+    value.metrics = { top_sources: orders.top_sources || [] };
+  } else if (questionId === 'q12') {
+    value.metrics = { learning_content_visitors: visitors.content?.visitors || 0, learning_content_pageviews: visitors.content?.pageviews || 0, content_paid_records: orders.content_paid_count || 0, content_amount_by_currency: orders.content_amount_by_currency || {}, top_content_landings: (orders.top_landings || []).filter((item) => /guide|article|column|blog|tips|lesson/.test(item.key)).slice(0, 5) };
+    value.notes.push('landing aggregate only; no personal identity join.');
+  }
+}
+
+function buildAuditHumanMetricRows(planRows, month, computedAt, sources = {}) {
   const rows = [];
   for (const item of planRows) {
+    const status = metricEvidenceStatus(item.question_id, sources);
     const value = {
-      schema_version: 1,
+      schema_version: 2,
       month,
       question_id: item.question_id,
       module: item.module,
       question: item.question,
       monthly_metric: item.monthly_metric,
       privacy_boundary: item.privacy_boundary,
-      evidence_status: item.evidence_status,
+      evidence_status: status,
       metrics: {},
-      missing_read_access: item.required_read_access ? [item.required_read_access] : [],
+      missing_read_access: missingAuditAccess(item.question_id, status, item, sources),
       notes: []
     };
-    if (item.question_id === 'q3' && aggregates.trial) {
-      value.metrics.anonymous_trial_or_study_visitors = aggregates.trial.visitors;
-      value.metrics.anonymous_trial_or_study_pageviews = aggregates.trial.pageviews;
-      value.notes.push('visitor_events anonymous aggregate only; paid conversion numerator requires order read access.');
-    }
-    if (item.question_id === 'q12' && aggregates.content) {
-      value.metrics.learning_content_visitors = aggregates.content.visitors;
-      value.metrics.learning_content_pageviews = aggregates.content.pageviews;
-      value.notes.push('visitor_events anonymous aggregate only; captured-order join requires order read access.');
-    }
-    if (item.question_id === 'q9') {
-      value.metrics = { denominator_policy: 'excluded_until_wan_fills' };
-      value.missing_read_access = ['Wan monthly manual aggregate'];
-    }
-    if (aggregates.error && (item.question_id === 'q3' || item.question_id === 'q12')) value.notes.push('analytics aggregate unavailable: ' + aggregates.error);
-    rows.push({ month, question_id: item.question_id, value, source: AUDIT_HUMAN_METRICS_SOURCE, computed_at: computedAt, evidence_status: item.evidence_status });
+    addAuditMetrics(value, item.question_id, sources);
+    if (sources.visitors?.error && ['q3', 'q4', 'q12'].includes(item.question_id)) value.notes.push('analytics aggregate unavailable: ' + sources.visitors.error);
+    rows.push({ month, question_id: item.question_id, value, source: metricSource(item.question_id, status), computed_at: computedAt, evidence_status: status });
   }
   return rows;
 }
 
 function assertAuditPayloadPrivacy(payload) {
   const text = JSON.stringify(payload);
-  const forbidden = [/email/i, /order[_-]?id/i, /\bip\b/i, /visitor_id/i, /name/i];
+  const forbidden = [/email/i, /order[_-]?id/i, /\bip\b/i, /visitor_id/i, /customer/i, /paypal_order_meta:/i, /\bname\b/i];
   for (const pattern of forbidden) if (pattern.test(text)) throw new Error('audit payload contains forbidden personal field: ' + pattern.source);
+}
+
+async function collectAuditHumanMetricSources(env, month) {
+  const [visitors, orders, progress] = await Promise.all([
+    collectAuditVisitorAggregates(env, month),
+    collectAuditBjtOrderAggregates(env, month),
+    collectAuditProgressAggregates(env, month)
+  ]);
+  return { visitors, orders, progress };
 }
 
 async function runAuditHumanMetrics(env, options = {}) {
@@ -2996,9 +3308,9 @@ async function runAuditHumanMetrics(env, options = {}) {
   const computedAt = (options.now || new Date()).toISOString();
   const validated = validateAuditHumanDataPlan(options.plan || auditHumanDataPlan);
   if (!validated.ok) throw new Error(validated.error);
-  const aggregates = Object.hasOwn(options, 'aggregates') ? options.aggregates : await collectAuditVisitorAggregates(env, month);
-  const rows = buildAuditHumanMetricRows(validated.rows, month, computedAt, aggregates);
-  const payload = { schema_version: 1, month, source: AUDIT_HUMAN_METRICS_SOURCE, computed_at: computedAt, evidence_summary: summarizeAuditEvidence(rows), metrics: rows.map((row) => row.value) };
+  const sources = Object.hasOwn(options, 'sources') ? options.sources : await collectAuditHumanMetricSources(env, month);
+  const rows = buildAuditHumanMetricRows(validated.rows, month, computedAt, sources);
+  const payload = { schema_version: 2, month, source: AUDIT_HUMAN_METRICS_SOURCE, computed_at: computedAt, evidence_summary: summarizeAuditEvidence(rows), metrics: rows.map((row) => row.value) };
   assertAuditPayloadPrivacy(payload);
   await ensureAuditHumanMetricsTable(env);
   for (const row of rows) {
@@ -3015,8 +3327,13 @@ function summarizeAuditEvidence(rows) {
   }, {});
 }
 
+function auditArtifactPrefix(env) {
+  const configured = clean(env.AUDIT_ARTIFACTS_PREFIX || AUDIT_HUMAN_METRICS_ARTIFACT_KEY_PREFIX, 120) || AUDIT_HUMAN_METRICS_ARTIFACT_KEY_PREFIX;
+  return configured.endsWith('/') ? configured : configured + '/';
+}
+
 async function writeAuditHumanMetricsArtifact(env, month, payload) {
-  const key = AUDIT_HUMAN_METRICS_ARTIFACT_KEY_PREFIX + month + '.json';
+  const key = auditArtifactPrefix(env) + month + '.json';
   if (!env.AUDIT_ARTIFACTS) return { ok: false, status: 'ARTIFACT_R2_PENDING', key, reason: 'missing_AUDIT_ARTIFACTS_binding' };
   await env.AUDIT_ARTIFACTS.put(key, JSON.stringify(payload, null, 2), { httpMetadata: { contentType: 'application/json; charset=utf-8' } });
   return { ok: true, status: 'written', key };
@@ -4755,7 +5072,12 @@ export {
   diffSnapshotJson,
   evaluateDashboardAlerts,
   auditMonthRangeJst,
+  assertReadOnlySql,
   buildAuditHumanMetricRows,
+  collectAuditBjtOrderAggregates,
+  collectAuditProgressAggregates,
+  createReadOnlyD1,
+  createReadOnlyKv,
   getAuditHumanMetricsStatus,
   getExpiryStatus,
   isFastPathCheckFailure,
