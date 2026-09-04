@@ -1,0 +1,23 @@
+[
+  {
+    "name": "nice.okinawa domain",
+    "kind": "domain",
+    "expires_on": "2027-04-02",
+    "owner": "Namecheap",
+    "renew_url_or_note": "Auto-Renew ON; verify billing card before renewal."
+  },
+  {
+    "name": "GitHub PAT nice-dashboard",
+    "kind": "token",
+    "expires_on": "2027-08-22",
+    "owner": "GitHub",
+    "renew_url_or_note": "Rotate before expiry; do not store token value in repo."
+  },
+  {
+    "name": "Cloudflare token db-config-read",
+    "kind": "token",
+    "expires_on": "2027-09-05",
+    "owner": "Cloudflare",
+    "renew_url_or_note": "Read-only config snapshot token."
+  }
+]

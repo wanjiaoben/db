@@ -1745,6 +1745,10 @@ td.num, th.num { text-align: right; }
         <thead><tr><th>配置快照</th><th>上次时间</th><th>是否变化</th><th>最新 sha256</th></tr></thead>
         <tbody id="configSnapshotTable"><tr><td colspan="4" class="empty">等待配置快照</td></tr></tbody>
       </table>
+      <table style="margin-top:8px">
+        <thead><tr><th>到期提醒</th><th>状态</th><th>剩余</th><th>负责人</th></tr></thead>
+        <tbody id="expiryTable"><tr><td colspan="4" class="empty">等待到期提醒</td></tr></tbody>
+      </table>
     </section>
 
     <section class="card control-card">
@@ -2722,6 +2726,15 @@ async function loadControl() {
       escapeHtml((r.sha256 || '-').slice(0, 16))
     ]));
 
+    const expiries = data.expiries || {};
+    const nearestExpiry = expiries.nearest || {};
+    renderRows('expiryTable', [expiries], (r) => row([
+      escapeHtml(nearestExpiry.name || (r.error ? '配置错误' : '-')),
+      { html: statusDot(r.ok, false, r.status === 'config_error', r.status === 'yellow') + escapeHtml(expiryStatusText(r.status)) },
+      escapeHtml(expiryDaysText(nearestExpiry.days_remaining)),
+      escapeHtml(nearestExpiry.owner || r.error || '-')
+    ]));
+
     const revenue = ((data.revenue || {}).items || []);
     renderRows('revenueTable', revenue, (r) => row([
       escapeHtml((r.site || '-').toUpperCase()),
@@ -2737,8 +2750,26 @@ async function loadControl() {
     $('deployTable').innerHTML = '<tr><td colspan="4" class="empty">部署状态读取失败</td></tr>';
     $('probeTable').innerHTML = '<tr><td colspan="4" class="empty">探针状态读取失败</td></tr>';
     $('configSnapshotTable').innerHTML = '<tr><td colspan="4" class="empty">配置快照读取失败</td></tr>';
+    $('expiryTable').innerHTML = '<tr><td colspan="4" class="empty">到期提醒读取失败</td></tr>';
     $('revenueTable').innerHTML = '<tr><td colspan="5" class="empty">营收会员读取失败：' + escapeHtml(e.message) + '</td></tr>';
   }
+}
+
+function expiryStatusText(status) {
+  if (status === 'config_error') return '配置错误';
+  if (status === 'expired') return '已过期';
+  if (status === 'red') return '即将到期';
+  if (status === 'yellow') return '30天内';
+  if (status === 'green') return '正常';
+  return '无数据';
+}
+
+function expiryDaysText(days) {
+  if (days == null || Number.isNaN(Number(days))) return '-';
+  const value = Number(days);
+  if (value < 0) return '已过期 ' + Math.abs(value) + ' 天';
+  if (value === 0) return '今天到期';
+  return value + ' 天';
 }
 
 function renderPathCheckStatus(data) {

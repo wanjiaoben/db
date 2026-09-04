@@ -1,3 +1,5 @@
+import expiriesConfig from '../expiries.json' with { type: 'json' };
+
 const COLLECT_ORIGIN = 'https://translation.nice.okinawa';
 const DASHBOARD_ORIGIN = 'https://db.nice.okinawa';
 const MONTHLY_ALERT_SELF_CHECK_CRON = '0 0 1 * *';
@@ -45,6 +47,9 @@ const DEPLOYMENT_IN_PROGRESS_ALERT_MS = 30 * 60 * 1000;
 const CONFIG_SNAPSHOT_SOURCE = 'cloudflare-github-config';
 const CONFIG_SNAPSHOT_ALERT_KEY = 'config-snapshot';
 const CONFIG_SNAPSHOT_ALERT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const EXPIRY_KIND_ALLOWLIST = new Set(['domain', 'token', 'cert', 'subscription']);
+const EXPIRY_WARNING_DAYS = 30;
+const EXPIRY_RED_DAYS = 7;
 const CLOUDFLARE_CONFIG_ENDPOINTS = Object.freeze([
   { key: 'cf.account', path: (accountId) => `/accounts/${accountId}` },
   { key: 'cf.access_apps', path: (accountId) => `/accounts/${accountId}/access/apps` },
@@ -2644,12 +2649,13 @@ async function controlDashboard(request, env) {
     return json({ ok: false, error: 'unauthorized' }, request, 403);
   }
 
-  const [backups, deployments, probes, revenue, configSnapshot] = await Promise.all([
+  const [backups, deployments, probes, revenue, configSnapshot, expiries] = await Promise.all([
     getBackupStatus(env),
     getDeploymentStatus(env),
     getProbeSummary(env),
     getRevenueSummary(env),
-    getConfigSnapshotStatus(env)
+    getConfigSnapshotStatus(env),
+    getExpiryStatus()
   ]);
 
   return json({
@@ -2659,7 +2665,8 @@ async function controlDashboard(request, env) {
     deployments,
     probes,
     revenue,
-    config_snapshot: configSnapshot
+    config_snapshot: configSnapshot,
+    expiries
   }, request);
 }
 
@@ -2733,6 +2740,127 @@ async function getConfigSnapshotStatus(env) {
       error: clean(e.message || String(e), 200)
     };
   }
+}
+
+function validateExpiryConfig(input) {
+  if (input == null) {
+    return { ok: false, error: 'missing expiries config file' };
+  }
+  let rows = input;
+  if (typeof input === 'string') {
+    try {
+      rows = JSON.parse(input);
+    } catch (error) {
+      return { ok: false, error: 'invalid expiries JSON' };
+    }
+  }
+  if (!Array.isArray(rows)) {
+    return { ok: false, error: 'expiries config must be an array' };
+  }
+  const items = [];
+  for (const [index, row] of rows.entries()) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) {
+      return { ok: false, error: `expiries[${index}] must be an object` };
+    }
+    const item = {
+      name: clean(row.name, 120),
+      kind: clean(row.kind, 40),
+      expires_on: clean(row.expires_on, 20),
+      owner: clean(row.owner, 120),
+      renew_url_or_note: clean(row.renew_url_or_note, 300)
+    };
+    for (const field of ['name', 'kind', 'expires_on', 'owner', 'renew_url_or_note']) {
+      if (!item[field]) return { ok: false, error: `expiries[${index}].${field} missing` };
+    }
+    if (!EXPIRY_KIND_ALLOWLIST.has(item.kind)) {
+      return { ok: false, error: `expiries[${index}].kind invalid` };
+    }
+    if (!validDateOnly(item.expires_on)) {
+      return { ok: false, error: `expiries[${index}].expires_on invalid` };
+    }
+    if (containsSensitiveExpiryNote(item.renew_url_or_note)) {
+      return { ok: false, error: `expiries[${index}].renew_url_or_note sensitive` };
+    }
+    items.push(item);
+  }
+  return { ok: true, items };
+}
+
+function getExpiryStatus(options = {}) {
+  const now = options.now || new Date();
+  const config = Object.hasOwn(options, 'config') ? options.config : expiriesConfig;
+  const validated = validateExpiryConfig(config);
+  const generatedAt = now.toISOString();
+  if (!validated.ok) {
+    return {
+      ok: false,
+      configured: false,
+      status: 'config_error',
+      generated_at: generatedAt,
+      error: validated.error,
+      items: [],
+      nearest: null
+    };
+  }
+  const items = validated.items
+    .map((item) => expiryItemStatus(item, now))
+    .sort((a, b) => a.days_remaining - b.days_remaining || a.name.localeCompare(b.name));
+  const status = items.some((item) => item.status === 'red' || item.status === 'expired')
+    ? 'red'
+    : items.some((item) => item.status === 'yellow')
+      ? 'yellow'
+      : 'green';
+  return {
+    ok: status !== 'red',
+    configured: true,
+    status,
+    generated_at: generatedAt,
+    warning_days: EXPIRY_WARNING_DAYS,
+    red_days: EXPIRY_RED_DAYS,
+    nearest: items[0] || null,
+    items
+  };
+}
+
+function expiryItemStatus(item, now) {
+  const daysRemaining = daysUntilDate(item.expires_on, now);
+  const status = daysRemaining < 0
+    ? 'expired'
+    : daysRemaining <= EXPIRY_RED_DAYS
+      ? 'red'
+      : daysRemaining <= EXPIRY_WARNING_DAYS
+        ? 'yellow'
+        : 'green';
+  return {
+    ...item,
+    days_remaining: daysRemaining,
+    status,
+    ok: status === 'green' || status === 'yellow',
+    latest_at: item.expires_on,
+    detail: item.renew_url_or_note,
+    fingerprint: `expiry:${item.kind}:${item.name}:${item.expires_on}:${status}`
+  };
+}
+
+function validDateOnly(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) return false;
+  const [year, month, day] = String(value).split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+function daysUntilDate(dateKey, now) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const target = Date.UTC(year, month - 1, day);
+  const today = jstDateKey(now);
+  const [todayYear, todayMonth, todayDay] = today.split('-').map(Number);
+  const todayUtc = Date.UTC(todayYear, todayMonth - 1, todayDay);
+  return Math.round((target - todayUtc) / 86400000);
+}
+
+function containsSensitiveExpiryNote(value) {
+  return /\b(token|password|passwd|secret|card|cvv|otp|jwt)\s*[:=]/i.test(String(value || ''))
+    || /[?&](token|password|secret|key|otp|jwt)=/i.test(String(value || ''));
 }
 
 async function runConfigSnapshot(env, reason = 'manual', options = {}) {
@@ -4009,12 +4137,13 @@ async function ensureAlertSelfCheckTable(env) {
 async function evaluateDashboardAlerts(env, reason = 'cron', options = {}) {
   await ensureAlertTable(env);
   await ensureAlertSendLogTable(env);
-  const [backups, deployments, probes] = await Promise.all([
+  const [backups, deployments, probes, expiries] = options.statuses || await Promise.all([
     getBackupStatus(env),
     getDeploymentStatus(env),
-    getProbeSummary(env)
+    getProbeSummary(env),
+    getExpiryStatus()
   ]);
-  const redItems = collectAlertItems(backups, deployments, probes);
+  const redItems = collectAlertItems(backups, deployments, probes, expiries);
   const status = redItems.length ? 'red' : 'green';
   const fingerprint = redItems.map((item) => item.fingerprint || `${item.type}:${item.key}`).sort().join('|');
   const key = 'dashboard-control';
@@ -4131,7 +4260,7 @@ async function sendMonthlyAlertChannelSelfCheck(env, scheduledAt, reason = MONTH
   return { sent: false, recorded: true, month_key: monthKey, to: recipient };
 }
 
-export function collectAlertItems(backups, deployments, probes) {
+export function collectAlertItems(backups, deployments, probes, expiries) {
   const items = [];
   for (const item of backups?.items || []) {
     if (!item.ok && !item.manual) {
@@ -4174,6 +4303,30 @@ export function collectAlertItems(backups, deployments, probes) {
         status: item.latest?.status || 'missing',
         detail: item.latest?.error || item.url || '',
         latest_at: item.latest?.checked_at || ''
+      });
+    }
+  }
+  if (expiries?.status === 'config_error') {
+    items.push({
+      type: 'expiry',
+      key: 'config',
+      label: 'Expiry watch config',
+      status: 'config_error',
+      detail: expiries.error || 'expiry config error',
+      latest_at: expiries.generated_at || '',
+      fingerprint: `expiry:config:${expiries.error || 'unknown'}`
+    });
+  }
+  for (const item of expiries?.items || []) {
+    if (item.status === 'red' || item.status === 'expired') {
+      items.push({
+        type: 'expiry',
+        key: item.name,
+        label: item.name,
+        status: item.status,
+        detail: `${item.kind} expires_on=${item.expires_on}; owner=${item.owner}; ${item.renew_url_or_note}`,
+        latest_at: item.expires_on,
+        fingerprint: item.fingerprint || `expiry:${item.kind}:${item.name}:${item.expires_on}:${item.status}`
       });
     }
   }
@@ -4289,12 +4442,15 @@ async function sendDashboardAlert(env, status, redItems) {
 export function buildAlertEmailPreview(env, status, redItems) {
   const prefix = env.ALERT_SUBJECT_PREFIX || '';
   const backupItem = redItems.find((item) => item.type === 'backup');
+  const expiryItem = redItems.find((item) => item.type === 'expiry');
   const subject = status === 'red' && backupItem?.alert_kind === 'silent'
     ? `${prefix}[P0] Backup silent: ${backupItem.key} ${backupItem.failure_date} (no artifact by JST 12:00)`
     : status === 'red' && backupItem?.alert_kind === 'escalation'
       ? `${prefix}[P0] Backup failure: ${backupItem.key} ${backupItem.failure_date} ${backupItem.failure_stage || 'backup'} (day ${backupItem.consecutive_failures})`
       : status === 'red' && backupItem
         ? `${prefix}Backup failure: ${backupItem.key} ${backupItem.failure_date} ${backupItem.failure_stage || 'backup'}`
+        : status === 'red' && expiryItem
+          ? `${prefix}[Nice Dashboard] Expiry alert: ${expiryItem.key}`
         : status === 'red'
     ? `${prefix}[Nice Dashboard] ALERT: ${redItems.length} red item(s)`
     : `${prefix}[Nice Dashboard] RECOVERY: all monitored items green`;
@@ -4317,7 +4473,7 @@ export function buildAlertEmailPreview(env, status, redItems) {
       `Time: ${new Date().toISOString()}`
     ].join('\n')
     : [
-      'Nice dashboard recovery: backups, deployments, and probes are all green.',
+      'Nice dashboard recovery: backups, deployments, probes, and expiries are all green.',
       '',
       `Time: ${new Date().toISOString()}`
     ].join('\n');
@@ -4394,6 +4550,8 @@ export {
   configuredBingSites,
   checkPathContract,
   diffSnapshotJson,
+  evaluateDashboardAlerts,
+  getExpiryStatus,
   isFastPathCheckFailure,
   normalizeSnapshot,
   normalizeBingQueryRow,
@@ -4403,5 +4561,6 @@ export {
   sanitizeSecretName,
   sha256Hex,
   shouldSendPathCheckAlert,
-  stableFingerprint
+  stableFingerprint,
+  validateExpiryConfig
 };
