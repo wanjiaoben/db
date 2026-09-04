@@ -214,6 +214,18 @@ CREATE TABLE IF NOT EXISTS config_snapshot (
 CREATE INDEX IF NOT EXISTS idx_config_snapshot_source_ts ON config_snapshot(source, ts);
 CREATE INDEX IF NOT EXISTS idx_config_snapshot_source_sha ON config_snapshot(source, sha256);
 
+CREATE TABLE IF NOT EXISTS audit_human_metrics (
+  month TEXT NOT NULL,
+  question_id TEXT NOT NULL,
+  value TEXT NOT NULL,
+  source TEXT NOT NULL,
+  computed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  evidence_status TEXT NOT NULL,
+  PRIMARY KEY (month, question_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_human_metrics_computed_at ON audit_human_metrics(computed_at);
+
 CREATE TABLE IF NOT EXISTS alert_channel_self_checks (
   month_key TEXT PRIMARY KEY,
   scheduled_at TEXT NOT NULL,
