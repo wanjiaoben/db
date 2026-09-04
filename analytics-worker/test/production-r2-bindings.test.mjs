@@ -54,9 +54,11 @@ test('production and preview R2 bindings satisfy the isolated monitor contract',
   const bindings = parseR2Bindings(readFileSync(configPath, 'utf8'));
   assert.equal(bindings.production.PROGRESS_BACKUP, 'progress-backup');
   assert.equal(bindings.production.PROGRESS_DB_BACKUP, 'progress-db-backup');
+  assert.equal(bindings.production.PROGRESS_DB_BACKUP_PREVIEW, 'progress-db-backup-preview');
   assert.equal(bindings.production.PROGRESS_BACKUP_PREVIEW, 'progress-backup-preview');
   assert.equal(bindings.preview.PROGRESS_BACKUP, 'progress-backup');
-  assert.equal(bindings.preview.PROGRESS_DB_BACKUP, 'progress-db-backup-preview');
+  assert.equal(bindings.preview.PROGRESS_DB_BACKUP, undefined);
+  assert.equal(bindings.preview.PROGRESS_DB_BACKUP_PREVIEW, 'progress-db-backup-preview');
   assert.equal(bindings.preview.PROGRESS_BACKUP_PREVIEW, 'progress-backup-preview');
 });
 
@@ -72,4 +74,20 @@ bucket_name = "progress-backup-preview"
 `;
   const bindings = parseR2Bindings(previewOnly);
   assert.equal(bindings.production.PROGRESS_BACKUP_PREVIEW, undefined);
+});
+
+test('preview-only PROGRESS_DB_BACKUP_PREVIEW does not satisfy production SQL binding', () => {
+  const previewOnly = `
+[[r2_buckets]]
+binding = "PROGRESS_DB_BACKUP"
+bucket_name = "progress-db-backup"
+
+[[env.preview.r2_buckets]]
+binding = "PROGRESS_DB_BACKUP_PREVIEW"
+bucket_name = "progress-db-backup-preview"
+`;
+  const bindings = parseR2Bindings(previewOnly);
+  assert.equal(bindings.production.PROGRESS_DB_BACKUP, 'progress-db-backup');
+  assert.equal(bindings.production.PROGRESS_DB_BACKUP_PREVIEW, undefined);
+  assert.equal(bindings.preview.PROGRESS_DB_BACKUP_PREVIEW, 'progress-db-backup-preview');
 });

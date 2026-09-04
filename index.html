@@ -1584,11 +1584,6 @@ td.num, th.num { text-align: right; }
     <select id="pageFilter">
       <option value="">全部页面</option>
     </select>
-    <div class="auth-controls">
-      <span class="key-status" id="keyStatus">需要 Dashboard key</span>
-      <input id="key" type="password" placeholder="Dashboard key">
-      <button id="saveKey">保存</button>
-    </div>
     <button id="syncGsc">同步搜索词</button>
     <button id="refresh">刷新</button>
   </div>
@@ -1848,19 +1843,8 @@ const toplineState = {
   todayVisitors: '-'
 };
 
-const hash = new URLSearchParams((location.hash || '').replace(/^#/, ''));
-if (hash.get('key')) {
-  localStorage.setItem('nice_dashboard_key', hash.get('key'));
-  history.replaceState(null, '', location.pathname + location.search);
-}
-
 function updateKeyStatus(ok) {
-  const el = $('keyStatus');
-  if (!el) return;
-  const hasKey = !!(localStorage.getItem('nice_dashboard_key') || '').trim();
-  const ready = ok === true || hasKey;
-  el.className = 'key-status' + (ready ? ' ok' : '');
-  el.textContent = ready ? 'Dashboard key 已保存' : '需要 Dashboard key';
+  return ok;
 }
 
 function n(value) {
@@ -2427,7 +2411,6 @@ async function loadAllOrders() {
   if (!$('allOrdersPage')) return;
   allOrdersState.loading = true;
   updateAllOrderControls();
-  const key = localStorage.getItem('nice_dashboard_key') || '';
   const qs = new URLSearchParams({
     detail: '1',
     status: allOrdersState.status,
@@ -2439,8 +2422,7 @@ async function loadAllOrders() {
     const res = await fetch(ORDER_API + '?' + qs.toString(), {
       credentials: 'include',
       headers: {
-        accept: 'application/json',
-        ...(key ? { 'x-dashboard-key': key } : {})
+        accept: 'application/json'
       }
     });
     const data = await readJsonResponse(res);
@@ -2694,13 +2676,11 @@ async function loadSnsMetrics() {
 }
 
 async function loadControl() {
-  const key = localStorage.getItem('nice_dashboard_key') || '';
   try {
     const res = await fetch(API_ROOT + '/control', {
       credentials: 'include',
       headers: {
-        accept: 'application/json',
-        ...(key ? { 'x-dashboard-key': key } : {})
+        accept: 'application/json'
       }
     });
     const data = await readJsonResponse(res);
@@ -2795,13 +2775,11 @@ function renderPathCheckStatus(data) {
 }
 
 async function loadPathCheckStatus() {
-  const key = localStorage.getItem('nice_dashboard_key') || '';
   try {
     const res = await fetch(PATH_CHECK_API, {
       credentials: 'include',
       headers: {
-        accept: 'application/json',
-        ...(key ? { 'x-dashboard-key': key } : {})
+        accept: 'application/json'
       }
     });
     const data = await readJsonResponse(res);
@@ -2825,7 +2803,6 @@ async function loadPathCheckStatus() {
 async function sendTestAlert() {
   const button = $('sendTestAlert');
   const status = $('testAlertStatus');
-  const key = localStorage.getItem('nice_dashboard_key') || '';
   button.disabled = true;
   status.textContent = '发送中...';
   try {
@@ -2833,8 +2810,7 @@ async function sendTestAlert() {
       method: 'POST',
       credentials: 'include',
       headers: {
-        accept: 'application/json',
-        ...(key ? { 'x-dashboard-key': key } : {})
+        accept: 'application/json'
       }
     });
     const data = await readJsonResponse(res);
@@ -2848,14 +2824,12 @@ async function sendTestAlert() {
 }
 
 async function loadVisitors() {
-  const key = localStorage.getItem('nice_dashboard_key') || '';
   visitorDays = visitorDaysFromControl();
   try {
     const res = await fetch(VISITOR_API + '?days=' + encodeURIComponent(visitorDays), {
       credentials: 'include',
       headers: {
-        accept: 'application/json',
-        ...(key ? { 'x-dashboard-key': key } : {})
+        accept: 'application/json'
       }
     });
     const data = await readJsonResponse(res);
@@ -2875,7 +2849,6 @@ async function loadVisitors() {
 let orderRetryTimer = null;
 
 async function loadOrders() {
-  const key = localStorage.getItem('nice_dashboard_key') || '';
   const days = orderDaysFromControl();
   const query = new URLSearchParams();
   if (orderMode === 'month') {
@@ -2891,8 +2864,7 @@ async function loadOrders() {
     const res = await fetchWithTimeout(ORDER_API + '?' + query.toString(), {
       credentials: 'include',
       headers: {
-        accept: 'application/json',
-        ...(key ? { 'x-dashboard-key': key } : {})
+        accept: 'application/json'
       }
     }, 8000);
     const data = await readJsonResponse(res);
@@ -2930,7 +2902,6 @@ async function loadOrders() {
 async function load() {
   $('error').style.display = 'none';
   $('status').textContent = '连接中';
-  const key = localStorage.getItem('nice_dashboard_key') || '';
   const range = $('days').value || '7';
   const site = $('siteFilter').value || '';
   const gscSite = $('gscSiteFilter').value || '';
@@ -2945,8 +2916,7 @@ async function load() {
     const res = await fetch(API + '?' + qs.toString(), {
       credentials: 'include',
       headers: {
-        accept: 'application/json',
-        ...(key ? { 'x-dashboard-key': key } : {})
+        accept: 'application/json'
       }
     });
     const data = await readJsonResponse(res);
@@ -2987,17 +2957,15 @@ async function load() {
   } catch (e) {
     $('metricsUpdated').textContent = rangeLabel(rangeValueToDays(range)) + ' · 读取失败';
     $('gscUpdated').textContent = '近 28 天 · 读取失败';
-    $('status').textContent = e.message === 'unauthorized' ? '需要 Dashboard key' : '连接失败';
-    if (e.message === 'unauthorized') updateKeyStatus(false);
+    $('status').textContent = e.message === 'unauthorized' ? '未授权' : '连接失败';
     $('error').textContent = e.message === 'unauthorized'
-      ? '手机浏览器还没有保存 Dashboard key，或保存的是旧 key。请在上方输入最新 key 后点保存。'
-      : e.message + '。确认 Worker 已部署，DASHBOARD_KEY 正确。';
+      ? 'Cloudflare Access 登录态无效或已过期，请重新打开面板登录。'
+      : e.message + '。确认 Worker 已部署并可通过 Cloudflare Access。';
     $('error').style.display = 'block';
   }
 }
 
 async function loadSiteTable() {
-  const key = localStorage.getItem('nice_dashboard_key') || '';
   const days = siteTableDaysFromControl();
   const site = $('siteFilter').value || '';
   const path = $('pageFilter').value || '';
@@ -3008,8 +2976,7 @@ async function loadSiteTable() {
     const res = await fetch(API + '?' + qs.toString(), {
       credentials: 'include',
       headers: {
-        accept: 'application/json',
-        ...(key ? { 'x-dashboard-key': key } : {})
+        accept: 'application/json'
       }
     });
     const data = await readJsonResponse(res);
@@ -3053,22 +3020,10 @@ document.querySelectorAll('.mobile-collapse, .order-full-details').forEach((deta
   });
 });
 
-$('saveKey').addEventListener('click', () => {
-  localStorage.setItem('nice_dashboard_key', $('key').value.trim());
-  updateKeyStatus(true);
-  load();
-  loadSiteTable();
-  loadControl();
-  loadPathCheckStatus();
-  loadVisitors();
-  loadOrders();
-  loadAllOrders();
-});
 $('refresh').addEventListener('click', () => { load(); loadSiteTable(); loadControl(); loadVisitors(); loadOrders(); loadAllOrders(); loadSnsMetrics(); loadContentStats(); });
 $('syncGsc').addEventListener('click', async () => {
   $('error').style.display = 'none';
   $('status').textContent = '同步搜索词中';
-  const key = localStorage.getItem('nice_dashboard_key') || '';
   const range = $('days').value || '7';
   const syncDays = range === 'today' ? '1' : '28';
   try {
@@ -3076,8 +3031,7 @@ $('syncGsc').addEventListener('click', async () => {
       method: 'POST',
       credentials: 'include',
       headers: {
-        accept: 'application/json',
-        ...(key ? { 'x-dashboard-key': key } : {})
+        accept: 'application/json'
       }
     });
 	    const data = await readJsonResponse(res);
@@ -3097,14 +3051,12 @@ $('syncGsc').addEventListener('click', async () => {
 $('sendGscWeekly').addEventListener('click', async () => {
   $('error').style.display = 'none';
   $('status').textContent = '发送搜索周报中';
-  const key = localStorage.getItem('nice_dashboard_key') || '';
   try {
     const res = await fetch(API_ROOT + '/search-console/weekly-report', {
       method: 'POST',
       credentials: 'include',
       headers: {
-        accept: 'application/json',
-        ...(key ? { 'x-dashboard-key': key } : {})
+        accept: 'application/json'
       }
     });
     const data = await readJsonResponse(res);
@@ -3221,7 +3173,6 @@ $('pageTable').addEventListener('click', (event) => {
   loadSiteTable();
 });
 $('sendTestAlert').addEventListener('click', sendTestAlert);
-$('key').value = localStorage.getItem('nice_dashboard_key') || '';
 updateKeyStatus();
 $('orderMonth').value = defaultOrderMonth();
 syncRangeTabs();
