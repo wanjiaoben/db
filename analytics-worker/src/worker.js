@@ -5,6 +5,7 @@ const PATH_CHECK_CRON = '*/15 * * * *';
 const PATH_CHECK_PREVIEW_INJECT_CRON = '11 29 7 29 *';
 const PATH_CHECK_PREVIEW_TEST_EMAIL_CRON = '12 29 7 29 *';
 const GSC_DAILY_SYNC_CRON = '0 0 * * *';
+const CONFIG_SNAPSHOT_CRON = '7 0 * * *';
 const GSC_DEFAULT_SYNC_DAYS = 28;
 const GSC_REPORT_WINDOW_DAYS = 7;
 const BING_SYNC_DAYS = 7;
@@ -41,6 +42,24 @@ const PATH_CHECK_TIMEOUT_MS = 12000;
 const PATH_CHECK_FAILURE_DEBOUNCE = 3;
 const PATH_CHECK_FAST_FAILURE_DEBOUNCE = 2;
 const DEPLOYMENT_IN_PROGRESS_ALERT_MS = 30 * 60 * 1000;
+const CONFIG_SNAPSHOT_SOURCE = 'cloudflare-github-config';
+const CONFIG_SNAPSHOT_ALERT_KEY = 'config-snapshot';
+const CONFIG_SNAPSHOT_ALERT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const CLOUDFLARE_CONFIG_ENDPOINTS = Object.freeze([
+  { key: 'cf.account', path: (accountId) => `/accounts/${accountId}` },
+  { key: 'cf.access_apps', path: (accountId) => `/accounts/${accountId}/access/apps` },
+  { key: 'cf.access_service_tokens', path: (accountId) => `/accounts/${accountId}/access/service_tokens` },
+  { key: 'cf.pages_projects', path: (accountId) => `/accounts/${accountId}/pages/projects` },
+  { key: 'cf.workers_scripts', path: (accountId) => `/accounts/${accountId}/workers/scripts` },
+  { key: 'cf.workers.nice-analytics.secrets', path: (accountId) => `/accounts/${accountId}/workers/scripts/nice-analytics/secrets` },
+  { key: 'cf.workers.nice-analytics.schedules', path: (accountId) => `/accounts/${accountId}/workers/scripts/nice-analytics/schedules` },
+  { key: 'cf.workers.db-private.secrets', path: (accountId) => `/accounts/${accountId}/workers/scripts/db-private/secrets` },
+  { key: 'cf.workers.db-private.schedules', path: (accountId) => `/accounts/${accountId}/workers/scripts/db-private/schedules` }
+]);
+const CLOUDFLARE_ZONE_CONFIG_ENDPOINTS = Object.freeze([
+  { key: 'cf.workers_routes', path: (zoneId) => `/zones/${zoneId}/workers/routes` }
+]);
+const GITHUB_CONFIG_REPOS = Object.freeze(['db', 'bjt', 'progress', 'kiso']);
 const PATH_CHECK_BASELINES = Object.freeze([
   pageCheck('site-snorkel-home', 'snorkel home', 'https://snorkel.nice.okinawa/', 'Okinawa Snorkeling Tours'),
   pageCheck('site-fishing-home', 'fishing home', 'https://fishing.nice.okinawa/', 'Okinawa Fishing Charter'),
@@ -202,6 +221,14 @@ export default {
         return json({ ok: false, error: 'unauthorized' }, request, 403);
       }
       const result = await evaluateDashboardAlerts(env, 'manual');
+      return json({ ok: true, ...result }, request);
+    }
+
+    if (url.pathname === '/config-snapshot/run' && request.method === 'POST') {
+      if (!requireDashboard(request, env)) {
+        return json({ ok: false, error: 'unauthorized' }, request, 403);
+      }
+      const result = await runConfigSnapshot(env, 'manual', { notify: url.searchParams.get('notify') === '1' });
       return json({ ok: true, ...result }, request);
     }
 
@@ -1043,6 +1070,13 @@ async function runScheduledTasks(event, env) {
       } catch (e) {
         errors.push(`gsc-weekly:${e.message}`);
       }
+    }
+  }
+  if (cron === CONFIG_SNAPSHOT_CRON) {
+    try {
+      await runConfigSnapshot(env, cron, { notify: dashboardAlertsEnabled(env) });
+    } catch (e) {
+      errors.push(`config-snapshot:${e.message}`);
     }
   }
   try {
@@ -2610,11 +2644,12 @@ async function controlDashboard(request, env) {
     return json({ ok: false, error: 'unauthorized' }, request, 403);
   }
 
-  const [backups, deployments, probes, revenue] = await Promise.all([
+  const [backups, deployments, probes, revenue, configSnapshot] = await Promise.all([
     getBackupStatus(env),
     getDeploymentStatus(env),
     getProbeSummary(env),
-    getRevenueSummary(env)
+    getRevenueSummary(env),
+    getConfigSnapshotStatus(env)
   ]);
 
   return json({
@@ -2623,7 +2658,8 @@ async function controlDashboard(request, env) {
     backups,
     deployments,
     probes,
-    revenue
+    revenue,
+    config_snapshot: configSnapshot
   }, request);
 }
 
@@ -2644,6 +2680,493 @@ async function ensureProbeTable(env) {
   `).run();
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_probe_results_checked_at ON probe_results(checked_at)').run();
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_probe_results_target_checked ON probe_results(target, checked_at)').run();
+}
+
+async function ensureConfigSnapshotTable(env) {
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS config_snapshot (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      source TEXT NOT NULL,
+      json TEXT NOT NULL,
+      sha256 TEXT NOT NULL
+    )
+  `).run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_config_snapshot_source_ts ON config_snapshot(source, ts)').run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_config_snapshot_source_sha ON config_snapshot(source, sha256)').run();
+}
+
+async function getConfigSnapshotStatus(env) {
+  try {
+    await ensureConfigSnapshotTable(env);
+    const latest = await first(env.DB, `
+      SELECT ts, source, sha256, json
+      FROM config_snapshot
+      WHERE source = ?
+      ORDER BY ts DESC, id DESC
+      LIMIT 1
+    `, [CONFIG_SNAPSHOT_SOURCE]);
+    const previous = latest ? await first(env.DB, `
+      SELECT ts, source, sha256
+      FROM config_snapshot
+      WHERE source = ? AND ts < ?
+      ORDER BY ts DESC, id DESC
+      LIMIT 1
+    `, [CONFIG_SNAPSHOT_SOURCE, latest.ts]) : null;
+    const parsed = latest?.json ? JSON.parse(latest.json) : null;
+    return {
+      ok: true,
+      configured: Boolean(latest),
+      source: CONFIG_SNAPSHOT_SOURCE,
+      latest_at: latest?.ts || '',
+      sha256: latest?.sha256 || '',
+      changed: Boolean(previous && previous.sha256 !== latest.sha256),
+      previous_sha256: previous?.sha256 || '',
+      permissions: parsed?.permissions || [],
+      pending_authorization: parsed?.pending_authorization || []
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      configured: false,
+      source: CONFIG_SNAPSHOT_SOURCE,
+      error: clean(e.message || String(e), 200)
+    };
+  }
+}
+
+async function runConfigSnapshot(env, reason = 'manual', options = {}) {
+  await ensureConfigSnapshotTable(env);
+  await ensureAlertTable(env);
+  await ensureAlertSendLogTable(env);
+  const raw = options.snapshot || await collectConfigSnapshot(env);
+  const safeSnapshot = normalizeSnapshot(raw);
+  assertNoSecretValues(safeSnapshot);
+  const jsonText = JSON.stringify(safeSnapshot);
+  const sha256 = await sha256Hex(jsonText);
+  const previous = await first(env.DB, `
+    SELECT ts, sha256, json
+    FROM config_snapshot
+    WHERE source = ?
+    ORDER BY ts DESC, id DESC
+    LIMIT 1
+  `, [CONFIG_SNAPSHOT_SOURCE]);
+  const changed = Boolean(previous && previous.sha256 !== sha256);
+  const ts = new Date().toISOString();
+  await env.DB.prepare(`
+    INSERT INTO config_snapshot (ts, source, json, sha256)
+    VALUES (?, ?, ?, ?)
+  `).bind(ts, CONFIG_SNAPSHOT_SOURCE, jsonText, sha256).run();
+
+  let alert = null;
+  let sendLock = null;
+  const diff = changed ? diffSnapshotJson(previous.json, jsonText) : [];
+  const fingerprint = changed ? `config:${sha256}` : '';
+  if (changed && options.notify !== false) {
+    sendLock = await claimAlertSend(env, {
+      key: CONFIG_SNAPSHOT_ALERT_KEY,
+      status: 'red',
+      fingerprint,
+      reason,
+      detail: JSON.stringify({ reason, ts, sha256, previous_sha256: previous.sha256, diff })
+    }, CONFIG_SNAPSHOT_ALERT_WINDOW_MS);
+    if (sendLock.acquired) {
+      alert = await trySendDashboardAlert(env, 'red', [{
+        type: 'config_snapshot',
+        key: CONFIG_SNAPSHOT_SOURCE,
+        label: 'Cloudflare/GitHub 配置快照',
+        status: 'changed',
+        detail: diff.slice(0, 12).join('; ') || 'snapshot changed',
+        latest_at: ts,
+        fingerprint
+      }]);
+      await finishAlertSend(env, sendLock.id, alert);
+    }
+  }
+  return {
+    ok: true,
+    source: CONFIG_SNAPSHOT_SOURCE,
+    ts,
+    sha256,
+    previous_sha256: previous?.sha256 || '',
+    changed,
+    diff,
+    permissions: safeSnapshot.permissions || [],
+    pending_authorization: safeSnapshot.pending_authorization || [],
+    alert,
+    send_lock: sendLock
+  };
+}
+
+async function collectConfigSnapshot(env) {
+  const permissions = [];
+  const pendingAuthorization = [];
+  const [cloudflare, github] = await Promise.all([
+    collectCloudflareConfigSnapshot(env, permissions, pendingAuthorization),
+    collectGithubConfigSnapshot(env, permissions, pendingAuthorization)
+  ]);
+  return {
+    schema_version: 1,
+    generated_at: new Date().toISOString(),
+    cloudflare,
+    github,
+    permissions,
+    pending_authorization: pendingAuthorization
+  };
+}
+
+async function collectCloudflareConfigSnapshot(env, permissions, pendingAuthorization) {
+  const token = env.CLOUDFLARE_CONFIG_READ_TOKEN || env.CLOUDFLARE_API_TOKEN || '';
+  const accountId = env.CLOUDFLARE_ACCOUNT_ID || '';
+  const zoneId = env.CLOUDFLARE_ZONE_ID || '';
+  if (!token || !accountId) {
+    const result = !token ? 'token missing' : 'account missing';
+    for (const target of [...CLOUDFLARE_CONFIG_ENDPOINTS, ...CLOUDFLARE_ZONE_CONFIG_ENDPOINTS]) {
+      recordConfigPermission(permissions, pendingAuthorization, target.key, result, 'Cloudflare Worker secret CLOUDFLARE_CONFIG_READ_TOKEN plus CLOUDFLARE_ACCOUNT_ID', 'Cloudflare Access/Pages/Workers snapshot');
+    }
+    return { configured: false, items: [] };
+  }
+  const items = [];
+  for (const target of CLOUDFLARE_CONFIG_ENDPOINTS) {
+    const path = target.path(accountId);
+    const result = await fetchCloudflareConfig(path, token);
+    recordConfigPermission(permissions, pendingAuthorization, target.key, result.status, 'Cloudflare Account read / Access read / Pages read / Workers read', target.key);
+    if (result.ok) items.push(normalizeCloudflareEndpoint(target.key, result.data));
+  }
+  if (!zoneId) {
+    for (const target of CLOUDFLARE_ZONE_CONFIG_ENDPOINTS) {
+      recordConfigPermission(permissions, pendingAuthorization, target.key, 'zone missing', 'Cloudflare Worker secret CLOUDFLARE_ZONE_ID', 'Worker route snapshot');
+    }
+  } else {
+    for (const target of CLOUDFLARE_ZONE_CONFIG_ENDPOINTS) {
+      const result = await fetchCloudflareConfig(target.path(zoneId), token);
+      recordConfigPermission(permissions, pendingAuthorization, target.key, result.status, 'Cloudflare Zone read', target.key);
+      if (result.ok) items.push(normalizeCloudflareEndpoint(target.key, result.data));
+    }
+  }
+  return { configured: true, items };
+}
+
+async function collectGithubConfigSnapshot(env, permissions, pendingAuthorization) {
+  const token = env.GITHUB_TOKEN || '';
+  if (!token) {
+    for (const repo of githubConfigRepos(env)) {
+      recordConfigPermission(permissions, pendingAuthorization, `github.${repo}`, 'token missing', 'analytics-worker secret GITHUB_TOKEN with read-only repo metadata scope', 'GitHub branch protection / Actions names / Pages source');
+    }
+    return { configured: false, repos: [] };
+  }
+  const repos = [];
+  for (const repo of githubConfigRepos(env)) {
+    const full = repo.includes('/') ? repo : `wanjiaoben/${repo}`;
+    const [branch, secrets, variables, pages] = await Promise.all([
+      fetchGithubConfig(`/repos/${full}/branches/main`, token),
+      fetchGithubConfig(`/repos/${full}/actions/secrets`, token),
+      fetchGithubConfig(`/repos/${full}/actions/variables`, token),
+      fetchGithubConfig(`/repos/${full}/pages`, token)
+    ]);
+    recordConfigPermission(permissions, pendingAuthorization, `github.${full}.branch`, branch.status, 'GitHub repo metadata read', 'branch protection / required checks');
+    recordConfigPermission(permissions, pendingAuthorization, `github.${full}.actions_secrets`, secrets.status, 'GitHub Actions secrets metadata read', 'secret name list');
+    recordConfigPermission(permissions, pendingAuthorization, `github.${full}.actions_variables`, variables.status, 'GitHub Actions variables metadata read', 'variable name list');
+    recordConfigPermission(permissions, pendingAuthorization, `github.${full}.pages`, pages.status, 'GitHub Pages read', 'Pages source/config');
+    repos.push(normalizeGithubRepoSnapshot(full, { branch, secrets, variables, pages }));
+  }
+  return { configured: true, repos };
+}
+
+function githubConfigRepos(env) {
+  return clean(env.CONFIG_SNAPSHOT_GITHUB_REPOS || '', 2000)
+    .split(',')
+    .map((repo) => repo.trim())
+    .filter(Boolean)
+    .concat(clean(env.CONFIG_SNAPSHOT_GITHUB_REPOS || '', 2000) ? [] : [...GITHUB_CONFIG_REPOS])
+    .sort();
+}
+
+async function fetchCloudflareConfig(path, token) {
+  return fetchConfigJson(`https://api.cloudflare.com/client/v4${path}`, {
+    authorization: `Bearer ${token}`,
+    accept: 'application/json'
+  });
+}
+
+async function fetchGithubConfig(path, token) {
+  return fetchConfigJson(`https://api.github.com${path}`, {
+    authorization: `Bearer ${token}`,
+    accept: 'application/vnd.github+json',
+    'user-agent': 'nice-dashboard-config-snapshot'
+  });
+}
+
+async function fetchConfigJson(url, headers) {
+  try {
+    const res = await fetch(url, { headers });
+    if (res.status === 403) return { ok: false, status: '403' };
+    if (res.status === 404) return { ok: false, status: '404' };
+    if (!res.ok) return { ok: false, status: `http_${res.status}` };
+    return { ok: true, status: 'OK', data: await res.json().catch(() => ({})) };
+  } catch (e) {
+    return { ok: false, status: 'unsupported', error: clean(e.message || String(e), 200) };
+  }
+}
+
+function normalizeCloudflareEndpoint(key, data) {
+  const result = Array.isArray(data?.result) ? data.result : (data?.result ? [data.result] : []);
+  return {
+    key,
+    items: result.map((item) => normalizeCloudflareItem(key, item)).sort(compareJsonStable)
+  };
+}
+
+function normalizeCloudflareItem(key, item) {
+  if (key === 'cf.access_apps') {
+    return pickDefined({
+      name: item.name,
+      domain: item.domain,
+      type: item.type,
+      aud_present: Boolean(item.aud),
+      session_duration: item.session_duration,
+      policies: Array.isArray(item.policies) ? item.policies.map((policy) => normalizeAccessPolicy(policy)).sort(compareJsonStable) : []
+    });
+  }
+  if (key === 'cf.access_service_tokens') {
+    return pickDefined({
+      name: item.name,
+      duration: item.duration,
+      expires_at: item.expires_at
+    });
+  }
+  if (key === 'cf.pages_projects') {
+    return pickDefined({
+      name: item.name,
+      domains: sortedStrings(item.domains || []),
+      production_branch: item.production_branch,
+      build_config: normalizePagesBuildConfig(item.build_config || {}),
+      deployment_configs: normalizePagesDeploymentConfigs(item.deployment_configs || {})
+    });
+  }
+  if (key === 'cf.workers_scripts') {
+    return pickDefined({
+      id: item.id,
+      script_name: item.script_name || item.id,
+      modified_on: item.modified_on,
+      created_on: item.created_on,
+      usage_model: item.usage_model,
+      compatibility_date: item.compatibility_date,
+      cron_triggers: sortedStrings(item.schedules || item.cron_triggers || [])
+    });
+  }
+  if (key.endsWith('.secrets')) {
+    return pickDefined({
+      secret_names: secretNameList(Array.isArray(item) ? item.map((entry) => entry.name) : [item.name].filter(Boolean))
+    });
+  }
+  if (key.endsWith('.schedules')) {
+    return pickDefined({
+      cron: item.cron || item.schedule || item.pattern,
+      created_on: item.created_on,
+      modified_on: item.modified_on
+    });
+  }
+  if (key === 'cf.workers_routes') {
+    return pickDefined({
+      pattern: item.pattern,
+      script: item.script,
+      zone_name: item.zone_name
+    });
+  }
+  return pickDefined({
+    id_present: Boolean(item.id),
+    name: item.name,
+    type: item.type
+  });
+}
+
+function normalizeAccessPolicy(policy) {
+  return pickDefined({
+    name: policy.name,
+    decision: policy.decision,
+    include_types: accessRuleTypes(policy.include),
+    exclude_types: accessRuleTypes(policy.exclude),
+    require_types: accessRuleTypes(policy.require)
+  });
+}
+
+function accessRuleTypes(rules) {
+  return sortedStrings((Array.isArray(rules) ? rules : []).map((rule) => Object.keys(rule || {}).sort().join('+')).filter(Boolean));
+}
+
+function normalizePagesBuildConfig(config) {
+  return pickDefined({
+    build_command: config.build_command,
+    destination_dir: config.destination_dir,
+    root_dir: config.root_dir,
+    web_analytics_tag: config.web_analytics_tag ? 'present' : ''
+  });
+}
+
+function normalizePagesDeploymentConfigs(configs) {
+  const out = {};
+  for (const name of ['production', 'preview']) {
+    const cfg = configs[name] || {};
+    out[name] = pickDefined({
+      env_var_names: envVarNames(cfg.env_vars),
+      secrets_names: secretNameList(cfg.secrets || cfg.secret_text || {}),
+      compatibility_date: cfg.compatibility_date,
+      compatibility_flags: sortedStrings(cfg.compatibility_flags || [])
+    });
+  }
+  return out;
+}
+
+function normalizeGithubRepoSnapshot(full, results) {
+  const branch = results.branch.ok ? results.branch.data : null;
+  const secrets = results.secrets.ok ? results.secrets.data : null;
+  const variables = results.variables.ok ? results.variables.data : null;
+  const pages = results.pages.ok ? results.pages.data : null;
+  return pickDefined({
+    repo: full,
+    branch_protected: Boolean(branch?.protected),
+    required_checks: sortedStrings(branch?.protection?.required_status_checks?.contexts || []),
+    actions_secret_names: secretNameList((secrets?.secrets || []).map((secret) => secret.name)),
+    actions_variable_names: variableNameList((variables?.variables || []).map((variable) => variable.name)),
+    pages: pages ? pickDefined({
+      status: pages.status,
+      source_branch: pages.source?.branch,
+      source_path: pages.source?.path,
+      cname: pages.cname || ''
+    }) : null
+  });
+}
+
+function envVarNames(vars) {
+  if (!vars) return [];
+  if (Array.isArray(vars)) return variableNameList(vars.map((item) => item.name || item.key || item));
+  return variableNameList(Object.keys(vars));
+}
+
+function secretNameList(input) {
+  const names = Array.isArray(input) ? input : Object.keys(input || {});
+  return names.map((name) => sanitizeSecretName(name)).sort(compareJsonStable);
+}
+
+function variableNameList(input) {
+  const names = Array.isArray(input) ? input : Object.keys(input || {});
+  return names.map((name) => sanitizeSecretName(name)).sort(compareJsonStable);
+}
+
+function sanitizeSecretName(name) {
+  const value = clean(name, 300);
+  if (secretNameLooksSensitive(value)) {
+    return { category: secretNameCategory(value), name_hash: stableSyncHash(value) };
+  }
+  return { name: value };
+}
+
+function secretNameLooksSensitive(name) {
+  return /@|CUSTOMER|BUYER|PAYER|CLIENT_EMAIL|ORDER_ID|PERSONAL|PRIVATE_PERSON/i.test(name);
+}
+
+function secretNameCategory(name) {
+  if (/@|EMAIL/i.test(name)) return 'email-related';
+  if (/CUSTOMER|BUYER|PAYER/i.test(name)) return 'customer-related';
+  if (/ORDER/i.test(name)) return 'order-related';
+  return 'sensitive-name';
+}
+
+function stableSyncHash(value) {
+  let hash = 2166136261;
+  for (const char of String(value)) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function recordConfigPermission(permissions, pendingAuthorization, target, result, needs, impact) {
+  const row = { target, result };
+  permissions.push(row);
+  if (result !== 'OK') {
+    pendingAuthorization.push({
+      target,
+      result,
+      needs,
+      impact
+    });
+  }
+}
+
+function normalizeSnapshot(value) {
+  if (Array.isArray(value)) return value.map((item) => normalizeSnapshot(item)).sort(compareJsonStable);
+  if (!value || typeof value !== 'object') return redactConfigScalar(value);
+  const out = {};
+  for (const key of Object.keys(value).sort()) {
+    if (secretValueKey(key)) {
+      out[key] = value[key] === undefined || value[key] === null || value[key] === '' ? '' : 'present';
+    } else {
+      out[key] = normalizeSnapshot(value[key]);
+    }
+  }
+  return out;
+}
+
+function redactConfigScalar(value) {
+  if (typeof value !== 'string') return value;
+  if (/^[A-Za-z0-9_\-=]{24,}$/.test(value) && !/^https?:\/\//.test(value)) return 'present';
+  return clean(value, 1000);
+}
+
+function secretValueKey(key) {
+  const lower = String(key || '').toLowerCase();
+  if (lower === 'key') return false;
+  return lower === 'value'
+    || /(^|_)(secret|token|password|private_key|client_secret|api_key)$/.test(lower)
+    || /_key$/.test(lower);
+}
+
+function assertNoSecretValues(snapshot) {
+  const text = JSON.stringify(snapshot);
+  if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(text)) throw new Error('config snapshot would store a private key');
+  if (/Bearer\s+[A-Za-z0-9._-]+/i.test(text)) throw new Error('config snapshot would store a bearer token');
+}
+
+async function sha256Hex(text) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function diffSnapshotJson(previousJson, nextJson) {
+  const previous = JSON.parse(previousJson || '{}');
+  const next = JSON.parse(nextJson || '{}');
+  const diffs = [];
+  collectDiffs('', previous, next, diffs);
+  return diffs.slice(0, 50);
+}
+
+function collectDiffs(path, a, b, out) {
+  if (JSON.stringify(a) === JSON.stringify(b)) return;
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object' || Array.isArray(a) || Array.isArray(b)) {
+    out.push(`${path || '$'} changed`);
+    return;
+  }
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const key of [...keys].sort()) collectDiffs(path ? `${path}.${key}` : key, a[key], b[key], out);
+}
+
+function compareJsonStable(a, b) {
+  return JSON.stringify(a).localeCompare(JSON.stringify(b));
+}
+
+function sortedStrings(values) {
+  return [...(values || [])].map((value) => clean(value, 500)).filter(Boolean).sort();
+}
+
+function pickDefined(input) {
+  const out = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (value === undefined || value === null) continue;
+    out[key] = value;
+  }
+  return out;
 }
 
 async function runProbes(env, reason = 'cron') {
@@ -3866,13 +4389,19 @@ export {
   BEACON_SCRIPT,
   PATH_CHECK_BASELINES,
   bingDateOnly,
+  collectConfigSnapshot,
   configuredSearchConsoleSites,
   configuredBingSites,
   checkPathContract,
+  diffSnapshotJson,
   isFastPathCheckFailure,
+  normalizeSnapshot,
   normalizeBingQueryRow,
   normalizeSearchTermSource,
   parsePage,
+  runConfigSnapshot,
+  sanitizeSecretName,
+  sha256Hex,
   shouldSendPathCheckAlert,
   stableFingerprint
 };

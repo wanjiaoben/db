@@ -121,6 +121,23 @@ read-only repo-status token as a Worker secret named `GITHUB_TOKEN`. When it is
 absent, the four deployment status cells show `未配 token` and do not call the
 GitHub API.
 
+## Config Snapshot
+
+The daily config snapshot runs from the analytics Worker and stores only
+configuration shape plus secret or variable names. It never stores secret
+values. If a secret or variable name itself contains sensitive business data,
+the Worker stores a category and `name_hash` instead of the raw name.
+
+Cloudflare reads require Worker secrets/vars:
+
+- `CLOUDFLARE_CONFIG_READ_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+- optional `CLOUDFLARE_ZONE_ID` for route snapshots
+
+GitHub reads reuse `GITHUB_TOKEN`; `CONFIG_SNAPSHOT_GITHUB_REPOS` may override
+the default repo list. Missing or forbidden endpoints are recorded as
+authorization gaps and do not block the rest of the snapshot.
+
 ## Events
 
 `POST /events` is the B-0154 visitor beacon endpoint. It accepts only four

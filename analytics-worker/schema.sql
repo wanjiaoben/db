@@ -203,6 +203,17 @@ CREATE TABLE IF NOT EXISTS alert_state (
   notified_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS config_snapshot (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  source TEXT NOT NULL,
+  json TEXT NOT NULL,
+  sha256 TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_config_snapshot_source_ts ON config_snapshot(source, ts);
+CREATE INDEX IF NOT EXISTS idx_config_snapshot_source_sha ON config_snapshot(source, sha256);
+
 CREATE TABLE IF NOT EXISTS alert_channel_self_checks (
   month_key TEXT PRIMARY KEY,
   scheduled_at TEXT NOT NULL,
