@@ -24,18 +24,6 @@ stores them in Cloudflare D1, and serves dashboard summaries to `db.nice.okinawa
 - `GET https://analytics.nice.okinawa/health`
 - `POST https://analytics.nice.okinawa/alerts/test`
 - `POST https://analytics.nice.okinawa/alerts/self-check`
-- `GET https://analytics.nice.okinawa/daily-brief/sample?dry_run=1`
-- `POST https://analytics.nice.okinawa/daily-brief/sample`
-
-## Daily Boss Brief sample
-
-The first version is manual-only. The sample endpoint reads the JST day window
-from midnight through generation time and sends one system email to
-`aboutokinawa@gmail.com` when called with `POST` and the Dashboard key. `GET`
-or `?dry_run=1` only renders the report. It does not change the existing
-08:30 summary and no 20:00 cron is configured. Review tasks can be connected
-through the existing API by setting `REVIEW_TASK_API_URL`; if any source is
-unavailable, that section shows `— / EI` and the rest of the email continues.
 
 ## Alert Channel Self-Check
 
