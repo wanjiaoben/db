@@ -75,3 +75,5 @@ M0807-69 db：新增 nice_analytics 生产 D1 每日备份 workflow，UTC 18:29 
 BACKUP-0902-03 db：监控分别展示 Progress preview JSON/SQL 专用桶，按每日 17:18 UTC cadence 增加 36h warning / 48h critical freshness；新增只读 `PROGRESS_DB_BACKUP` binding，production 既有 JSON bucket/key/freshness 语义保持不变。
 MON-0904-01 db：Draft 修复 Progress preview SQL 监控读桶为 `PROGRESS_DB_BACKUP_PREVIEW`，并将 db-private 浏览器面板鉴权改为 Cloudflare Access JWT，程序接口继续走 `x-dashboard-key`。
 EXP-0904-01 db：Draft 新增配置文件驱动的到期提醒，30 天内面板黄灯、7 天内/已过期走现有 dashboard 告警线，首批覆盖 nice.okinawa 域名、GitHub PAT nice-dashboard、Cloudflare token db-config-read。
+DAILY-0905-01 db：新增手动触发的 Daily Boss Brief 样例生成器与邮件入口，JST 当日窗口、来源分类、业务健康灯、全 registry SEO/GEO 行和 EI 降级均覆盖；未增加 20:00 cron。
+DAILY-0905-01 db：新增手动触发的 Daily Boss Brief 样例生成器与邮件入口，JST 当日窗口、来源分类、业务健康灯、全 registry SEO/GEO 行和 EI 降级均覆盖；未增加 20:00 cron。
