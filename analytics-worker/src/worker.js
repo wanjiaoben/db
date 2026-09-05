@@ -17,6 +17,8 @@ const SEARCH_TERM_SOURCES = new Set(['google', 'bing', 'all']);
 const DEFAULT_BING_SITE_URLS = 'https://bjt.nice.okinawa/,https://kiso.nice.okinawa/,https://snorkel.nice.okinawa/,https://progress.nice.okinawa/,https://nice.okinawa/,https://translation.nice.okinawa/';
 const VISITOR_EVENT_PATH = '/events';
 const VISITOR_DASHBOARD_PATH = '/visitors';
+const DAILY_BRIEF_SAMPLE_PATH = '/daily-brief/sample';
+const DAILY_BRIEF_RECIPIENT = 'aboutokinawa@gmail.com';
 const VISITOR_EVENT_RATE_LIMIT_PER_MINUTE = 30;
 const VISITOR_SAMPLE_MIN_EVENTS = 20;
 const VISITOR_DASHBOARD_DAY_OPTIONS = new Set([1, 7, 30, 180]);
@@ -188,6 +190,22 @@ export default {
 
     if (url.pathname === '/summary' && request.method === 'GET') {
       return summary(request, env);
+    }
+
+    if (url.pathname === DAILY_BRIEF_SAMPLE_PATH && (request.method === 'GET' || request.method === 'POST')) {
+      if (!requireDashboard(request, env)) return json({ ok: false, error: 'unauthorized' }, request, 403);
+      try {
+        const report = await buildDailyBossBrief(env, new Date());
+        if (request.method === 'GET' || url.searchParams.get('dry_run') === '1') {
+          return json({ ok: true, sent: false, ...report }, request);
+        }
+        const config = getAlertConfig({ ...env, ALERT_RECIPIENTS: DAILY_BRIEF_RECIPIENT });
+        const subject = buildDailyBriefSubject(report, true);
+        const result = await sendAlertEmail(config, subject, renderDailyBossBrief(report));
+        return json({ ok: true, sent: true, to: config.to, subject, result, report }, request);
+      } catch (error) {
+        return json({ ok: false, error: clean(error.message || String(error), 300) }, request, 502);
+      }
     }
 
     if (url.pathname === '/control' && request.method === 'GET') {
@@ -1357,6 +1375,149 @@ async function summary(request, env) {
     recent,
     search_console: searchConsole
   }, request);
+}
+
+export function jstWindow(ms = Date.now()) {
+  const end = new Date(ms);
+  return { start: jstDayStartIso(ms), end };
+}
+
+export function classifyDailyBriefSource(referrer, utmSource = '') {
+  const value = `${String(referrer || '')} ${String(utmSource || '')}`.toLowerCase();
+  if (!value.trim()) return 'Direct';
+  if (/google\./.test(value)) return 'Google';
+  if (/\b(bing|msn)\./.test(value) || /\bbing\b/.test(value)) return 'Bing';
+  if (/chatgpt|openai|perplexity|claude|anthropic|gemini|copilot|you\.com/.test(value)) return 'AI';
+  if (/instagram|facebook|tiktok|youtube|twitter|x\.com|linkedin|line\.me|threads|pinterest/.test(value)) return 'SNS';
+  if (/^https?:\/\/(?:www\.)?nice\.okinawa(?:\/|$)/.test(String(referrer || '').toLowerCase())) return 'Direct';
+  return 'Other';
+}
+
+export function dailyBriefLamp(signals) {
+  const known = (signals || []).filter((signal) => signal !== null && signal !== undefined);
+  if (!known.length) return { color: 'ei', icon: '—', label: '数据暂不可用' };
+  if (known.some((signal) => signal === false || signal === 'red')) return { color: 'red', icon: '🔴', label: '红' };
+  if (known.some((signal) => signal === 'yellow' || signal === 'stale')) return { color: 'yellow', icon: '🟡', label: '黄' };
+  if (known.some((signal) => signal === 'ei')) return { color: 'ei', icon: '—', label: '数据暂不可用' };
+  return { color: 'green', icon: '🟢', label: '绿' };
+}
+
+function dailyBriefUnavailable(source, error = 'data_unavailable') {
+  return { available: false, value: null, status: 'EI', source, latest_available_date: '', error: clean(error, 180) };
+}
+
+async function dailyBriefSource(label, loader) {
+  try {
+    const value = await loader();
+    if (value?.available === false) return value;
+    return { available: true, value, status: 'OK', source: label, latest_available_date: '' };
+  }
+  catch (error) { return dailyBriefUnavailable(label, error.message || String(error)); }
+}
+
+async function loadDailyBriefVisitors(env, window) {
+  const rows = await all(env.DB, `
+    SELECT referrer_host, utm_source, COUNT(*) AS views, COUNT(DISTINCT visitor_id) AS visitors
+    FROM visitor_events
+    WHERE created_at >= ? AND created_at < ? AND event_type = 'pageview'
+    GROUP BY referrer_host, utm_source
+  `, [window.start, window.end.toISOString()]);
+  const bySource = Object.fromEntries(['Google', 'AI', 'Bing', 'SNS', 'Direct', 'Other'].map((key) => [key, { views: 0, visitors: 0, raw_referrers: [] }]));
+  for (const row of rows) {
+    const category = classifyDailyBriefSource(row.referrer_host, row.utm_source);
+    bySource[category].views += Number(row.views || 0);
+    bySource[category].visitors += Number(row.visitors || 0);
+    if (row.referrer_host) bySource[category].raw_referrers.push(row.referrer_host);
+  }
+  const totals = await first(env.DB, `
+    SELECT COUNT(*) AS pageviews, COUNT(DISTINCT visitor_id) AS visitors, COUNT(DISTINCT session_id) AS sessions
+    FROM visitor_events WHERE created_at >= ? AND created_at < ? AND event_type = 'pageview'
+  `, [window.start, window.end.toISOString()]);
+  return { totals: { pageviews: Number(totals?.pageviews || 0), visitors: Number(totals?.visitors || 0), sessions: Number(totals?.sessions || 0) }, by_source: bySource };
+}
+
+async function loadDailyBriefReview(env) {
+  const url = env.REVIEW_TASK_API_URL || '';
+  if (!url) return dailyBriefUnavailable('Review task API', 'missing_REVIEW_TASK_API_URL');
+  const response = await fetch(url, { headers: { accept: 'application/json' } });
+  if (!response.ok) throw new Error(`review_api_http_${response.status}`);
+  const data = await response.json();
+  const rows = Array.isArray(data) ? data : (data.tasks || data.items || []);
+  const groups = {};
+  for (const row of rows) {
+    const group = clean(row.business_group || row.group || row.category || 'Other', 80) || 'Other';
+    groups[group] = (groups[group] || 0) + 1;
+  }
+  return { pending: rows.length, groups, entry: env.REVIEW_TASK_URL || 'https://db.nice.okinawa/review' };
+}
+
+async function loadDailyBriefSeo(env, pathStatus) {
+  let gsc = new Map();
+  try {
+    await ensureSearchTermsTable(env);
+    const rows = await all(env.DB, `SELECT site, MAX(date) AS latest_available_date FROM search_terms WHERE source = 'google' GROUP BY site`);
+    gsc = new Map(rows.map((row) => [row.site, row.latest_available_date]));
+  } catch (_) { /* hard gate: each site remains EI */ }
+  const pathRows = new Map((pathStatus?.states || []).map((row) => [row.check_key, row]));
+  return Object.entries(VISITOR_EVENT_SITES).map(([site, host]) => {
+    const path = pathRows.get(`site-${site}-home`);
+    const pathSignal = path ? (path.status === 'ok') : null;
+    return {
+      site, host, seo: dailyBriefLamp([pathSignal, gsc.has(site) ? true : 'ei']),
+      geo: dailyBriefLamp([pathSignal]),
+      signals: { robots: '—', sitemap: '—', canonical: '—', not_found_404: '—', schema: '—', gsc_latest_available_date: gsc.get(site) || '—' },
+      note: '仅报告可观察信号；未编排名'
+    };
+  });
+}
+
+async function buildDailyBossBrief(env, now = new Date()) {
+  const window = jstWindow(now.getTime());
+  const [visitors, review, paths, backups, alerts, seo] = await Promise.all([
+    dailyBriefSource('visitor_events / attribution', () => loadDailyBriefVisitors(env, window)),
+    dailyBriefSource('Review task API', () => loadDailyBriefReview(env)),
+    dailyBriefSource('customer-paths', () => getPathCheckStatus(env)),
+    dailyBriefSource('backup', () => getBackupStatus(env)),
+    dailyBriefSource('alert_state', async () => all(env.DB, 'SELECT key, status, detail, updated_at FROM alert_state WHERE status = \'red\'')),
+    dailyBriefSource('Search Console sync', async () => loadDailyBriefSeo(env, await getPathCheckStatus(env)))
+  ]);
+  const visitorValue = visitors.available ? visitors.value : null;
+  const redAlerts = alerts.available ? alerts.value : [];
+  const pathStates = paths.available ? paths.value.states : [];
+  const backupItems = backups.available ? backups.value.items : [];
+  const pathFor = (site) => pathStates.find((row) => row.check_key === `site-${site}-home`);
+  const backupFor = (key) => backupItems.find((row) => row.key === key);
+  const businessHealth = [
+    { name: 'BJT', lamp: dailyBriefLamp([pathFor('bjt')?.status === 'ok' ? true : pathFor('bjt') ? false : null, backupFor('bjt')?.ok ?? null]) },
+    { name: 'KISO', lamp: dailyBriefLamp([pathFor('kiso')?.status === 'ok' ? true : pathFor('kiso') ? false : null]) },
+    { name: 'Progress', lamp: dailyBriefLamp([pathFor('progress')?.status === 'ok' ? true : pathFor('progress') ? false : null, backupFor('progress-production')?.ok ?? null]) }
+  ];
+  const systemRed = redAlerts.length + businessHealth.filter((item) => item.lamp.color === 'red').length;
+  const headline = systemRed ? '🔴 有系统红项，先处理阻断项' : (review.value?.pending ? '🟡 有待审核事项，建议今日处理' : '🟢 今日暂无紧急阻断');
+  const reviewCount = review.available ? review.value.pending : null;
+  return { generated_at: now.toISOString(), window: { timezone: 'Asia/Tokyo', start: window.start, end: window.end.toISOString() }, headline, review_count: reviewCount, system_red: systemRed, visitors: visitorValue, review, system: { red_items: redAlerts, business_health: businessHealth }, seo: seo.available ? seo.value : Object.entries(VISITOR_EVENT_SITES).map(([site, host]) => ({ site, host, seo: dailyBriefLamp([]), geo: dailyBriefLamp([]), signals: { robots: '—', sitemap: '—', canonical: '—', not_found_404: '—', schema: '—', gsc_latest_available_date: '—' } })), sns: dailyBriefUnavailable('SNS queue', 'no_existing_sns_queue_source'), top_actions: redAlerts.slice(0, 3).map((item) => item.detail || item.key).concat(review.value?.pending ? ['打开审核台处理待审核项'] : []).slice(0, 3), sources: { visitors, review, customer_paths: paths, backup: backups, alert_state: alerts, search_console: seo } };
+}
+
+export function buildDailyBriefSubject(report, sample = false) {
+  const date = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tokyo', month: '2-digit', day: '2-digit' }).format(new Date(report.generated_at));
+  const review = report.review_count === null ? '—' : report.review_count;
+  const red = report.system_red === null || report.system_red === undefined ? '—' : report.system_red;
+  const visitors = report.visitors?.totals?.visitors ?? '—';
+  return `${sample ? '【SAMPLE｜Nice Okinawa Daily】' : '【Nice Okinawa Daily】'}${date}｜待审核${review}｜系统${red}红｜今日访客${visitors}`;
+}
+
+export function renderDailyBossBrief(report) {
+  const lines = [
+    report.headline, '', `窗口：${report.window.start} → ${report.window.end}（JST）`,
+    `待我处理：${report.review_count ?? '—'}${report.review_count === null ? '（EI / 数据暂不可用）' : ''}`,
+    `系统处理中：${report.system?.business_health?.map((item) => `${item.name}${item.lamp.icon}`).join(' / ') || '—'}`,
+    `系统红项：${report.system_red || 0}`, '', '今日访客', `访客：${report.visitors?.totals?.visitors ?? '—'}｜会话：${report.visitors?.totals?.sessions ?? '—'}｜PV：${report.visitors?.totals?.pageviews ?? '—'}`,
+    '来源占比（底层保留真实 referrer；证据不足归 Direct/Unknown）', ...Object.entries(report.visitors?.by_source || {}).map(([key, value]) => `- ${key}：${value.views || 0}`), '',
+    'Review 摘要（业务分组仅显示数量）', ...(report.review.available ? Object.entries(report.review.value.groups).map(([key, value]) => `- ${key}：${value}`) : ['- —（EI / 数据暂不可用）']), report.review.available ? `审核台：${report.review.value.entry}` : '', '',
+    '营业健康', ...report.system.business_health.map((item) => `- ${item.lamp.icon} ${item.name}`), '', '全站 SEO/GEO', ...report.seo.map((site) => `- ${site.site}（${site.host}）：SEO ${site.seo.icon}｜GEO ${site.geo.icon}｜GSC latest_available_date ${site.signals.gsc_latest_available_date}`), '',
+    'SNS 队列六指标', '- 排队：—｜可发布：—｜已排程：—｜已发布：—｜失败：—｜过期：—（EI / 数据暂不可用）', '', '今日值得做（最多 3 件）', ...(report.top_actions.length ? report.top_actions.map((item) => `- ${item}`) : ['- 暂无']), '', '数据不可用项按 — / EI 展示；单项缺失不阻断日报。', `生成：${report.generated_at}`
+  ];
+  return lines.filter((line, index) => !(line === '' && lines[index - 1] === '')).join('\n');
 }
 
 async function searchConsoleSummary(db, filters) {
@@ -5085,6 +5246,7 @@ export {
   normalizeBingQueryRow,
   normalizeSearchTermSource,
   parsePage,
+  buildDailyBossBrief,
   runAuditHumanMetrics,
   runConfigSnapshot,
   sanitizeSecretName,
