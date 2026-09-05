@@ -1,6 +1,3 @@
-import expiriesConfig from '../expiries.json' with { type: 'json' };
-import auditHumanDataPlan from '../audit-human-data-plan.json' with { type: 'json' };
-
 const COLLECT_ORIGIN = 'https://translation.nice.okinawa';
 const DASHBOARD_ORIGIN = 'https://db.nice.okinawa';
 const MONTHLY_ALERT_SELF_CHECK_CRON = '0 0 1 * *';
@@ -8,8 +5,6 @@ const PATH_CHECK_CRON = '*/15 * * * *';
 const PATH_CHECK_PREVIEW_INJECT_CRON = '11 29 7 29 *';
 const PATH_CHECK_PREVIEW_TEST_EMAIL_CRON = '12 29 7 29 *';
 const GSC_DAILY_SYNC_CRON = '0 0 * * *';
-const CONFIG_SNAPSHOT_CRON = '7 0 * * *';
-const AUDIT_HUMAN_METRICS_CRON = '0 0 1 * *';
 const GSC_DEFAULT_SYNC_DAYS = 28;
 const GSC_REPORT_WINDOW_DAYS = 7;
 const BING_SYNC_DAYS = 7;
@@ -17,6 +12,8 @@ const SEARCH_TERM_SOURCES = new Set(['google', 'bing', 'all']);
 const DEFAULT_BING_SITE_URLS = 'https://bjt.nice.okinawa/,https://kiso.nice.okinawa/,https://snorkel.nice.okinawa/,https://progress.nice.okinawa/,https://nice.okinawa/,https://translation.nice.okinawa/';
 const VISITOR_EVENT_PATH = '/events';
 const VISITOR_DASHBOARD_PATH = '/visitors';
+const DAILY_BRIEF_SAMPLE_PATH = '/daily-brief/sample';
+const DAILY_BRIEF_RECIPIENT = 'aboutokinawa@gmail.com';
 const VISITOR_EVENT_RATE_LIMIT_PER_MINUTE = 30;
 const VISITOR_SAMPLE_MIN_EVENTS = 20;
 const VISITOR_DASHBOARD_DAY_OPTIONS = new Set([1, 7, 30, 180]);
@@ -46,31 +43,6 @@ const PATH_CHECK_TIMEOUT_MS = 12000;
 const PATH_CHECK_FAILURE_DEBOUNCE = 3;
 const PATH_CHECK_FAST_FAILURE_DEBOUNCE = 2;
 const DEPLOYMENT_IN_PROGRESS_ALERT_MS = 30 * 60 * 1000;
-const CONFIG_SNAPSHOT_SOURCE = 'cloudflare-github-config';
-const CONFIG_SNAPSHOT_ALERT_KEY = 'config-snapshot';
-const CONFIG_SNAPSHOT_ALERT_WINDOW_MS = 24 * 60 * 60 * 1000;
-const AUDIT_HUMAN_METRICS_SOURCE = 'audit-human-data-plan';
-const AUDIT_HUMAN_METRICS_ARTIFACT_KEY_PREFIX = 'audit/human-metrics/';
-const BJT_ORDER_META_PREFIX = 'paypal_order_meta:';
-const AUDIT_PAID_ORDER_STATUSES = new Set(['captured', 'completed']);
-const EXPIRY_KIND_ALLOWLIST = new Set(['domain', 'token', 'cert', 'subscription']);
-const EXPIRY_WARNING_DAYS = 30;
-const EXPIRY_RED_DAYS = 7;
-const CLOUDFLARE_CONFIG_ENDPOINTS = Object.freeze([
-  { key: 'cf.account', path: (accountId) => `/accounts/${accountId}` },
-  { key: 'cf.access_apps', path: (accountId) => `/accounts/${accountId}/access/apps` },
-  { key: 'cf.access_service_tokens', path: (accountId) => `/accounts/${accountId}/access/service_tokens` },
-  { key: 'cf.pages_projects', path: (accountId) => `/accounts/${accountId}/pages/projects` },
-  { key: 'cf.workers_scripts', path: (accountId) => `/accounts/${accountId}/workers/scripts` },
-  { key: 'cf.workers.nice-analytics.secrets', path: (accountId) => `/accounts/${accountId}/workers/scripts/nice-analytics/secrets` },
-  { key: 'cf.workers.nice-analytics.schedules', path: (accountId) => `/accounts/${accountId}/workers/scripts/nice-analytics/schedules` },
-  { key: 'cf.workers.db-private.secrets', path: (accountId) => `/accounts/${accountId}/workers/scripts/db-private/secrets` },
-  { key: 'cf.workers.db-private.schedules', path: (accountId) => `/accounts/${accountId}/workers/scripts/db-private/schedules` }
-]);
-const CLOUDFLARE_ZONE_CONFIG_ENDPOINTS = Object.freeze([
-  { key: 'cf.workers_routes', path: (zoneId) => `/zones/${zoneId}/workers/routes` }
-]);
-const GITHUB_CONFIG_REPOS = Object.freeze(['db', 'bjt', 'progress', 'kiso']);
 const PATH_CHECK_BASELINES = Object.freeze([
   pageCheck('site-snorkel-home', 'snorkel home', 'https://snorkel.nice.okinawa/', 'Okinawa Snorkeling Tours'),
   pageCheck('site-fishing-home', 'fishing home', 'https://fishing.nice.okinawa/', 'Okinawa Fishing Charter'),
@@ -141,7 +113,7 @@ const BOT_LIKE_CITIES = new Set([
   'santa clara',
   'mountain view'
 ]);
-const BEACON_SCRIPT = `(function(){try{var d=document,w=window,s=d.currentScript||d.querySelector('script[data-site][src*="beacon.js"]'),site=((s&&s.dataset&&s.dataset.site)||'').toLowerCase();if(!site)return;var ep='https://analytics.nice.okinawa/events',vk='nice_analytics_visitor_id',sk='nice_analytics_session_id',ftk='nice_ft',st=Date.now(),last=st,done=0,timer=0,seen=new Set;function rid(){try{return crypto.randomUUID()}catch(e){return Date.now().toString(36)+Math.random().toString(36).slice(2)}}function id(store,key){try{var v=store.getItem(key);if(v)return v;v=rid();store.setItem(key,v);return v}catch(e){return rid()}}var vid=id(localStorage,vk),sid=id(sessionStorage,sk);function ui(){try{return w.NICE_UI_LANG||w.SITE_UI_LANG||d.documentElement.lang||''}catch(e){return''}}function dev(){var ua=(navigator.userAgent||'').toLowerCase();return /ipad|tablet/.test(ua)?'tablet':(/mobile|iphone|android/.test(ua)?'mobile':'desktop')}function land(){try{var q=new URLSearchParams(location.search),o=new URLSearchParams;['utm_source','utm_medium','utm_campaign'].forEach(function(k){var v=q.get(k);if(v)o.set(k,v)});var x=o.toString();return location.pathname+(x?'?'+x:'')}catch(e){return location.pathname||'/'}}function ft(){try{var n=Date.now(),raw=localStorage.getItem(ftk),o=raw&&JSON.parse(raw);if(o&&n-Date.parse(o.first_seen)<2592e6)return o;var q=new URLSearchParams(location.search),u={utm_source:q.get('utm_source')||'',utm_medium:q.get('utm_medium')||'',utm_campaign:q.get('utm_campaign')||''};o={visitor_id:vid,ref_host:(d.referrer?new URL(d.referrer).hostname:''),landing:location.pathname,utm:u,first_seen:new Date().toISOString(),ui_lang:ui()};var j=JSON.stringify(o);localStorage.setItem(ftk,j);d.cookie=ftk+'='+encodeURIComponent(j)+';path=/;max-age=2592000;SameSite=Lax';return o}catch(e){return{}}}ft();function base(type){return{site_id:site,event_type:type,visitor_id:vid,session_id:sid,ts:new Date().toISOString(),landing_url:land(),referrer:d.referrer||'',ui_lang:ui(),browser_lang:navigator.language||''}}function send(type,extra,beacon){try{var p=base(type);if(extra)for(var k in extra)p[k]=extra[k];var body=JSON.stringify(p);if(beacon&&navigator.sendBeacon){try{if(navigator.sendBeacon(ep,new Blob([body],{type:'text/plain'})))return}catch(e){}}fetch(ep,{method:'POST',headers:{'content-type':beacon?'text/plain':'application/json'},body:body,keepalive:!!beacon,mode:'cors'}).catch(function(){})}catch(e){}}function touch(){last=Date.now();arm()}function arm(){try{clearTimeout(timer);timer=setTimeout(dwell,1800000)}catch(e){}}function dwell(){try{if(done)return;done=1;send('dwell',{dwell_ms:Math.min(Date.now()-st,1800000)},1)}catch(e){}}function chan(el){try{var c=(el.getAttribute('data-contact')||'').toLowerCase();if(c)return c.replace(/[^a-z_]/g,'').slice(0,40);var h=(el.getAttribute('href')||'').toLowerCase();if(h.indexOf('mailto:')===0)return'email';if(h.indexOf('tel:')===0)return'phone';if(h.indexOf('wa.me/')>-1||h.indexOf('whatsapp')>-1)return'whatsapp';if(h.indexOf('line.me')>-1)return'line';if(h.indexOf('weixin')>-1||h.indexOf('wechat')>-1)return'wechat'}catch(e){}return''}send('pageview',{device_type:dev(),viewport_width:w.innerWidth||0});arm();['pointerdown','keydown','scroll','touchstart'].forEach(function(e){try{addEventListener(e,touch,{passive:true})}catch(x){}});d.addEventListener('click',function(ev){try{var el=ev.target.closest&&ev.target.closest('[data-contact],a[href]');if(!el)return;var c=chan(el);if(c)send('contact_click',{contact_channel:c},0)}catch(e){}},true);try{if('IntersectionObserver'in w){var ob=new IntersectionObserver(function(es){es.forEach(function(en){try{var id=en.target.id;if(en.isIntersecting&&id&&!seen.has(id)){seen.add(id);send('section_view',{section_id:id},0)}}catch(e){}})},{threshold:.55});d.querySelectorAll('section[id],header[id],main[id]').forEach(function(el){ob.observe(el)})}}catch(e){}d.addEventListener('visibilitychange',function(){if(d.visibilityState==='hidden')dwell()});addEventListener('pagehide',dwell)}catch(e){}})();`;
+const BEACON_SCRIPT = `(function(){try{var d=document,w=window,s=d.currentScript||d.querySelector('script[data-site][src*="beacon.js"]'),site=((s&&s.dataset&&s.dataset.site)||'').toLowerCase();if(!site)return;var ep='https://analytics.nice.okinawa/events',vk='nice_analytics_visitor_id',sk='nice_analytics_session_id',st=Date.now(),last=st,done=0,timer=0,seen=new Set;function rid(){try{return crypto.randomUUID()}catch(e){return Date.now().toString(36)+Math.random().toString(36).slice(2)}}function id(store,key){try{var v=store.getItem(key);if(v)return v;v=rid();store.setItem(key,v);return v}catch(e){return rid()}}var vid=id(localStorage,vk),sid=id(sessionStorage,sk);function ui(){try{return w.NICE_UI_LANG||w.SITE_UI_LANG||d.documentElement.lang||''}catch(e){return''}}function dev(){var ua=(navigator.userAgent||'').toLowerCase();return /ipad|tablet/.test(ua)?'tablet':(/mobile|iphone|android/.test(ua)?'mobile':'desktop')}function land(){try{var q=new URLSearchParams(location.search),o=new URLSearchParams;['utm_source','utm_medium','utm_campaign'].forEach(function(k){var v=q.get(k);if(v)o.set(k,v)});var x=o.toString();return location.pathname+(x?'?'+x:'')}catch(e){return location.pathname||'/'}}function base(type){return{site_id:site,event_type:type,visitor_id:vid,session_id:sid,ts:new Date().toISOString(),landing_url:land(),referrer:d.referrer||'',ui_lang:ui(),browser_lang:navigator.language||''}}function send(type,extra,beacon){try{var p=base(type);if(extra)for(var k in extra)p[k]=extra[k];var body=JSON.stringify(p);if(beacon&&navigator.sendBeacon){try{if(navigator.sendBeacon(ep,new Blob([body],{type:'text/plain'})))return}catch(e){}}fetch(ep,{method:'POST',headers:{'content-type':beacon?'text/plain':'application/json'},body:body,keepalive:!!beacon,mode:'cors'}).catch(function(){})}catch(e){}}function touch(){last=Date.now();arm()}function arm(){try{clearTimeout(timer);timer=setTimeout(dwell,1800000)}catch(e){}}function dwell(){try{if(done)return;done=1;send('dwell',{dwell_ms:Math.min(Date.now()-st,1800000)},1)}catch(e){}}function chan(el){try{var c=(el.getAttribute('data-contact')||'').toLowerCase();if(c)return c.replace(/[^a-z_]/g,'').slice(0,40);var h=(el.getAttribute('href')||'').toLowerCase();if(h.indexOf('mailto:')===0)return'email';if(h.indexOf('tel:')===0)return'phone';if(h.indexOf('wa.me/')>-1||h.indexOf('whatsapp')>-1)return'whatsapp';if(h.indexOf('line.me')>-1)return'line';if(h.indexOf('weixin')>-1||h.indexOf('wechat')>-1)return'wechat'}catch(e){}return''}send('pageview',{device_type:dev(),viewport_width:w.innerWidth||0});arm();['pointerdown','keydown','scroll','touchstart'].forEach(function(e){try{addEventListener(e,touch,{passive:true})}catch(x){}});d.addEventListener('click',function(ev){try{var el=ev.target.closest&&ev.target.closest('[data-contact],a[href]');if(!el)return;var c=chan(el);if(c)send('contact_click',{contact_channel:c},0)}catch(e){}},true);try{if('IntersectionObserver'in w){var ob=new IntersectionObserver(function(es){es.forEach(function(en){try{var id=en.target.id;if(en.isIntersecting&&id&&!seen.has(id)){seen.add(id);send('section_view',{section_id:id},0)}}catch(e){}})},{threshold:.55});d.querySelectorAll('section[id],header[id],main[id]').forEach(function(el){ob.observe(el)})}}catch(e){}d.addEventListener('visibilitychange',function(){if(d.visibilityState==='hidden')dwell()});addEventListener('pagehide',dwell)}catch(e){}})();`;
 const TRACKING_SCRIPT = `(function(){var endpoint='https://analytics.nice.okinawa/collect';var site=location.hostname;var sessionKey='nice_analytics_session';var start=Date.now();var maxScroll=0;var sectionTimers={};var lastSection='';function uuid(){if(window.crypto&&crypto.randomUUID)return crypto.randomUUID();return String(Date.now())+'-'+Math.random().toString(16).slice(2)}function sid(){try{var e=sessionStorage.getItem(sessionKey);if(e)return e;var id=uuid();sessionStorage.setItem(sessionKey,id);return id}catch(e){return uuid()}}var sessionId=sid();var visitorId=function(){try{var k='nice_analytics_visitor';var e=localStorage.getItem(k);if(e)return e;var id=uuid();localStorage.setItem(k,id);return id}catch(e){return''}}();function lang(){return document.documentElement.dataset.staticLang||document.body.dataset.lang||document.documentElement.lang||navigator.language||''}function depth(){var d=document.documentElement,b=document.body,t=window.scrollY||d.scrollTop||b.scrollTop||0,h=Math.max(b.scrollHeight,d.scrollHeight)-window.innerHeight;if(h<=0)return 100;return Math.max(0,Math.min(100,Math.round(t/h*100)))}function data(type,extra){var out={type:type,site:site,session_id:sessionId,visitor_id:visitorId,path:location.pathname,title:document.title,url:location.href,referrer:document.referrer,lang:lang(),browser_lang:navigator.language||'',screen:(screen&&screen.width?screen.width+'x'+screen.height:''),viewport:window.innerWidth+'x'+window.innerHeight,ts:new Date().toISOString()};if(extra)Object.keys(extra).forEach(function(k){out[k]=extra[k]});return out}function send(type,extra,keepalive){var body=JSON.stringify(data(type,extra));if(navigator.sendBeacon&&keepalive){try{navigator.sendBeacon(endpoint,new Blob([body],{type:'application/json'}));return}catch(e){}}try{fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:body,keepalive:!!keepalive,mode:'cors'}).catch(function(){})}catch(e){}}function contactType(el){var href=el.getAttribute('href')||'',text=(el.textContent||'').toLowerCase();if(href.indexOf('wa.me')>=0||text.indexOf('whatsapp')>=0)return'whatsapp';if(href.indexOf('mailto:')===0||text.indexOf('email')>=0)return'email';if(text.indexOf('wechat')>=0||text.indexOf('okinawaonline')>=0)return'wechat';if(href.indexOf('line')>=0||text.indexOf('line')>=0)return'line';if(href.indexOf('tel:')===0)return'phone';if(href.indexOf('#contact')>=0)return'contact';return''}document.addEventListener('click',function(event){var link=event.target.closest&&event.target.closest('a,button,summary,select');if(!link)return;var label=(link.textContent||link.getAttribute('aria-label')||'').trim().replace(/\\s+/g,' ').slice(0,120);var href=link.getAttribute&&link.getAttribute('href');var contact=link.matches('a')?contactType(link):'';var kind=contact?'contact_'+contact:(link.closest('nav')?'nav':(link.tagName||'').toLowerCase());send('click',{event_name:kind,label:label,href:href||'',section:lastSection})},true);window.addEventListener('scroll',function(){maxScroll=Math.max(maxScroll,depth())},{passive:true});if('IntersectionObserver'in window){var observer=new IntersectionObserver(function(entries){entries.forEach(function(entry){var id=entry.target.id||entry.target.tagName.toLowerCase();if(entry.isIntersecting){lastSection=id;sectionTimers[id]=Date.now();send('section_view',{section:id})}else if(sectionTimers[id]){var ms=Date.now()-sectionTimers[id];sectionTimers[id]=0;if(ms>800)send('section_time',{section:id,duration_ms:ms})}})},{threshold:.55});document.querySelectorAll('header[id],main[id],section[id]').forEach(function(s){observer.observe(s)})}var qs=new URLSearchParams(location.search);send('page_view',{utm_source:qs.get('utm_source')||'',utm_medium:qs.get('utm_medium')||'',utm_campaign:qs.get('utm_campaign')||''});window.addEventListener('pagehide',function(){send('page_leave',{duration_ms:Date.now()-start,max_scroll:Math.max(maxScroll,depth()),section:lastSection},true)})})();`;
 
 export default {
@@ -190,6 +162,22 @@ export default {
       return summary(request, env);
     }
 
+    if (url.pathname === DAILY_BRIEF_SAMPLE_PATH && (request.method === 'GET' || request.method === 'POST')) {
+      if (!requireDashboard(request, env)) return json({ ok: false, error: 'unauthorized' }, request, 403);
+      try {
+        const report = await buildDailyBossBrief(env, new Date());
+        if (request.method === 'GET' || url.searchParams.get('dry_run') === '1') {
+          return json({ ok: true, sent: false, ...report }, request);
+        }
+        const config = getAlertConfig({ ...env, ALERT_RECIPIENTS: DAILY_BRIEF_RECIPIENT });
+        const subject = buildDailyBriefSubject(report, true);
+        const result = await sendAlertEmail(config, subject, renderDailyBossBrief(report));
+        return json({ ok: true, sent: true, to: config.to, subject, result, report }, request);
+      } catch (error) {
+        return json({ ok: false, error: clean(error.message || String(error), 300) }, request, 502);
+      }
+    }
+
     if (url.pathname === '/control' && request.method === 'GET') {
       return controlDashboard(request, env);
     }
@@ -235,14 +223,6 @@ export default {
       return json({ ok: true, ...result }, request);
     }
 
-    if (url.pathname === '/config-snapshot/run' && request.method === 'POST') {
-      if (!requireDashboard(request, env)) {
-        return json({ ok: false, error: 'unauthorized' }, request, 403);
-      }
-      const result = await runConfigSnapshot(env, 'manual', { notify: url.searchParams.get('notify') === '1' });
-      return json({ ok: true, ...result }, request);
-    }
-
     if (url.pathname === '/alerts/test' && request.method === 'GET') {
       if (!requireDashboard(request, env)) {
         return json({
@@ -281,14 +261,6 @@ export default {
       } catch (error) {
         return json({ ok: false, error: clean(error.message || String(error), 300) }, request, 502);
       }
-    }
-
-    if (url.pathname === '/audit/human-metrics' && request.method === 'GET') {
-      return auditHumanMetrics(request, env);
-    }
-
-    if (url.pathname === '/audit/human-metrics/run' && request.method === 'POST') {
-      return runAuditHumanMetricsEndpoint(request, env);
     }
 
     if (url.pathname === '/search-console/sync' && request.method === 'POST') {
@@ -658,9 +630,11 @@ async function visitorDashboard(request, env) {
   }
 
   const url = new URL(request.url);
+  const requestedRange = clean(url.searchParams.get('range'), 20);
   const requestedDays = Number(url.searchParams.get('days') || 28);
   const days = VISITOR_DASHBOARD_DAY_OPTIONS.has(requestedDays) ? requestedDays : 28;
-  const since = new Date(Date.now() - days * 86400000).toISOString();
+  const monthRange = requestedRange === 'month';
+  const since = monthRange ? jstMonthStartIso() : new Date(Date.now() - days * 86400000).toISOString();
 
   const [
     totals,
@@ -673,7 +647,8 @@ async function visitorDashboard(request, env) {
     uiLangs,
     utmSources,
     rawRecords,
-    visitorRows
+    visitorRows,
+    contactVisitors
   ] = await Promise.all([
     all(env.DB, `
       SELECT
@@ -797,6 +772,16 @@ async function visitorDashboard(request, env) {
           AND LOWER(REPLACE(referrer_host, 'www.', '')) <> 'direct'
           AND LOWER(REPLACE(referrer_host, 'www.', '')) <> 'nice.okinawa'
           AND LOWER(REPLACE(referrer_host, 'www.', '')) NOT LIKE '%.nice.okinawa'
+      ),
+      utm_touch AS (
+        SELECT
+          site_id,
+          visitor_id,
+          utm_source,
+          ROW_NUMBER() OVER (PARTITION BY site_id, visitor_id ORDER BY created_at ASC, id ASC) AS rn
+        FROM base
+        WHERE utm_source IS NOT NULL
+          AND utm_source <> ''
       )
       SELECT
         g.site_id,
@@ -813,7 +798,7 @@ async function visitorDashboard(request, env) {
         g.contact_clicks,
         COALESCE(g.contact_channels, '') AS contact_channels,
         COALESCE(g.section_ids, '') AS section_ids,
-        COALESCE(e.referrer_host, 'direct') AS referrer_host,
+        COALESCE(e.referrer_host, u.utm_source, 'direct') AS referrer_host,
         COALESCE(l.country, '') AS country,
         COALESCE(l.city, '') AS city,
         COALESCE(l.timezone, '') AS timezone,
@@ -827,8 +812,114 @@ async function visitorDashboard(request, env) {
       LEFT JOIN latest l ON l.site_id = g.site_id AND l.visitor_id = g.visitor_id AND l.rn = 1
       LEFT JOIN first_touch f ON f.site_id = g.site_id AND f.visitor_id = g.visitor_id AND f.rn = 1
       LEFT JOIN external_touch e ON e.site_id = g.site_id AND e.visitor_id = g.visitor_id AND e.rn = 1
+      LEFT JOIN utm_touch u ON u.site_id = g.site_id AND u.visitor_id = g.visitor_id AND u.rn = 1
       ORDER BY g.last_seen_at DESC
       LIMIT 160
+    `, [since]),
+    all(env.DB, `
+      WITH base AS (
+        SELECT *
+        FROM visitor_events
+        WHERE created_at >= ?
+      ),
+      grouped AS (
+        SELECT
+          site_id,
+          visitor_id,
+          MAX(created_at) AS last_contact_at,
+          COUNT(CASE WHEN event_type='contact_click' THEN 1 END) AS contact_clicks,
+          GROUP_CONCAT(DISTINCT CASE WHEN event_type='contact_click' AND contact_channel <> '' THEN contact_channel END) AS contact_channels,
+          GROUP_CONCAT(DISTINCT CASE WHEN event_type='section_view' AND section_id <> '' THEN section_id END) AS section_ids
+        FROM base
+        GROUP BY site_id, visitor_id
+        HAVING contact_clicks > 0
+      ),
+      latest_contact AS (
+        SELECT
+          site_id,
+          visitor_id,
+          country,
+          city,
+          timezone,
+          ui_lang,
+          browser_lang,
+          ROW_NUMBER() OVER (PARTITION BY site_id, visitor_id ORDER BY created_at DESC, id DESC) AS rn
+        FROM base
+        WHERE event_type='contact_click'
+      ),
+      first_touch AS (
+        SELECT
+          site_id,
+          visitor_id,
+          landing_path,
+          utm_source,
+          ROW_NUMBER() OVER (PARTITION BY site_id, visitor_id ORDER BY created_at ASC, id ASC) AS rn
+        FROM base
+      ),
+      external_touch AS (
+        SELECT
+          site_id,
+          visitor_id,
+          LOWER(REPLACE(referrer_host, 'www.', '')) AS referrer_host,
+          ROW_NUMBER() OVER (PARTITION BY site_id, visitor_id ORDER BY created_at ASC, id ASC) AS rn
+        FROM base
+        WHERE referrer_host IS NOT NULL
+          AND referrer_host <> ''
+          AND LOWER(REPLACE(referrer_host, 'www.', '')) <> 'direct'
+          AND LOWER(REPLACE(referrer_host, 'www.', '')) <> 'nice.okinawa'
+          AND LOWER(REPLACE(referrer_host, 'www.', '')) NOT LIKE '%.nice.okinawa'
+      ),
+      utm_touch AS (
+        SELECT
+          site_id,
+          visitor_id,
+          utm_source,
+          ROW_NUMBER() OVER (PARTITION BY site_id, visitor_id ORDER BY created_at ASC, id ASC) AS rn
+        FROM base
+        WHERE utm_source IS NOT NULL
+          AND utm_source <> ''
+      ),
+      page_paths AS (
+        SELECT
+          site_id,
+          visitor_id,
+          GROUP_CONCAT(path, '||') AS page_paths
+        FROM (
+          SELECT
+            site_id,
+            visitor_id,
+            COALESCE(NULLIF(landing_path, ''), '/') AS path,
+            MIN(created_at) AS first_seen_at
+          FROM base
+          WHERE event_type='pageview'
+          GROUP BY site_id, visitor_id, path
+          ORDER BY site_id, visitor_id, first_seen_at
+        )
+        GROUP BY site_id, visitor_id
+      )
+      SELECT
+        g.site_id,
+        g.visitor_id,
+        g.last_contact_at,
+        g.contact_clicks,
+        COALESCE(g.contact_channels, '') AS contact_channels,
+        COALESCE(g.section_ids, '') AS section_ids,
+        COALESCE(c.country, '') AS country,
+        COALESCE(c.city, '') AS city,
+        COALESCE(c.timezone, '') AS timezone,
+        COALESCE(c.ui_lang, '') AS ui_lang,
+        COALESCE(c.browser_lang, '') AS browser_lang,
+        COALESCE(e.referrer_host, u.utm_source, 'direct') AS source,
+        COALESCE(NULLIF(f.landing_path, ''), '/') AS landing_path,
+        COALESCE(p.page_paths, '') AS page_paths
+      FROM grouped g
+      LEFT JOIN latest_contact c ON c.site_id = g.site_id AND c.visitor_id = g.visitor_id AND c.rn = 1
+      LEFT JOIN first_touch f ON f.site_id = g.site_id AND f.visitor_id = g.visitor_id AND f.rn = 1
+      LEFT JOIN external_touch e ON e.site_id = g.site_id AND e.visitor_id = g.visitor_id AND e.rn = 1
+      LEFT JOIN utm_touch u ON u.site_id = g.site_id AND u.visitor_id = g.visitor_id AND u.rn = 1
+      LEFT JOIN page_paths p ON p.site_id = g.site_id AND p.visitor_id = g.visitor_id
+      ORDER BY g.last_contact_at DESC
+      LIMIT 80
     `, [since])
   ]);
 
@@ -874,6 +965,7 @@ async function visitorDashboard(request, env) {
   return json({
     ok: true,
     days,
+    range: monthRange ? 'month' : `${days}d`,
     generated_at: new Date().toISOString(),
     sample_min_events: VISITOR_SAMPLE_MIN_EVENTS,
     contact_clicks: {
@@ -911,6 +1003,22 @@ async function visitorDashboard(request, env) {
       utm_campaign: row.utm_campaign || '',
       is_bot_like: isBotLikeVisitor(row),
       bot_reasons: botLikeReasons(row)
+    })),
+    contact_visitors: contactVisitors.map((row) => ({
+      site_id: row.site_id || '',
+      visitor_id: row.visitor_id || '',
+      last_contact_at: row.last_contact_at || '',
+      contact_clicks: Number(row.contact_clicks || 0),
+      contact_channels: splitCsv(row.contact_channels),
+      country: row.country || '',
+      city: row.city || '',
+      timezone: row.timezone || '',
+      ui_lang: row.ui_lang || '',
+      browser_lang: row.browser_lang || '',
+      source: row.source || 'direct',
+      landing_path: row.landing_path || '/',
+      page_paths: splitPipe(row.page_paths),
+      section_ids: splitCsv(row.section_ids)
     }))
   }, request);
 }
@@ -923,12 +1031,21 @@ function splitCsv(value) {
     .slice(0, 20);
 }
 
+function splitPipe(value) {
+  return String(value || '')
+    .split('||')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 20);
+}
+
 async function visitorSourceRank(db, since) {
   return all(db, `
     WITH base AS (
       SELECT
         site_id,
         visitor_id,
+        utm_source,
         LOWER(REPLACE(COALESCE(referrer_host, ''), 'www.', '')) AS referrer_host,
         created_at,
         id
@@ -947,15 +1064,31 @@ async function visitorSourceRank(db, since) {
         AND referrer_host <> 'nice.okinawa'
         AND referrer_host NOT LIKE '%.nice.okinawa'
     ),
+    utm_touch AS (
+      SELECT
+        site_id,
+        visitor_id,
+        utm_source,
+        ROW_NUMBER() OVER (PARTITION BY site_id, visitor_id ORDER BY created_at ASC, id ASC) AS rn
+      FROM base
+      WHERE utm_source IS NOT NULL
+        AND utm_source <> ''
+    ),
     visitor_sources AS (
       SELECT
         site_id,
         visitor_id,
-        COALESCE(MAX(CASE WHEN rn = 1 THEN referrer_host END), 'direct') AS value
+        COALESCE(
+          MAX(CASE WHEN source_type = 'referrer' AND rn = 1 THEN value END),
+          MAX(CASE WHEN source_type = 'utm' AND rn = 1 THEN value END),
+          'direct'
+        ) AS value
       FROM (
-        SELECT DISTINCT site_id, visitor_id, NULL AS referrer_host, NULL AS rn FROM base
+        SELECT DISTINCT site_id, visitor_id, NULL AS source_type, NULL AS value, NULL AS rn FROM base
         UNION ALL
-        SELECT site_id, visitor_id, referrer_host, rn FROM external_touch
+        SELECT site_id, visitor_id, 'referrer' AS source_type, referrer_host AS value, rn FROM external_touch
+        UNION ALL
+        SELECT site_id, visitor_id, 'utm' AS source_type, utm_source AS value, rn FROM utm_touch
       )
       GROUP BY site_id, visitor_id
     ),
@@ -1091,20 +1224,6 @@ async function runScheduledTasks(event, env) {
       }
     }
   }
-  if (cron === CONFIG_SNAPSHOT_CRON) {
-    try {
-      await runConfigSnapshot(env, cron, { notify: dashboardAlertsEnabled(env) });
-    } catch (e) {
-      errors.push(`config-snapshot:${e.message}`);
-    }
-  }
-  if (cron === AUDIT_HUMAN_METRICS_CRON) {
-    try {
-      await runAuditHumanMetrics(env, { month: previousJstMonthKey(scheduledAt), reason: cron });
-    } catch (e) {
-      errors.push(`audit-human-metrics:${e.message}`);
-    }
-  }
   try {
     await evaluateDashboardAlerts(env, cron, { notify: dashboardAlertsEnabled(env) });
   } catch (e) {
@@ -1124,6 +1243,11 @@ async function first(db, sql, params = []) {
 function jstDayStartIso(ms = Date.now()) {
   const jst = new Date(ms + 9 * 3600000);
   return new Date(Date.UTC(jst.getUTCFullYear(), jst.getUTCMonth(), jst.getUTCDate(), -9, 0, 0, 0)).toISOString();
+}
+
+function jstMonthStartIso(ms = Date.now()) {
+  const jst = new Date(ms + 9 * 3600000);
+  return new Date(Date.UTC(jst.getUTCFullYear(), jst.getUTCMonth(), 1, -9, 0, 0, 0)).toISOString();
 }
 
 async function summary(request, env) {
@@ -1192,12 +1316,29 @@ async function summary(request, env) {
       WHERE created_at >= ?${filterClause} AND event_type='pageview'
       GROUP BY site_id, ${pathExpr}
     ),
-    source_rank AS (
-      SELECT site_id AS site, ${pathExpr} AS path, COALESCE(NULLIF(referrer_host, ''), 'direct') AS source, COUNT(*) AS views,
-        ROW_NUMBER() OVER (PARTITION BY site_id, ${pathExpr} ORDER BY COUNT(*) DESC) AS rn
+    page_source_events AS (
+      SELECT
+        site_id AS site,
+        ${pathExpr} AS path,
+        CASE
+          WHEN referrer_host IS NOT NULL
+            AND referrer_host <> ''
+            AND LOWER(REPLACE(referrer_host, 'www.', '')) <> 'direct'
+            AND LOWER(REPLACE(referrer_host, 'www.', '')) <> 'nice.okinawa'
+            AND LOWER(REPLACE(referrer_host, 'www.', '')) NOT LIKE '%.nice.okinawa'
+            THEN LOWER(REPLACE(referrer_host, 'www.', ''))
+          WHEN utm_source IS NOT NULL AND utm_source <> ''
+            THEN utm_source
+          ELSE 'direct'
+        END AS source
       FROM visitor_events
       WHERE created_at >= ?${filterClause} AND event_type='pageview'
-      GROUP BY site_id, ${pathExpr}, COALESCE(NULLIF(referrer_host, ''), 'direct')
+    ),
+    source_rank AS (
+      SELECT site, path, source, COUNT(*) AS views,
+        ROW_NUMBER() OVER (PARTITION BY site, path ORDER BY COUNT(*) DESC, source) AS rn
+      FROM page_source_events
+      GROUP BY site, path, source
     ),
     lang_rank AS (
       SELECT site_id AS site, ${pathExpr} AS path, COALESCE(NULLIF(ui_lang, ''), 'unknown') AS lang, COUNT(*) AS views,
@@ -1357,6 +1498,149 @@ async function summary(request, env) {
     recent,
     search_console: searchConsole
   }, request);
+}
+
+export function jstWindow(ms = Date.now()) {
+  const end = new Date(ms);
+  return { start: jstDayStartIso(ms), end };
+}
+
+export function classifyDailyBriefSource(referrer, utmSource = '') {
+  const value = `${String(referrer || '')} ${String(utmSource || '')}`.toLowerCase();
+  if (!value.trim()) return 'Direct';
+  if (/google\./.test(value)) return 'Google';
+  if (/\b(bing|msn)\./.test(value) || /\bbing\b/.test(value)) return 'Bing';
+  if (/chatgpt|openai|perplexity|claude|anthropic|gemini|copilot|you\.com/.test(value)) return 'AI';
+  if (/instagram|facebook|tiktok|youtube|twitter|x\.com|linkedin|line\.me|threads|pinterest/.test(value)) return 'SNS';
+  if (/^https?:\/\/(?:www\.)?nice\.okinawa(?:\/|$)/.test(String(referrer || '').toLowerCase())) return 'Direct';
+  return 'Other';
+}
+
+export function dailyBriefLamp(signals) {
+  const known = (signals || []).filter((signal) => signal !== null && signal !== undefined);
+  if (!known.length) return { color: 'ei', icon: '—', label: '数据暂不可用' };
+  if (known.some((signal) => signal === false || signal === 'red')) return { color: 'red', icon: '🔴', label: '红' };
+  if (known.some((signal) => signal === 'yellow' || signal === 'stale')) return { color: 'yellow', icon: '🟡', label: '黄' };
+  if (known.some((signal) => signal === 'ei')) return { color: 'ei', icon: '—', label: '数据暂不可用' };
+  return { color: 'green', icon: '🟢', label: '绿' };
+}
+
+function dailyBriefUnavailable(source, error = 'data_unavailable') {
+  return { available: false, value: null, status: 'EI', source, latest_available_date: '', error: clean(error, 180) };
+}
+
+async function dailyBriefSource(label, loader) {
+  try {
+    const value = await loader();
+    if (value?.available === false) return value;
+    return { available: true, value, status: 'OK', source: label, latest_available_date: '' };
+  }
+  catch (error) { return dailyBriefUnavailable(label, error.message || String(error)); }
+}
+
+async function loadDailyBriefVisitors(env, window) {
+  const rows = await all(env.DB, `
+    SELECT referrer_host, utm_source, COUNT(*) AS views, COUNT(DISTINCT visitor_id) AS visitors
+    FROM visitor_events
+    WHERE created_at >= ? AND created_at < ? AND event_type = 'pageview'
+    GROUP BY referrer_host, utm_source
+  `, [window.start, window.end.toISOString()]);
+  const bySource = Object.fromEntries(['Google', 'AI', 'Bing', 'SNS', 'Direct', 'Other'].map((key) => [key, { views: 0, visitors: 0, raw_referrers: [] }]));
+  for (const row of rows) {
+    const category = classifyDailyBriefSource(row.referrer_host, row.utm_source);
+    bySource[category].views += Number(row.views || 0);
+    bySource[category].visitors += Number(row.visitors || 0);
+    if (row.referrer_host) bySource[category].raw_referrers.push(row.referrer_host);
+  }
+  const totals = await first(env.DB, `
+    SELECT COUNT(*) AS pageviews, COUNT(DISTINCT visitor_id) AS visitors, COUNT(DISTINCT session_id) AS sessions
+    FROM visitor_events WHERE created_at >= ? AND created_at < ? AND event_type = 'pageview'
+  `, [window.start, window.end.toISOString()]);
+  return { totals: { pageviews: Number(totals?.pageviews || 0), visitors: Number(totals?.visitors || 0), sessions: Number(totals?.sessions || 0) }, by_source: bySource };
+}
+
+async function loadDailyBriefReview(env) {
+  const url = env.REVIEW_TASK_API_URL || '';
+  if (!url) return dailyBriefUnavailable('Review task API', 'missing_REVIEW_TASK_API_URL');
+  const response = await fetch(url, { headers: { accept: 'application/json' } });
+  if (!response.ok) throw new Error(`review_api_http_${response.status}`);
+  const data = await response.json();
+  const rows = Array.isArray(data) ? data : (data.tasks || data.items || []);
+  const groups = {};
+  for (const row of rows) {
+    const group = clean(row.business_group || row.group || row.category || 'Other', 80) || 'Other';
+    groups[group] = (groups[group] || 0) + 1;
+  }
+  return { pending: rows.length, groups, entry: env.REVIEW_TASK_URL || 'https://db.nice.okinawa/review' };
+}
+
+async function loadDailyBriefSeo(env, pathStatus) {
+  let gsc = new Map();
+  try {
+    await ensureSearchTermsTable(env);
+    const rows = await all(env.DB, `SELECT site, MAX(date) AS latest_available_date FROM search_terms WHERE source = 'google' GROUP BY site`);
+    gsc = new Map(rows.map((row) => [row.site, row.latest_available_date]));
+  } catch (_) { /* hard gate: each site remains EI */ }
+  const pathRows = new Map((pathStatus?.states || []).map((row) => [row.check_key, row]));
+  return Object.entries(VISITOR_EVENT_SITES).map(([site, host]) => {
+    const path = pathRows.get(`site-${site}-home`);
+    const pathSignal = path ? (path.status === 'ok') : null;
+    return {
+      site, host, seo: dailyBriefLamp([pathSignal, gsc.has(site) ? true : 'ei']),
+      geo: dailyBriefLamp([pathSignal]),
+      signals: { robots: '—', sitemap: '—', canonical: '—', not_found_404: '—', schema: '—', gsc_latest_available_date: gsc.get(site) || '—' },
+      note: '仅报告可观察信号；未编排名'
+    };
+  });
+}
+
+async function buildDailyBossBrief(env, now = new Date()) {
+  const window = jstWindow(now.getTime());
+  const [visitors, review, paths, backups, alerts, seo] = await Promise.all([
+    dailyBriefSource('visitor_events / attribution', () => loadDailyBriefVisitors(env, window)),
+    dailyBriefSource('Review task API', () => loadDailyBriefReview(env)),
+    dailyBriefSource('customer-paths', () => getPathCheckStatus(env)),
+    dailyBriefSource('backup', () => getBackupStatus(env)),
+    dailyBriefSource('alert_state', async () => all(env.DB, 'SELECT key, status, detail, updated_at FROM alert_state WHERE status = \'red\'')),
+    dailyBriefSource('Search Console sync', async () => loadDailyBriefSeo(env, await getPathCheckStatus(env)))
+  ]);
+  const visitorValue = visitors.available ? visitors.value : null;
+  const redAlerts = alerts.available ? alerts.value : [];
+  const pathStates = paths.available ? paths.value.states : [];
+  const backupItems = backups.available ? backups.value.items : [];
+  const pathFor = (site) => pathStates.find((row) => row.check_key === `site-${site}-home`);
+  const backupFor = (key) => backupItems.find((row) => row.key === key);
+  const businessHealth = [
+    { name: 'BJT', lamp: dailyBriefLamp([pathFor('bjt')?.status === 'ok' ? true : pathFor('bjt') ? false : null, backupFor('bjt')?.ok ?? null]) },
+    { name: 'KISO', lamp: dailyBriefLamp([pathFor('kiso')?.status === 'ok' ? true : pathFor('kiso') ? false : null]) },
+    { name: 'Progress', lamp: dailyBriefLamp([pathFor('progress')?.status === 'ok' ? true : pathFor('progress') ? false : null, backupFor('progress-production')?.ok ?? null]) }
+  ];
+  const systemRed = redAlerts.length + businessHealth.filter((item) => item.lamp.color === 'red').length;
+  const headline = systemRed ? '🔴 有系统红项，先处理阻断项' : (review.value?.pending ? '🟡 有待审核事项，建议今日处理' : '🟢 今日暂无紧急阻断');
+  const reviewCount = review.available ? review.value.pending : null;
+  return { generated_at: now.toISOString(), window: { timezone: 'Asia/Tokyo', start: window.start, end: window.end.toISOString() }, headline, review_count: reviewCount, system_red: systemRed, visitors: visitorValue, review, system: { red_items: redAlerts, business_health: businessHealth }, seo: seo.available ? seo.value : Object.entries(VISITOR_EVENT_SITES).map(([site, host]) => ({ site, host, seo: dailyBriefLamp([]), geo: dailyBriefLamp([]), signals: { robots: '—', sitemap: '—', canonical: '—', not_found_404: '—', schema: '—', gsc_latest_available_date: '—' } })), sns: dailyBriefUnavailable('SNS queue', 'no_existing_sns_queue_source'), top_actions: redAlerts.slice(0, 3).map((item) => item.detail || item.key).concat(review.value?.pending ? ['打开审核台处理待审核项'] : []).slice(0, 3), sources: { visitors, review, customer_paths: paths, backup: backups, alert_state: alerts, search_console: seo } };
+}
+
+export function buildDailyBriefSubject(report, sample = false) {
+  const date = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tokyo', month: '2-digit', day: '2-digit' }).format(new Date(report.generated_at));
+  const review = report.review_count === null ? '—' : report.review_count;
+  const red = report.system_red === null || report.system_red === undefined ? '—' : report.system_red;
+  const visitors = report.visitors?.totals?.visitors ?? '—';
+  return `${sample ? '【SAMPLE｜Nice Okinawa Daily】' : '【Nice Okinawa Daily】'}${date}｜待审核${review}｜系统${red}红｜今日访客${visitors}`;
+}
+
+export function renderDailyBossBrief(report) {
+  const lines = [
+    report.headline, '', `窗口：${report.window.start} → ${report.window.end}（JST）`,
+    `待我处理：${report.review_count ?? '—'}${report.review_count === null ? '（EI / 数据暂不可用）' : ''}`,
+    `系统处理中：${report.system?.business_health?.map((item) => `${item.name}${item.lamp.icon}`).join(' / ') || '—'}`,
+    `系统红项：${report.system_red || 0}`, '', '今日访客', `访客：${report.visitors?.totals?.visitors ?? '—'}｜会话：${report.visitors?.totals?.sessions ?? '—'}｜PV：${report.visitors?.totals?.pageviews ?? '—'}`,
+    '来源占比（底层保留真实 referrer；证据不足归 Direct/Unknown）', ...Object.entries(report.visitors?.by_source || {}).map(([key, value]) => `- ${key}：${value.views || 0}`), '',
+    'Review 摘要（业务分组仅显示数量）', ...(report.review.available ? Object.entries(report.review.value.groups).map(([key, value]) => `- ${key}：${value}`) : ['- —（EI / 数据暂不可用）']), report.review.available ? `审核台：${report.review.value.entry}` : '', '',
+    '营业健康', ...report.system.business_health.map((item) => `- ${item.lamp.icon} ${item.name}`), '', '全站 SEO/GEO', ...report.seo.map((site) => `- ${site.site}（${site.host}）：SEO ${site.seo.icon}｜GEO ${site.geo.icon}｜GSC latest_available_date ${site.signals.gsc_latest_available_date}`), '',
+    'SNS 队列六指标', '- 排队：—｜可发布：—｜已排程：—｜已发布：—｜失败：—｜过期：—（EI / 数据暂不可用）', '', '今日值得做（最多 3 件）', ...(report.top_actions.length ? report.top_actions.map((item) => `- ${item}`) : ['- 暂无']), '', '数据不可用项按 — / EI 展示；单项缺失不阻断日报。', `生成：${report.generated_at}`
+  ];
+  return lines.filter((line, index) => !(line === '' && lines[index - 1] === '')).join('\n');
 }
 
 async function searchConsoleSummary(db, filters) {
@@ -2670,14 +2954,11 @@ async function controlDashboard(request, env) {
     return json({ ok: false, error: 'unauthorized' }, request, 403);
   }
 
-  const [backups, deployments, probes, revenue, configSnapshot, expiries, auditHumanMetrics] = await Promise.all([
+  const [backups, deployments, probes, revenue] = await Promise.all([
     getBackupStatus(env),
     getDeploymentStatus(env),
     getProbeSummary(env),
-    getRevenueSummary(env),
-    getConfigSnapshotStatus(env),
-    getExpiryStatus(),
-    getAuditHumanMetricsStatus(env)
+    getRevenueSummary(env)
   ]);
 
   return json({
@@ -2686,10 +2967,7 @@ async function controlDashboard(request, env) {
     backups,
     deployments,
     probes,
-    revenue,
-    config_snapshot: configSnapshot,
-    expiries,
-    audit_human_metrics: auditHumanMetrics
+    revenue
   }, request);
 }
 
@@ -2710,1111 +2988,6 @@ async function ensureProbeTable(env) {
   `).run();
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_probe_results_checked_at ON probe_results(checked_at)').run();
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_probe_results_target_checked ON probe_results(target, checked_at)').run();
-}
-
-async function ensureConfigSnapshotTable(env) {
-  await env.DB.prepare(`
-    CREATE TABLE IF NOT EXISTS config_snapshot (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      ts TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-      source TEXT NOT NULL,
-      json TEXT NOT NULL,
-      sha256 TEXT NOT NULL
-    )
-  `).run();
-  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_config_snapshot_source_ts ON config_snapshot(source, ts)').run();
-  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_config_snapshot_source_sha ON config_snapshot(source, sha256)').run();
-}
-
-async function getConfigSnapshotStatus(env) {
-  try {
-    await ensureConfigSnapshotTable(env);
-    const latest = await first(env.DB, `
-      SELECT ts, source, sha256, json
-      FROM config_snapshot
-      WHERE source = ?
-      ORDER BY ts DESC, id DESC
-      LIMIT 1
-    `, [CONFIG_SNAPSHOT_SOURCE]);
-    const previous = latest ? await first(env.DB, `
-      SELECT ts, source, sha256
-      FROM config_snapshot
-      WHERE source = ? AND ts < ?
-      ORDER BY ts DESC, id DESC
-      LIMIT 1
-    `, [CONFIG_SNAPSHOT_SOURCE, latest.ts]) : null;
-    const parsed = latest?.json ? JSON.parse(latest.json) : null;
-    return {
-      ok: true,
-      configured: Boolean(latest),
-      source: CONFIG_SNAPSHOT_SOURCE,
-      latest_at: latest?.ts || '',
-      sha256: latest?.sha256 || '',
-      changed: Boolean(previous && previous.sha256 !== latest.sha256),
-      previous_sha256: previous?.sha256 || '',
-      permissions: parsed?.permissions || [],
-      pending_authorization: parsed?.pending_authorization || []
-    };
-  } catch (e) {
-    return {
-      ok: false,
-      configured: false,
-      source: CONFIG_SNAPSHOT_SOURCE,
-      error: clean(e.message || String(e), 200)
-    };
-  }
-}
-
-function validateExpiryConfig(input) {
-  if (input == null) {
-    return { ok: false, error: 'missing expiries config file' };
-  }
-  let rows = input;
-  if (typeof input === 'string') {
-    try {
-      rows = JSON.parse(input);
-    } catch (error) {
-      return { ok: false, error: 'invalid expiries JSON' };
-    }
-  }
-  if (!Array.isArray(rows)) {
-    return { ok: false, error: 'expiries config must be an array' };
-  }
-  const items = [];
-  for (const [index, row] of rows.entries()) {
-    if (!row || typeof row !== 'object' || Array.isArray(row)) {
-      return { ok: false, error: `expiries[${index}] must be an object` };
-    }
-    const item = {
-      name: clean(row.name, 120),
-      kind: clean(row.kind, 40),
-      expires_on: clean(row.expires_on, 20),
-      owner: clean(row.owner, 120),
-      renew_url_or_note: clean(row.renew_url_or_note, 300)
-    };
-    for (const field of ['name', 'kind', 'expires_on', 'owner', 'renew_url_or_note']) {
-      if (!item[field]) return { ok: false, error: `expiries[${index}].${field} missing` };
-    }
-    if (!EXPIRY_KIND_ALLOWLIST.has(item.kind)) {
-      return { ok: false, error: `expiries[${index}].kind invalid` };
-    }
-    if (!validDateOnly(item.expires_on)) {
-      return { ok: false, error: `expiries[${index}].expires_on invalid` };
-    }
-    if (containsSensitiveExpiryNote(item.renew_url_or_note)) {
-      return { ok: false, error: `expiries[${index}].renew_url_or_note sensitive` };
-    }
-    items.push(item);
-  }
-  return { ok: true, items };
-}
-
-function getExpiryStatus(options = {}) {
-  const now = options.now || new Date();
-  const config = Object.hasOwn(options, 'config') ? options.config : expiriesConfig;
-  const validated = validateExpiryConfig(config);
-  const generatedAt = now.toISOString();
-  if (!validated.ok) {
-    return {
-      ok: false,
-      configured: false,
-      status: 'config_error',
-      generated_at: generatedAt,
-      error: validated.error,
-      items: [],
-      nearest: null
-    };
-  }
-  const items = validated.items
-    .map((item) => expiryItemStatus(item, now))
-    .sort((a, b) => a.days_remaining - b.days_remaining || a.name.localeCompare(b.name));
-  const status = items.some((item) => item.status === 'red' || item.status === 'expired')
-    ? 'red'
-    : items.some((item) => item.status === 'yellow')
-      ? 'yellow'
-      : 'green';
-  return {
-    ok: status !== 'red',
-    configured: true,
-    status,
-    generated_at: generatedAt,
-    warning_days: EXPIRY_WARNING_DAYS,
-    red_days: EXPIRY_RED_DAYS,
-    nearest: items[0] || null,
-    items
-  };
-}
-
-function expiryItemStatus(item, now) {
-  const daysRemaining = daysUntilDate(item.expires_on, now);
-  const status = daysRemaining < 0
-    ? 'expired'
-    : daysRemaining <= EXPIRY_RED_DAYS
-      ? 'red'
-      : daysRemaining <= EXPIRY_WARNING_DAYS
-        ? 'yellow'
-        : 'green';
-  return {
-    ...item,
-    days_remaining: daysRemaining,
-    status,
-    ok: status === 'green' || status === 'yellow',
-    latest_at: item.expires_on,
-    detail: item.renew_url_or_note,
-    fingerprint: `expiry:${item.kind}:${item.name}:${item.expires_on}:${status}`
-  };
-}
-
-function validDateOnly(value) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) return false;
-  const [year, month, day] = String(value).split('-').map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
-}
-
-function daysUntilDate(dateKey, now) {
-  const [year, month, day] = dateKey.split('-').map(Number);
-  const target = Date.UTC(year, month - 1, day);
-  const today = jstDateKey(now);
-  const [todayYear, todayMonth, todayDay] = today.split('-').map(Number);
-  const todayUtc = Date.UTC(todayYear, todayMonth - 1, todayDay);
-  return Math.round((target - todayUtc) / 86400000);
-}
-
-function containsSensitiveExpiryNote(value) {
-  return /\b(token|password|passwd|secret|card|cvv|otp|jwt)\s*[:=]/i.test(String(value || ''))
-    || /[?&](token|password|secret|key|otp|jwt)=/i.test(String(value || ''));
-}
-
-async function ensureAuditHumanMetricsTable(env) {
-  await env.DB.prepare("CREATE TABLE IF NOT EXISTS audit_human_metrics (month TEXT NOT NULL, question_id TEXT NOT NULL, value TEXT NOT NULL, source TEXT NOT NULL, computed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), evidence_status TEXT NOT NULL, PRIMARY KEY (month, question_id))").run();
-  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_audit_human_metrics_computed_at ON audit_human_metrics(computed_at)').run();
-}
-
-function validateAuditHumanDataPlan(input = auditHumanDataPlan) {
-  if (!Array.isArray(input)) return { ok: false, error: 'audit human data plan must be an array' };
-  const rows = [];
-  const seen = new Set();
-  for (const [index, row] of input.entries()) {
-    if (!row || typeof row !== 'object' || Array.isArray(row)) return { ok: false, error: 'audit plan[' + index + '] must be an object' };
-    const item = {
-      question_id: clean(row.question_id, 20),
-      module: clean(row.module, 80),
-      question: clean(row.question, 500),
-      monthly_metric: clean(row.monthly_metric, 800),
-      data_source: clean(row.data_source, 800),
-      privacy_boundary: clean(row.privacy_boundary, 800),
-      evidence_status: clean(row.evidence_status, 40),
-      required_read_access: clean(row.required_read_access || '', 800)
-    };
-    for (const field of ['question_id', 'module', 'question', 'monthly_metric', 'data_source', 'privacy_boundary', 'evidence_status']) {
-      if (!item[field]) return { ok: false, error: 'audit plan[' + index + '].' + field + ' missing' };
-    }
-    if (!/^q(?:[1-9]|1[0-2])$/.test(item.question_id)) return { ok: false, error: 'audit plan[' + index + '].question_id invalid' };
-    if (!['OK', 'EI', 'WAN_PENDING'].includes(item.evidence_status)) return { ok: false, error: 'audit plan[' + index + '].evidence_status invalid' };
-    if (seen.has(item.question_id)) return { ok: false, error: 'audit plan[' + index + '].question_id duplicate' };
-    seen.add(item.question_id);
-    rows.push(item);
-  }
-  if (rows.length !== 12) return { ok: false, error: 'audit human data plan must contain 12 questions' };
-  return { ok: true, rows: rows.sort((a, b) => Number(a.question_id.slice(1)) - Number(b.question_id.slice(1))) };
-}
-
-function auditMonthRangeJst(month) {
-  if (!/^\d{4}-\d{2}$/.test(String(month || ''))) throw new Error('invalid_month');
-  const [year, monthNumber] = month.split('-').map(Number);
-  if (monthNumber < 1 || monthNumber > 12) throw new Error('invalid_month');
-  const start = new Date(Date.UTC(year, monthNumber - 1, 1, -9, 0, 0, 0));
-  const end = new Date(Date.UTC(year, monthNumber, 1, -9, 0, 0, 0));
-  return { start: start.toISOString(), end: end.toISOString() };
-}
-
-function previousJstMonthKey(date = new Date()) {
-  const jst = new Date(date.getTime() + 9 * 3600000);
-  const previous = new Date(Date.UTC(jst.getUTCFullYear(), jst.getUTCMonth() - 1, 1));
-  return previous.toISOString().slice(0, 7);
-}
-
-async function collectAuditVisitorAggregates(env, month) {
-  const range = auditMonthRangeJst(month);
-  if (!env.DB) return { ok: false, range, error: 'missing_nice_analytics_D1', trial: null, content: null };
-  try {
-    const trial = await first(env.DB, "/* audit:trial */ SELECT COUNT(DISTINCT visitor_id) AS visitors, COUNT(*) AS pageviews FROM visitor_events WHERE created_at >= ? AND created_at < ? AND site_id IN ('bjt', 'progress', 'kiso') AND event_type = 'pageview' AND (landing_path LIKE '%trial%' OR landing_path LIKE '%free%' OR landing_path LIKE '%study%' OR landing_path LIKE '%mogi%' OR landing_path LIKE '%pro%')", [range.start, range.end]);
-    const content = await first(env.DB, "/* audit:content */ SELECT COUNT(DISTINCT visitor_id) AS visitors, COUNT(*) AS pageviews FROM visitor_events WHERE created_at >= ? AND created_at < ? AND site_id IN ('bjt', 'progress', 'kiso') AND event_type = 'pageview' AND (landing_path LIKE '%guide%' OR landing_path LIKE '%article%' OR landing_path LIKE '%column%' OR landing_path LIKE '%blog%')", [range.start, range.end]);
-    return { ok: true, range, trial: normalizeAuditCountRow(trial), content: normalizeAuditCountRow(content) };
-  } catch (e) {
-    return { ok: false, range, error: clean(e.message || String(e), 200), trial: null, content: null };
-  }
-}
-
-function normalizeAuditCountRow(row) {
-  return { visitors: Number(row?.visitors || 0), pageviews: Number(row?.pageviews || 0) };
-}
-
-function createReadOnlyKv(kv, label = 'KV') {
-  if (!kv) return null;
-  return Object.freeze({
-    get: (...args) => kv.get(...args),
-    list: (...args) => kv.list(...args),
-    put() { throw new Error(label + '_write_forbidden'); },
-    delete() { throw new Error(label + '_write_forbidden'); }
-  });
-}
-
-function createReadOnlyD1(db, label = 'D1') {
-  if (!db) return null;
-  return Object.freeze({
-    prepare(sql) {
-      assertReadOnlySql(sql, label);
-      const statement = db.prepare(sql);
-      return {
-        bind: (...params) => {
-          const bound = statement.bind(...params);
-          return {
-            first: (...args) => bound.first(...args),
-            all: (...args) => bound.all(...args),
-            raw: (...args) => bound.raw(...args),
-            run() { throw new Error(label + '_write_forbidden'); }
-          };
-        },
-        first: (...args) => statement.first(...args),
-        all: (...args) => statement.all(...args),
-        raw: (...args) => statement.raw(...args),
-        run() { throw new Error(label + '_write_forbidden'); }
-      };
-    },
-    exec() { throw new Error(label + '_write_forbidden'); },
-    batch() { throw new Error(label + '_write_forbidden'); }
-  });
-}
-
-function assertReadOnlySql(sql, label = 'D1') {
-  const normalized = String(sql || '')
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/--.*$/gm, ' ')
-    .trim()
-    .toLowerCase();
-  if (!normalized) throw new Error(label + '_empty_sql_forbidden');
-  if (!/^(select|with|pragma)\b/.test(normalized)) throw new Error(label + '_non_select_forbidden');
-  if (/\b(insert|update|delete|drop|alter|create|replace|attach|detach|vacuum|reindex|analyze)\b/.test(normalized)) throw new Error(label + '_write_sql_forbidden');
-}
-
-function auditMonthDayRangeJst(month) {
-  if (!/^\d{4}-\d{2}$/.test(String(month || ''))) throw new Error('invalid_month');
-  const [year, monthNumber] = month.split('-').map(Number);
-  const start = String(year).padStart(4, '0') + '-' + String(monthNumber).padStart(2, '0') + '-01';
-  const endDate = new Date(Date.UTC(year, monthNumber, 1));
-  const end = endDate.toISOString().slice(0, 10);
-  return { start, end };
-}
-
-function previousAuditMonth(month) {
-  const [year, monthNumber] = month.split('-').map(Number);
-  return new Date(Date.UTC(year, monthNumber - 2, 1)).toISOString().slice(0, 7);
-}
-
-function isAuditPaidStatus(status) {
-  return AUDIT_PAID_ORDER_STATUSES.has(String(status || '').trim().toLowerCase());
-}
-
-function normalizeAuditEmail(value) {
-  return String(value || '').trim().toLowerCase();
-}
-
-function auditOrderTimestamp(order) {
-  return order.captured_at || order.created_at || order.updated_at || '';
-}
-
-function auditOrderTimeMs(order) {
-  const ms = Date.parse(auditOrderTimestamp(order));
-  return Number.isFinite(ms) ? ms : 0;
-}
-
-function isAuditTestOrder(order, key = '') {
-  const text = [key, order.source, order.status, order.plan, order.product_type, order.service, order.email]
-    .map((value) => String(value || '').toLowerCase())
-    .join(' ');
-  return /cctest|regtest|internal|demo|probe|synthetic/.test(text);
-}
-
-function auditDedupeKey(order, key = '') {
-  const explicit = clean(order.order_id || '', 80);
-  if (explicit) return 'explicit:' + explicit;
-  const timestamp = auditOrderTimestamp(order);
-  const minute = timestamp ? timestamp.slice(0, 16) : '';
-  return ['fallback', normalizeAuditEmail(order.email), order.currency || '', order.amount || '', minute].join(':');
-}
-
-function auditDedupeRank(order) {
-  const paid = isAuditPaidStatus(order.status) ? 1 : 0;
-  return paid * 1000000000000000 + auditOrderTimeMs(order);
-}
-
-async function listAuditKvJson(kv, prefix) {
-  const rows = [];
-  let cursor;
-  do {
-    const page = await kv.list({ prefix, cursor, limit: 1000 });
-    for (const item of page.keys || []) rows.push(item.name);
-    cursor = page.list_complete ? undefined : page.cursor;
-  } while (cursor);
-  const out = [];
-  for (let i = 0; i < rows.length; i += 20) {
-    const chunk = await Promise.all(rows.slice(i, i + 20).map(async (key) => {
-      const value = await kv.get(key, { type: 'json' }).catch(() => null);
-      return value && typeof value === 'object' && !Array.isArray(value) ? { key, value } : null;
-    }));
-    out.push(...chunk.filter(Boolean));
-  }
-  return out;
-}
-
-function normalizeAuditSource(order) {
-  const ref = String(order.first_ref || order.ref_host || '').trim().toLowerCase();
-  const utm = String(order.first_utm?.utm_source || order.utm_source || '').trim().toLowerCase();
-  const combined = (ref + ' ' + utm).trim();
-  if (!combined) return 'unknown';
-  if (/chatgpt|openai/.test(combined)) return 'chatgpt';
-  if (/google/.test(combined)) return 'google';
-  if (/bing/.test(combined)) return 'bing';
-  if (/xiaohongshu|小红书|xhs/.test(combined)) return 'xiaohongshu';
-  if (/facebook|instagram|reddit|twitter|x\.com/.test(combined)) return 'sns';
-  if (/direct|none|unknown/.test(combined)) return 'direct';
-  return clean(ref || utm || 'other', 80);
-}
-
-function isContentLanding(order) {
-  return /guide|article|column|blog|tips|lesson/.test(String(order.first_landing || '').toLowerCase());
-}
-
-function topEntries(map, limit = 3) {
-  return [...map.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .slice(0, limit)
-    .map(([key, count]) => ({ key, count }));
-}
-
-function sumAmountByCurrency(orders) {
-  const sums = new Map();
-  for (const order of orders) {
-    const currency = clean(order.currency || 'unknown', 10).toUpperCase();
-    const amount = Number(order.amount || 0);
-    if (!Number.isFinite(amount)) continue;
-    sums.set(currency, (sums.get(currency) || 0) + amount);
-  }
-  return Object.fromEntries([...sums.entries()].sort(([a], [b]) => a.localeCompare(b)));
-}
-
-function rate(numerator, denominator) {
-  if (!denominator) return null;
-  return Number((numerator / denominator).toFixed(4));
-}
-
-async function collectAuditBjtOrderAggregates(env, month) {
-  const kv = createReadOnlyKv(env.BJT_KV, 'BJT_KV');
-  const range = auditMonthRangeJst(month);
-  if (!kv) return { ok: false, error: 'missing_BJT_KV_binding' };
-  try {
-    const pairs = await listAuditKvJson(kv, BJT_ORDER_META_PREFIX);
-    const byKey = new Map();
-    for (const { key, value } of pairs) {
-      if (isAuditTestOrder(value, key)) continue;
-      const dedupeKey = auditDedupeKey(value, key);
-      const existing = byKey.get(dedupeKey);
-      if (!existing || auditDedupeRank(value) > auditDedupeRank(existing)) byKey.set(dedupeKey, { ...value });
-    }
-    const orders = [...byKey.values()];
-    const paid = orders.filter((order) => isAuditPaidStatus(order.status));
-    const currentPaid = paid.filter((order) => {
-      const ts = auditOrderTimestamp(order);
-      return ts >= range.start && ts < range.end;
-    });
-    const previousMonth = previousAuditMonth(month);
-    const previousRange = auditMonthRangeJst(previousMonth);
-    const previousPaid = paid.filter((order) => {
-      const ts = auditOrderTimestamp(order);
-      return ts >= previousRange.start && ts < previousRange.end;
-    });
-    const firstPaidByAccount = new Map();
-    for (const order of paid) {
-      const account = normalizeAuditEmail(order.email);
-      if (!account) continue;
-      const ts = auditOrderTimestamp(order);
-      const existing = firstPaidByAccount.get(account);
-      if (!existing || ts < existing) firstPaidByAccount.set(account, ts);
-    }
-    const currentAccounts = new Set(currentPaid.map((order) => normalizeAuditEmail(order.email)).filter(Boolean));
-    const previousAccounts = new Set(previousPaid.map((order) => normalizeAuditEmail(order.email)).filter(Boolean));
-    const newAccounts = new Set([...currentAccounts].filter((account) => {
-      const firstTs = firstPaidByAccount.get(account) || '';
-      return firstTs >= range.start && firstTs < range.end;
-    }));
-    const repeatAccounts = new Set([...currentAccounts].filter((account) => !newAccounts.has(account)));
-    const previousNewAccounts = new Set([...previousAccounts].filter((account) => {
-      const firstTs = firstPaidByAccount.get(account) || '';
-      return firstTs >= previousRange.start && firstTs < previousRange.end;
-    }));
-    const previousRepeatAccounts = new Set([...previousAccounts].filter((account) => !previousNewAccounts.has(account)));
-    const attributed = currentPaid.filter((order) => order.first_ref || order.first_landing || order.first_utm || order.utm_source);
-    const sourceCounts = new Map();
-    const landingCounts = new Map();
-    for (const order of currentPaid) {
-      sourceCounts.set(normalizeAuditSource(order), (sourceCounts.get(normalizeAuditSource(order)) || 0) + 1);
-      const landing = clean(order.first_landing || 'unknown', 160) || 'unknown';
-      landingCounts.set(landing, (landingCounts.get(landing) || 0) + 1);
-    }
-    const contentPaid = currentPaid.filter(isContentLanding);
-    return {
-      ok: true,
-      range,
-      scanned_keys: pairs.length,
-      deduped_records: orders.length,
-      current_paid_count: currentPaid.length,
-      previous_paid_count: previousPaid.length,
-      current_paid_accounts: currentAccounts.size,
-      previous_paid_accounts: previousAccounts.size,
-      current_new_accounts: newAccounts.size,
-      previous_new_accounts: previousNewAccounts.size,
-      current_repeat_accounts: repeatAccounts.size,
-      previous_repeat_accounts: previousRepeatAccounts.size,
-      renewal_rate: rate(repeatAccounts.size, currentAccounts.size),
-      amount_by_currency: sumAmountByCurrency(currentPaid),
-      attributed_count: attributed.length,
-      attribution_rate: rate(attributed.length, currentPaid.length),
-      top_sources: topEntries(sourceCounts, 3),
-      top_landings: topEntries(landingCounts, 5),
-      content_paid_count: contentPaid.length,
-      content_amount_by_currency: sumAmountByCurrency(contentPaid)
-    };
-  } catch (e) {
-    return { ok: false, error: clean(e.message || String(e), 200) };
-  }
-}
-
-async function collectAuditProgressAggregates(env, month) {
-  const db = createReadOnlyD1(env.PROGRESS_D1, 'PROGRESS_D1');
-  if (!db) return { ok: false, error: 'missing_PROGRESS_D1_binding' };
-  const dayRange = auditMonthDayRangeJst(month);
-  try {
-    const active = await first(db, "/* audit:progress_active */ SELECT COUNT(*) AS count FROM (SELECT email FROM daily_activity WHERE ymd >= ? AND ymd < ? AND review_count > 0 GROUP BY email HAVING COUNT(DISTINCT ymd) >= 15)", [dayRange.start, dayRange.end]);
-    const cumulative = await first(db, "/* audit:progress_cumulative */ SELECT COUNT(*) AS count FROM (SELECT email FROM events WHERE event_type = 'answer' AND created_at < ? GROUP BY email HAVING COUNT(*) >= 300)", [auditMonthRangeJst(month).end]);
-    return { ok: true, active_15_day_accounts: Number(active?.count || 0), cumulative_300_answer_accounts: Number(cumulative?.count || 0) };
-  } catch (e) {
-    return { ok: false, error: clean(e.message || String(e), 200) };
-  }
-}
-
-function metricEvidenceStatus(questionId, sources) {
-  if (questionId === 'q9') return 'WAN_PENDING';
-  if (['q1', 'q2', 'q10', 'q11'].includes(questionId)) return sources.orders?.ok ? 'OK' : 'EI';
-  if (['q3', 'q4', 'q12'].includes(questionId)) return sources.orders?.ok && sources.visitors?.ok ? 'OK' : 'EI';
-  if (['q7', 'q8'].includes(questionId)) return sources.progress?.ok ? 'OK' : 'EI';
-  return 'EI';
-}
-
-function metricSource(questionId, status) {
-  if (status === 'WAN_PENDING') return 'WAN_PENDING';
-  if (['q1', 'q2', 'q10', 'q11'].includes(questionId)) return 'BJT_KV';
-  if (['q3', 'q4', 'q12'].includes(questionId)) return 'nice_analytics_D1+BJT_KV';
-  if (['q7', 'q8'].includes(questionId)) return 'PROGRESS_D1';
-  return AUDIT_HUMAN_METRICS_SOURCE;
-}
-
-function missingAuditAccess(questionId, status, item, sources) {
-  if (status === 'OK') return [];
-  if (status === 'WAN_PENDING') return ['Wan monthly manual aggregate'];
-  if (['q1', 'q2', 'q10', 'q11'].includes(questionId) && sources.orders?.error) return [sources.orders.error];
-  if (['q7', 'q8'].includes(questionId) && sources.progress?.error) return [sources.progress.error];
-  if (['q3', 'q4', 'q12'].includes(questionId)) {
-    const missing = [];
-    if (sources.visitors?.error) missing.push(sources.visitors.error);
-    if (sources.orders?.error) missing.push(sources.orders.error);
-    return missing.length ? missing : (item.required_read_access ? [item.required_read_access] : []);
-  }
-  return item.required_read_access ? [item.required_read_access] : [];
-}
-
-function addAuditMetrics(value, questionId, sources) {
-  const orders = sources.orders || {};
-  const visitors = sources.visitors || {};
-  const progress = sources.progress || {};
-  if (questionId === 'q1') {
-    value.metrics = { new_paid_count: orders.current_new_accounts || 0, paid_accounts: orders.current_paid_accounts || 0, paid_records: orders.current_paid_count || 0, amount_by_currency: orders.amount_by_currency || {} };
-  } else if (questionId === 'q2') {
-    value.metrics = { repeat_paid_count: orders.current_repeat_accounts || 0, paid_accounts: orders.current_paid_accounts || 0, renewal_rate: orders.renewal_rate };
-  } else if (questionId === 'q3') {
-    const trialVisitors = visitors.trial?.visitors || 0;
-    value.metrics = { anonymous_trial_or_study_visitors: trialVisitors, anonymous_trial_or_study_pageviews: visitors.trial?.pageviews || 0, new_paid_count: orders.current_new_accounts || 0, aggregate_conversion_rate: rate(orders.current_new_accounts || 0, trialVisitors) };
-    value.notes.push('aggregate conversion only; no personal identity join.');
-  } else if (questionId === 'q4') {
-    value.metrics = { current_new_paid_count: orders.current_new_accounts || 0, previous_new_paid_count: orders.previous_new_accounts || 0, current_repeat_paid_count: orders.current_repeat_accounts || 0, previous_repeat_paid_count: orders.previous_repeat_accounts || 0, current_paid_records: orders.current_paid_count || 0, previous_paid_records: orders.previous_paid_count || 0, current_trial_visitors: visitors.trial?.visitors || 0, current_conversion_rate: rate(orders.current_new_accounts || 0, visitors.trial?.visitors || 0) };
-  } else if (questionId === 'q7') {
-    value.metrics = { active_15_day_count: progress.active_15_day_accounts || 0 };
-  } else if (questionId === 'q8') {
-    value.metrics = { cumulative_300_answer_count: progress.cumulative_300_answer_accounts || 0 };
-  } else if (questionId === 'q9') {
-    value.metrics = { denominator_policy: 'excluded_until_wan_fills' };
-  } else if (questionId === 'q10') {
-    value.metrics = { paid_records: orders.current_paid_count || 0, attributed_records: orders.attributed_count || 0, attribution_rate: orders.attribution_rate };
-  } else if (questionId === 'q11') {
-    value.metrics = { top_sources: orders.top_sources || [] };
-  } else if (questionId === 'q12') {
-    value.metrics = { learning_content_visitors: visitors.content?.visitors || 0, learning_content_pageviews: visitors.content?.pageviews || 0, content_paid_records: orders.content_paid_count || 0, content_amount_by_currency: orders.content_amount_by_currency || {}, top_content_landings: (orders.top_landings || []).filter((item) => /guide|article|column|blog|tips|lesson/.test(item.key)).slice(0, 5) };
-    value.notes.push('landing aggregate only; no personal identity join.');
-  }
-}
-
-function buildAuditHumanMetricRows(planRows, month, computedAt, sources = {}) {
-  const rows = [];
-  for (const item of planRows) {
-    const status = metricEvidenceStatus(item.question_id, sources);
-    const value = {
-      schema_version: 2,
-      month,
-      question_id: item.question_id,
-      module: item.module,
-      question: item.question,
-      monthly_metric: item.monthly_metric,
-      privacy_boundary: item.privacy_boundary,
-      evidence_status: status,
-      metrics: {},
-      missing_read_access: missingAuditAccess(item.question_id, status, item, sources),
-      notes: []
-    };
-    addAuditMetrics(value, item.question_id, sources);
-    if (sources.visitors?.error && ['q3', 'q4', 'q12'].includes(item.question_id)) value.notes.push('analytics aggregate unavailable: ' + sources.visitors.error);
-    rows.push({ month, question_id: item.question_id, value, source: metricSource(item.question_id, status), computed_at: computedAt, evidence_status: status });
-  }
-  return rows;
-}
-
-function assertAuditPayloadPrivacy(payload) {
-  const text = JSON.stringify(payload);
-  const forbidden = [/email/i, /order[_-]?id/i, /\bip\b/i, /visitor_id/i, /customer/i, /paypal_order_meta:/i, /\bname\b/i];
-  for (const pattern of forbidden) if (pattern.test(text)) throw new Error('audit payload contains forbidden personal field: ' + pattern.source);
-}
-
-async function collectAuditHumanMetricSources(env, month) {
-  const [visitors, orders, progress] = await Promise.all([
-    collectAuditVisitorAggregates(env, month),
-    collectAuditBjtOrderAggregates(env, month),
-    collectAuditProgressAggregates(env, month)
-  ]);
-  return { visitors, orders, progress };
-}
-
-async function runAuditHumanMetrics(env, options = {}) {
-  const month = options.month || previousJstMonthKey(options.now || new Date());
-  const computedAt = (options.now || new Date()).toISOString();
-  const validated = validateAuditHumanDataPlan(options.plan || auditHumanDataPlan);
-  if (!validated.ok) throw new Error(validated.error);
-  const sources = Object.hasOwn(options, 'sources') ? options.sources : await collectAuditHumanMetricSources(env, month);
-  const rows = buildAuditHumanMetricRows(validated.rows, month, computedAt, sources);
-  const payload = { schema_version: 2, month, source: AUDIT_HUMAN_METRICS_SOURCE, computed_at: computedAt, evidence_summary: summarizeAuditEvidence(rows), metrics: rows.map((row) => row.value) };
-  assertAuditPayloadPrivacy(payload);
-  await ensureAuditHumanMetricsTable(env);
-  for (const row of rows) {
-    await env.DB.prepare('INSERT INTO audit_human_metrics (month, question_id, value, source, computed_at, evidence_status) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(month, question_id) DO UPDATE SET value = excluded.value, source = excluded.source, computed_at = excluded.computed_at, evidence_status = excluded.evidence_status').bind(row.month, row.question_id, JSON.stringify(row.value), row.source, row.computed_at, row.evidence_status).run();
-  }
-  const artifact = await writeAuditHumanMetricsArtifact(env, month, payload);
-  return { ok: true, month, computed_at: computedAt, rows: rows.length, evidence_summary: payload.evidence_summary, artifact, payload };
-}
-
-function summarizeAuditEvidence(rows) {
-  return rows.reduce((summary, row) => {
-    summary[row.evidence_status] = (summary[row.evidence_status] || 0) + 1;
-    return summary;
-  }, {});
-}
-
-function auditArtifactPrefix(env) {
-  const configured = clean(env.AUDIT_ARTIFACTS_PREFIX || AUDIT_HUMAN_METRICS_ARTIFACT_KEY_PREFIX, 120) || AUDIT_HUMAN_METRICS_ARTIFACT_KEY_PREFIX;
-  return configured.endsWith('/') ? configured : configured + '/';
-}
-
-async function writeAuditHumanMetricsArtifact(env, month, payload) {
-  const key = auditArtifactPrefix(env) + month + '.json';
-  if (!env.AUDIT_ARTIFACTS) return { ok: false, status: 'ARTIFACT_R2_PENDING', key, reason: 'missing_AUDIT_ARTIFACTS_binding' };
-  await env.AUDIT_ARTIFACTS.put(key, JSON.stringify(payload, null, 2), { httpMetadata: { contentType: 'application/json; charset=utf-8' } });
-  return { ok: true, status: 'written', key };
-}
-
-async function getAuditHumanMetricsStatus(env) {
-  try {
-    await ensureAuditHumanMetricsTable(env);
-    const latest = await first(env.DB, 'SELECT month, computed_at, source, evidence_status FROM audit_human_metrics ORDER BY computed_at DESC, month DESC LIMIT 1');
-    if (!latest) return { ok: true, configured: false, source: AUDIT_HUMAN_METRICS_SOURCE, latest_month: '', latest_at: '', evidence_summary: {} };
-    const rows = await all(env.DB, 'SELECT evidence_status, COUNT(*) AS count FROM audit_human_metrics WHERE month = ? GROUP BY evidence_status ORDER BY evidence_status', [latest.month]);
-    return { ok: true, configured: true, source: latest.source || AUDIT_HUMAN_METRICS_SOURCE, latest_month: latest.month, latest_at: latest.computed_at, evidence_summary: Object.fromEntries(rows.map((row) => [row.evidence_status, Number(row.count || 0)])) };
-  } catch (e) {
-    return { ok: false, configured: false, source: AUDIT_HUMAN_METRICS_SOURCE, error: clean(e.message || String(e), 200) };
-  }
-}
-
-async function getAuditHumanMetrics(env, month) {
-  await ensureAuditHumanMetricsTable(env);
-  const rows = await all(env.DB, 'SELECT month, question_id, value, source, computed_at, evidence_status FROM audit_human_metrics WHERE month = ? ORDER BY CAST(substr(question_id, 2) AS INTEGER)', [month]);
-  return rows.map((row) => ({ month: row.month, question_id: row.question_id, value: JSON.parse(row.value), source: row.source, computed_at: row.computed_at, evidence_status: row.evidence_status }));
-}
-
-async function auditHumanMetrics(request, env) {
-  if (!requireDashboard(request, env)) return json({ ok: false, error: 'unauthorized' }, request, 403);
-  const url = new URL(request.url);
-  const month = clean(url.searchParams.get('month') || previousJstMonthKey(new Date()), 20);
-  if (!/^\d{4}-\d{2}$/.test(month)) return json({ ok: false, error: 'invalid_month' }, request, 400);
-  try {
-    const metrics = await getAuditHumanMetrics(env, month);
-    return json({ ok: true, month, count: metrics.length, metrics }, request);
-  } catch (e) {
-    return json({ ok: false, error: clean(e.message || String(e), 300) }, request, 500);
-  }
-}
-
-async function runAuditHumanMetricsEndpoint(request, env) {
-  if (!requireDashboard(request, env)) return json({ ok: false, error: 'unauthorized' }, request, 403);
-  const url = new URL(request.url);
-  const month = clean(url.searchParams.get('month') || previousJstMonthKey(new Date()), 20);
-  if (!/^\d{4}-\d{2}$/.test(month)) return json({ ok: false, error: 'invalid_month' }, request, 400);
-  try {
-    const result = await runAuditHumanMetrics(env, { month, reason: 'manual' });
-    return json(result, request);
-  } catch (e) {
-    return json({ ok: false, error: clean(e.message || String(e), 300) }, request, 500);
-  }
-}
-
-async function runConfigSnapshot(env, reason = 'manual', options = {}) {
-  await ensureConfigSnapshotTable(env);
-  await ensureAlertTable(env);
-  await ensureAlertSendLogTable(env);
-  const raw = options.snapshot || await collectConfigSnapshot(env);
-  const safeSnapshot = normalizeSnapshot(raw);
-  assertNoSecretValues(safeSnapshot);
-  const jsonText = JSON.stringify(safeSnapshot);
-  const sha256 = await sha256Hex(jsonText);
-  const previous = await first(env.DB, `
-    SELECT ts, sha256, json
-    FROM config_snapshot
-    WHERE source = ?
-    ORDER BY ts DESC, id DESC
-    LIMIT 1
-  `, [CONFIG_SNAPSHOT_SOURCE]);
-  const changed = Boolean(previous && previous.sha256 !== sha256);
-  const ts = new Date().toISOString();
-  await env.DB.prepare(`
-    INSERT INTO config_snapshot (ts, source, json, sha256)
-    VALUES (?, ?, ?, ?)
-  `).bind(ts, CONFIG_SNAPSHOT_SOURCE, jsonText, sha256).run();
-
-  let alert = null;
-  let sendLock = null;
-  const diff = changed ? diffSnapshotJson(previous.json, jsonText) : [];
-  const fingerprint = changed ? `config:${sha256}` : '';
-  if (changed && options.notify !== false) {
-    sendLock = await claimAlertSend(env, {
-      key: CONFIG_SNAPSHOT_ALERT_KEY,
-      status: 'red',
-      fingerprint,
-      reason,
-      detail: JSON.stringify({ reason, ts, sha256, previous_sha256: previous.sha256, diff })
-    }, CONFIG_SNAPSHOT_ALERT_WINDOW_MS);
-    if (sendLock.acquired) {
-      alert = await trySendDashboardAlert(env, 'red', [{
-        type: 'config_snapshot',
-        key: CONFIG_SNAPSHOT_SOURCE,
-        label: 'Cloudflare/GitHub 配置快照',
-        status: 'changed',
-        detail: diff.slice(0, 12).join('; ') || 'snapshot changed',
-        latest_at: ts,
-        fingerprint
-      }]);
-      await finishAlertSend(env, sendLock.id, alert);
-    }
-  }
-  return {
-    ok: true,
-    source: CONFIG_SNAPSHOT_SOURCE,
-    ts,
-    sha256,
-    previous_sha256: previous?.sha256 || '',
-    changed,
-    diff,
-    permissions: safeSnapshot.permissions || [],
-    pending_authorization: safeSnapshot.pending_authorization || [],
-    alert,
-    send_lock: sendLock
-  };
-}
-
-async function collectConfigSnapshot(env) {
-  const permissions = [];
-  const pendingAuthorization = [];
-  const [cloudflare, github] = await Promise.all([
-    collectCloudflareConfigSnapshot(env, permissions, pendingAuthorization),
-    collectGithubConfigSnapshot(env, permissions, pendingAuthorization)
-  ]);
-  return {
-    schema_version: 1,
-    generated_at: new Date().toISOString(),
-    cloudflare,
-    github,
-    permissions,
-    pending_authorization: pendingAuthorization
-  };
-}
-
-async function collectCloudflareConfigSnapshot(env, permissions, pendingAuthorization) {
-  const token = env.CLOUDFLARE_CONFIG_READ_TOKEN || env.CLOUDFLARE_API_TOKEN || '';
-  const accountId = env.CLOUDFLARE_ACCOUNT_ID || '';
-  const zoneId = env.CLOUDFLARE_ZONE_ID || '';
-  if (!token || !accountId) {
-    const result = !token ? 'token missing' : 'account missing';
-    for (const target of [...CLOUDFLARE_CONFIG_ENDPOINTS, ...CLOUDFLARE_ZONE_CONFIG_ENDPOINTS]) {
-      recordConfigPermission(permissions, pendingAuthorization, target.key, result, 'Cloudflare Worker secret CLOUDFLARE_CONFIG_READ_TOKEN plus CLOUDFLARE_ACCOUNT_ID', 'Cloudflare Access/Pages/Workers snapshot');
-    }
-    return { configured: false, items: [] };
-  }
-  const items = [];
-  for (const target of CLOUDFLARE_CONFIG_ENDPOINTS) {
-    const path = target.path(accountId);
-    const result = await fetchCloudflareConfig(path, token);
-    recordConfigPermission(permissions, pendingAuthorization, target.key, result.status, 'Cloudflare Account read / Access read / Pages read / Workers read', target.key);
-    if (result.ok) items.push(normalizeCloudflareEndpoint(target.key, result.data));
-  }
-  if (!zoneId) {
-    for (const target of CLOUDFLARE_ZONE_CONFIG_ENDPOINTS) {
-      recordConfigPermission(permissions, pendingAuthorization, target.key, 'zone missing', 'Cloudflare Worker secret CLOUDFLARE_ZONE_ID', 'Worker route snapshot');
-    }
-  } else {
-    for (const target of CLOUDFLARE_ZONE_CONFIG_ENDPOINTS) {
-      const result = await fetchCloudflareConfig(target.path(zoneId), token);
-      recordConfigPermission(permissions, pendingAuthorization, target.key, result.status, 'Cloudflare Zone read', target.key);
-      if (result.ok) items.push(normalizeCloudflareEndpoint(target.key, result.data));
-    }
-  }
-  return { configured: true, items };
-}
-
-async function collectGithubConfigSnapshot(env, permissions, pendingAuthorization) {
-  const token = env.GITHUB_TOKEN || '';
-  if (!token) {
-    for (const repo of githubConfigRepos(env)) {
-      recordConfigPermission(permissions, pendingAuthorization, `github.${repo}`, 'token missing', 'analytics-worker secret GITHUB_TOKEN with read-only repo metadata scope', 'GitHub branch protection / Actions names / Pages source');
-    }
-    return { configured: false, repos: [] };
-  }
-  const repos = [];
-  for (const repo of githubConfigRepos(env)) {
-    const full = repo.includes('/') ? repo : `wanjiaoben/${repo}`;
-    const [branch, secrets, variables, pages] = await Promise.all([
-      fetchGithubConfig(`/repos/${full}/branches/main`, token),
-      fetchGithubConfig(`/repos/${full}/actions/secrets`, token),
-      fetchGithubConfig(`/repos/${full}/actions/variables`, token),
-      fetchGithubConfig(`/repos/${full}/pages`, token)
-    ]);
-    recordConfigPermission(permissions, pendingAuthorization, `github.${full}.branch`, branch.status, 'GitHub repo metadata read', 'branch protection / required checks');
-    recordConfigPermission(permissions, pendingAuthorization, `github.${full}.actions_secrets`, secrets.status, 'GitHub Actions secrets metadata read', 'secret name list');
-    recordConfigPermission(permissions, pendingAuthorization, `github.${full}.actions_variables`, variables.status, 'GitHub Actions variables metadata read', 'variable name list');
-    recordConfigPermission(permissions, pendingAuthorization, `github.${full}.pages`, pages.status, 'GitHub Pages read', 'Pages source/config');
-    repos.push(normalizeGithubRepoSnapshot(full, { branch, secrets, variables, pages }));
-  }
-  return { configured: true, repos };
-}
-
-function githubConfigRepos(env) {
-  return clean(env.CONFIG_SNAPSHOT_GITHUB_REPOS || '', 2000)
-    .split(',')
-    .map((repo) => repo.trim())
-    .filter(Boolean)
-    .concat(clean(env.CONFIG_SNAPSHOT_GITHUB_REPOS || '', 2000) ? [] : [...GITHUB_CONFIG_REPOS])
-    .sort();
-}
-
-async function fetchCloudflareConfig(path, token) {
-  return fetchConfigJson(`https://api.cloudflare.com/client/v4${path}`, {
-    authorization: `Bearer ${token}`,
-    accept: 'application/json'
-  });
-}
-
-async function fetchGithubConfig(path, token) {
-  return fetchConfigJson(`https://api.github.com${path}`, {
-    authorization: `Bearer ${token}`,
-    accept: 'application/vnd.github+json',
-    'user-agent': 'nice-dashboard-config-snapshot'
-  });
-}
-
-async function fetchConfigJson(url, headers) {
-  try {
-    const res = await fetch(url, { headers });
-    if (res.status === 403) return { ok: false, status: '403' };
-    if (res.status === 404) return { ok: false, status: '404' };
-    if (!res.ok) return { ok: false, status: `http_${res.status}` };
-    return { ok: true, status: 'OK', data: await res.json().catch(() => ({})) };
-  } catch (e) {
-    return { ok: false, status: 'unsupported', error: clean(e.message || String(e), 200) };
-  }
-}
-
-function normalizeCloudflareEndpoint(key, data) {
-  const result = Array.isArray(data?.result) ? data.result : (data?.result ? [data.result] : []);
-  return {
-    key,
-    items: result.map((item) => normalizeCloudflareItem(key, item)).sort(compareJsonStable)
-  };
-}
-
-function normalizeCloudflareItem(key, item) {
-  if (key === 'cf.access_apps') {
-    return pickDefined({
-      name: item.name,
-      domain: item.domain,
-      type: item.type,
-      aud_present: Boolean(item.aud),
-      session_duration: item.session_duration,
-      policies: Array.isArray(item.policies) ? item.policies.map((policy) => normalizeAccessPolicy(policy)).sort(compareJsonStable) : []
-    });
-  }
-  if (key === 'cf.access_service_tokens') {
-    return pickDefined({
-      name: item.name,
-      duration: item.duration,
-      expires_at: item.expires_at
-    });
-  }
-  if (key === 'cf.pages_projects') {
-    return pickDefined({
-      name: item.name,
-      domains: sortedStrings(item.domains || []),
-      production_branch: item.production_branch,
-      build_config: normalizePagesBuildConfig(item.build_config || {}),
-      deployment_configs: normalizePagesDeploymentConfigs(item.deployment_configs || {})
-    });
-  }
-  if (key === 'cf.workers_scripts') {
-    return pickDefined({
-      id: item.id,
-      script_name: item.script_name || item.id,
-      modified_on: item.modified_on,
-      created_on: item.created_on,
-      usage_model: item.usage_model,
-      compatibility_date: item.compatibility_date,
-      cron_triggers: sortedStrings(item.schedules || item.cron_triggers || [])
-    });
-  }
-  if (key.endsWith('.secrets')) {
-    return pickDefined({
-      secret_names: secretNameList(Array.isArray(item) ? item.map((entry) => entry.name) : [item.name].filter(Boolean))
-    });
-  }
-  if (key.endsWith('.schedules')) {
-    return pickDefined({
-      cron: item.cron || item.schedule || item.pattern,
-      created_on: item.created_on,
-      modified_on: item.modified_on
-    });
-  }
-  if (key === 'cf.workers_routes') {
-    return pickDefined({
-      pattern: item.pattern,
-      script: item.script,
-      zone_name: item.zone_name
-    });
-  }
-  return pickDefined({
-    id_present: Boolean(item.id),
-    name: item.name,
-    type: item.type
-  });
-}
-
-function normalizeAccessPolicy(policy) {
-  return pickDefined({
-    name: policy.name,
-    decision: policy.decision,
-    include_types: accessRuleTypes(policy.include),
-    exclude_types: accessRuleTypes(policy.exclude),
-    require_types: accessRuleTypes(policy.require)
-  });
-}
-
-function accessRuleTypes(rules) {
-  return sortedStrings((Array.isArray(rules) ? rules : []).map((rule) => Object.keys(rule || {}).sort().join('+')).filter(Boolean));
-}
-
-function normalizePagesBuildConfig(config) {
-  return pickDefined({
-    build_command: config.build_command,
-    destination_dir: config.destination_dir,
-    root_dir: config.root_dir,
-    web_analytics_tag: config.web_analytics_tag ? 'present' : ''
-  });
-}
-
-function normalizePagesDeploymentConfigs(configs) {
-  const out = {};
-  for (const name of ['production', 'preview']) {
-    const cfg = configs[name] || {};
-    out[name] = pickDefined({
-      env_var_names: envVarNames(cfg.env_vars),
-      secrets_names: secretNameList(cfg.secrets || cfg.secret_text || {}),
-      compatibility_date: cfg.compatibility_date,
-      compatibility_flags: sortedStrings(cfg.compatibility_flags || [])
-    });
-  }
-  return out;
-}
-
-function normalizeGithubRepoSnapshot(full, results) {
-  const branch = results.branch.ok ? results.branch.data : null;
-  const secrets = results.secrets.ok ? results.secrets.data : null;
-  const variables = results.variables.ok ? results.variables.data : null;
-  const pages = results.pages.ok ? results.pages.data : null;
-  return pickDefined({
-    repo: full,
-    branch_protected: Boolean(branch?.protected),
-    required_checks: sortedStrings(branch?.protection?.required_status_checks?.contexts || []),
-    actions_secret_names: secretNameList((secrets?.secrets || []).map((secret) => secret.name)),
-    actions_variable_names: variableNameList((variables?.variables || []).map((variable) => variable.name)),
-    pages: pages ? pickDefined({
-      status: pages.status,
-      source_branch: pages.source?.branch,
-      source_path: pages.source?.path,
-      cname: pages.cname || ''
-    }) : null
-  });
-}
-
-function envVarNames(vars) {
-  if (!vars) return [];
-  if (Array.isArray(vars)) return variableNameList(vars.map((item) => item.name || item.key || item));
-  return variableNameList(Object.keys(vars));
-}
-
-function secretNameList(input) {
-  const names = Array.isArray(input) ? input : Object.keys(input || {});
-  return names.map((name) => sanitizeSecretName(name)).sort(compareJsonStable);
-}
-
-function variableNameList(input) {
-  const names = Array.isArray(input) ? input : Object.keys(input || {});
-  return names.map((name) => sanitizeSecretName(name)).sort(compareJsonStable);
-}
-
-function sanitizeSecretName(name) {
-  const value = clean(name, 300);
-  if (secretNameLooksSensitive(value)) {
-    return { category: secretNameCategory(value), name_hash: stableSyncHash(value) };
-  }
-  return { name: value };
-}
-
-function secretNameLooksSensitive(name) {
-  return /@|CUSTOMER|BUYER|PAYER|CLIENT_EMAIL|ORDER_ID|PERSONAL|PRIVATE_PERSON/i.test(name);
-}
-
-function secretNameCategory(name) {
-  if (/@|EMAIL/i.test(name)) return 'email-related';
-  if (/CUSTOMER|BUYER|PAYER/i.test(name)) return 'customer-related';
-  if (/ORDER/i.test(name)) return 'order-related';
-  return 'sensitive-name';
-}
-
-function stableSyncHash(value) {
-  let hash = 2166136261;
-  for (const char of String(value)) {
-    hash ^= char.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, '0');
-}
-
-function recordConfigPermission(permissions, pendingAuthorization, target, result, needs, impact) {
-  const row = { target, result };
-  permissions.push(row);
-  if (result !== 'OK') {
-    pendingAuthorization.push({
-      target,
-      result,
-      needs,
-      impact
-    });
-  }
-}
-
-function normalizeSnapshot(value) {
-  if (Array.isArray(value)) return value.map((item) => normalizeSnapshot(item)).sort(compareJsonStable);
-  if (!value || typeof value !== 'object') return redactConfigScalar(value);
-  const out = {};
-  for (const key of Object.keys(value).sort()) {
-    if (secretValueKey(key)) {
-      out[key] = value[key] === undefined || value[key] === null || value[key] === '' ? '' : 'present';
-    } else {
-      out[key] = normalizeSnapshot(value[key]);
-    }
-  }
-  return out;
-}
-
-function redactConfigScalar(value) {
-  if (typeof value !== 'string') return value;
-  if (/^[A-Za-z0-9_\-=]{24,}$/.test(value) && !/^https?:\/\//.test(value)) return 'present';
-  return clean(value, 1000);
-}
-
-function secretValueKey(key) {
-  const lower = String(key || '').toLowerCase();
-  if (lower === 'key') return false;
-  return lower === 'value'
-    || /(^|_)(secret|token|password|private_key|client_secret|api_key)$/.test(lower)
-    || /_key$/.test(lower);
-}
-
-function assertNoSecretValues(snapshot) {
-  const text = JSON.stringify(snapshot);
-  if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(text)) throw new Error('config snapshot would store a private key');
-  if (/Bearer\s+[A-Za-z0-9._-]+/i.test(text)) throw new Error('config snapshot would store a bearer token');
-}
-
-async function sha256Hex(text) {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-function diffSnapshotJson(previousJson, nextJson) {
-  const previous = JSON.parse(previousJson || '{}');
-  const next = JSON.parse(nextJson || '{}');
-  const diffs = [];
-  collectDiffs('', previous, next, diffs);
-  return diffs.slice(0, 50);
-}
-
-function collectDiffs(path, a, b, out) {
-  if (JSON.stringify(a) === JSON.stringify(b)) return;
-  if (!a || !b || typeof a !== 'object' || typeof b !== 'object' || Array.isArray(a) || Array.isArray(b)) {
-    out.push(`${path || '$'} changed`);
-    return;
-  }
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
-  for (const key of [...keys].sort()) collectDiffs(path ? `${path}.${key}` : key, a[key], b[key], out);
-}
-
-function compareJsonStable(a, b) {
-  return JSON.stringify(a).localeCompare(JSON.stringify(b));
-}
-
-function sortedStrings(values) {
-  return [...(values || [])].map((value) => clean(value, 500)).filter(Boolean).sort();
-}
-
-function pickDefined(input) {
-  const out = {};
-  for (const [key, value] of Object.entries(input)) {
-    if (value === undefined || value === null) continue;
-    out[key] = value;
-  }
-  return out;
 }
 
 async function runProbes(env, reason = 'cron') {
@@ -3938,37 +3111,15 @@ async function getProbeSummary(env) {
   };
 }
 
-export async function getBackupStatus(env, now = new Date()) {
-  const previewProgressBucket = env.PROGRESS_BACKUP_PREVIEW;
-  const previewProgressSqlBucket = env.PROGRESS_DB_BACKUP_PREVIEW;
-  const [bjt, progressProduction, progressPreview, progressProductionSql, progressPreviewSql, niceAnalyticsProduction, bjtHistory, progressHistory, previewHistory, niceAnalyticsIndex] = await Promise.all([
+async function getBackupStatus(env) {
+  const now = new Date();
+  const [bjt, progressProduction, progressPreview, niceAnalyticsProduction, bjtHistory, progressHistory, niceAnalyticsIndex] = await Promise.all([
     readR2Json(env.BJT_BACKUPS, 'kv-snapshots/latest/manifest.json'),
     readR2JsonFallback(env.PROGRESS_BACKUP, ['d1/latest/manifest.json', 'd1/progress/production/latest.json']),
-    previewProgressBucket
-      ? readR2Json(previewProgressBucket, 'd1/progress/preview/latest.json')
-      : Promise.resolve({
-        ok: false,
-        status: 'MONITOR_BINDING_MISSING',
-        key: 'd1/progress/preview/latest.json',
-        error: 'MONITOR_BINDING_MISSING',
-        detail: 'missing PROGRESS_BACKUP_PREVIEW binding'
-      }),
-    readR2Json(env.PROGRESS_DB_BACKUP, 'd1/progress/production/latest.json'),
-    previewProgressSqlBucket
-      ? readR2Json(previewProgressSqlBucket, 'd1/progress/preview/latest.json')
-      : Promise.resolve({
-        ok: false,
-        status: 'MONITOR_BINDING_MISSING',
-        key: 'd1/progress/preview/latest.json',
-        error: 'MONITOR_BINDING_MISSING',
-        detail: 'missing PROGRESS_DB_BACKUP_PREVIEW binding'
-      }),
+    readR2Json(env.PROGRESS_BACKUP, 'd1/progress/preview/latest.json'),
     readR2Json(env.PROGRESS_BACKUP, 'd1/nice_analytics/production/latest.json'),
     readDailyBackupHistory(env.BJT_BACKUPS, 'kv-snapshots', now),
     readDailyBackupHistory(env.PROGRESS_BACKUP, 'd1/daily', now),
-    previewProgressBucket
-      ? readProgressBackupHistory(previewProgressBucket, 'preview', 'progress-otp-preview', now)
-      : Promise.resolve(null),
     readR2Json(env.PROGRESS_BACKUP, 'd1/nice_analytics/production/index.json')
   ]);
   const niceAnalyticsHistory = backupHistoryFromIndex(niceAnalyticsIndex, now);
@@ -3976,28 +3127,14 @@ export async function getBackupStatus(env, now = new Date()) {
     maxAgeHours: BJT_BACKUP_MAX_AGE_HOURS
   }), bjtHistory);
   const progressItem = attachBackupHistory(progressBackupItem('progress-production', 'Progress production D1 export', progressProduction, 'production', 'progress', now), progressHistory);
-  const progressProductionSqlItem = d1BackupItem('progress-production-sql', 'Progress production SQL export', progressProductionSql, 'production', 'progress', 'd1/progress/production/', now, { expectedKind: 'progress-d1-sql-backup-manifest' });
-  const previewBase = progressBackupItem('progress-preview', 'Progress preview JSON export', progressPreview, 'preview', 'progress-otp-preview', now, { warningAgeHours: 36, criticalAgeHours: 48 });
-  const previewItem = !previewProgressBucket
-    ? previewUnavailableItem(previewBase, 'MONITOR_BINDING_MISSING', 'missing PROGRESS_BACKUP_PREVIEW binding')
-    : previewHistory?.history_unavailable
-      ? previewUnavailableItem(previewBase, 'MONITOR_HISTORY_UNAVAILABLE', previewHistory.history_error || 'preview backup history unavailable')
-      : attachBackupHistory(previewBase, previewHistory, now);
-  const previewSqlBase = d1BackupItem('progress-preview-sql', 'Progress preview SQL export', progressPreviewSql, 'preview', 'progress-otp-preview', 'd1/progress/preview/', now, {
-    expectedKind: 'progress-d1-sql-backup-manifest', warningAgeHours: 36, criticalAgeHours: 48
-  });
-  const previewSqlItem = !previewProgressSqlBucket
-    ? previewUnavailableItem(previewSqlBase, 'MONITOR_BINDING_MISSING', 'missing PROGRESS_DB_BACKUP_PREVIEW binding')
-    : previewSqlBase;
+  const previewItem = progressBackupItem('progress-preview', 'Progress preview D1 export', progressPreview, 'preview', 'progress-otp-preview', now);
   const niceItem = attachBackupHistory(d1BackupItem('nice-analytics-production', 'nice_analytics production D1 export', niceAnalyticsProduction, 'production', 'nice_analytics', 'd1/nice_analytics/production/', now), niceAnalyticsHistory);
   return {
     generated_at: now.toISOString(),
     items: [
       bjtItem,
       progressItem,
-      progressProductionSqlItem,
       previewItem,
-      previewSqlItem,
       niceItem
     ]
   };
@@ -4027,70 +3164,6 @@ async function readDailyBackupHistory(bucket, prefix, now, days = 7) {
     });
   }
   return entries;
-}
-
-export async function readProgressBackupHistory(bucket, expectedEnvironment, expectedDatabase, now, days = 7) {
-  const today = jstDateKey(now);
-  if (!bucket || !today) return unknownBackupHistory(today, days, 'preview backup history unavailable');
-  let listed;
-  try {
-    listed = await bucket.list({ prefix: `d1/progress/${expectedEnvironment}/`, limit: 1000 });
-  } catch (error) {
-    const rows = unknownBackupHistory(today, days, clean(error?.message || 'preview backup history list failed', 300));
-    rows.history_unavailable = true;
-    rows.history_error = rows[0]?.error || 'preview backup history list failed';
-    return rows;
-  }
-  const candidates = (listed.objects || [])
-    .filter((object) => new RegExp(`^d1/progress/${expectedEnvironment}/\\d{4}-\\d{2}-\\d{2}T[^/]+\\.json$`).test(String(object.key || '')))
-    .sort((a, b) => String(b.key).localeCompare(String(a.key)));
-  const byDate = new Map();
-  for (const object of candidates) {
-    const timestamp = timestampFromProgressBackupKey(object.key);
-    const date = jstDateKey(timestamp);
-    if (!date || byDate.has(date)) continue;
-    byDate.set(date, object);
-  }
-  const rows = [];
-  for (let offset = 0; offset < days; offset += 1) {
-    const date = shiftDateKey(today, -offset);
-    const object = byDate.get(date);
-    if (!object) {
-      rows.push({ date, ok: false, status: 'missing', latest_at: '', error: 'no successful manifest for date' });
-      continue;
-    }
-    const result = await readR2Json(bucket, object.key);
-    const data = result.data || {};
-    const valid = result.ok
-      && data.kind === 'progress-d1-backup'
-      && data.environment === expectedEnvironment
-      && data.database === expectedDatabase
-      && String(data.object_key || '').startsWith(`d1/progress/${expectedEnvironment}/`);
-    rows.push({
-      date,
-      ok: valid,
-      status: valid ? 'complete' : (result.ok ? 'invalid' : result.status),
-      latest_at: firstDateValue(data, ['generated_at', 'generatedAt', 'created_at', 'date']) || result.updated_at || '',
-      error: valid ? '' : (result.error || 'preview manifest validation failed')
-    });
-  }
-  return rows;
-}
-
-function timestampFromProgressBackupKey(key) {
-  const match = /^d1\/progress\/preview\/(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z\.json$/.exec(String(key || ''));
-  if (!match) return '';
-  const value = `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}.${match[7]}Z`;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return '';
-  if (parsed.getUTCFullYear() !== Number(match[1])
-    || parsed.getUTCMonth() + 1 !== Number(match[2])
-    || parsed.getUTCDate() !== Number(match[3])
-    || parsed.getUTCHours() !== Number(match[4])
-    || parsed.getUTCMinutes() !== Number(match[5])
-    || parsed.getUTCSeconds() !== Number(match[6])
-    || parsed.getUTCMilliseconds() !== Number(match[7])) return '';
-  return parsed.toISOString();
 }
 
 export function backupHistoryFromIndex(result, now, days = 7) {
@@ -4255,11 +3328,11 @@ export function backupItem(key, label, result, dateFields, now = new Date(), opt
   };
 }
 
-export function progressBackupItem(key, label, result, expectedEnvironment, expectedDatabase, now = new Date(), options = {}) {
+export function progressBackupItem(key, label, result, expectedEnvironment, expectedDatabase, now = new Date()) {
   if (result?.ok && result.data?.kind === 'progress-d1-r2-daily-backup') {
     return dailyD1BackupItem(key, label, result, now);
   }
-  return d1BackupItem(key, label, result, expectedEnvironment, expectedDatabase, `d1/progress/${expectedEnvironment}/`, now, options);
+  return d1BackupItem(key, label, result, expectedEnvironment, expectedDatabase, `d1/progress/${expectedEnvironment}/`, now);
 }
 
 export function dailyD1BackupItem(key, label, result, now = new Date()) {
@@ -4286,12 +3359,10 @@ export function dailyD1BackupItem(key, label, result, now = new Date()) {
   };
 }
 
-export function d1BackupItem(key, label, result, expectedEnvironment, expectedDatabase, expectedPrefix, now = new Date(), options = {}) {
+export function d1BackupItem(key, label, result, expectedEnvironment, expectedDatabase, expectedPrefix, now = new Date()) {
   const data = result.data || {};
   const dateValue = firstDateValue(data, ['generated_at', 'generatedAt', 'created_at', 'date']) || result.updated_at || '';
-  const warningAgeHours = Number(options.warningAgeHours || 0) || null;
-  const maxAgeHours = Number(options.criticalAgeHours || DAILY_BACKUP_MAX_AGE_HOURS);
-  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now, maxAgeHours);
+  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now, DAILY_BACKUP_MAX_AGE_HOURS);
   let validationError = '';
   if (result.ok && data.environment !== expectedEnvironment) {
     validationError = `manifest environment mismatch: expected ${expectedEnvironment}, got ${data.environment || '<missing>'}`;
@@ -4299,13 +3370,9 @@ export function d1BackupItem(key, label, result, expectedEnvironment, expectedDa
     validationError = `manifest database mismatch: expected ${expectedDatabase}, got ${data.database || '<missing>'}`;
   } else if (result.ok && !String(data.object_key || '').startsWith(expectedPrefix)) {
     validationError = `manifest object key crosses environment boundary: ${data.object_key || '<missing>'}`;
-  } else if (result.ok && options.expectedKind && data.kind !== options.expectedKind) {
-    validationError = `manifest kind mismatch: expected ${options.expectedKind}, got ${data.kind || '<missing>'}`;
   }
   const fresh = result.ok && ageFresh;
   const ok = fresh && !validationError;
-  const ageHours = Number.isFinite(ageMs) ? ageMs / 3600000 : null;
-  const warning = Boolean(result.ok && !validationError && warningAgeHours && Number.isFinite(ageHours) && ageHours > warningAgeHours && ageHours <= maxAgeHours);
   return {
     key,
     label,
@@ -4313,37 +3380,13 @@ export function d1BackupItem(key, label, result, expectedEnvironment, expectedDa
     database: expectedDatabase,
     object_key: result.key,
     backup_object_key: data.object_key || '',
-    status: ok ? (warning ? 'warning' : 'ok') : (validationError ? 'environment_mismatch' : (result.ok ? 'stale' : result.status)),
+    status: ok ? 'ok' : (validationError ? 'environment_mismatch' : (result.ok ? 'stale' : result.status)),
     ok,
     latest_at: dateValue,
-    max_age_hours: maxAgeHours,
-    ...(warningAgeHours ? {
-      warning_age_hours: warningAgeHours,
-      critical_age_hours: maxAgeHours,
-      freshness_level: warning ? 'warning' : (ok ? 'ok' : 'critical')
-    } : {}),
+    max_age_hours: DAILY_BACKUP_MAX_AGE_HOURS,
     age_hours: Number.isFinite(ageMs) ? Math.round(ageMs / 36000) / 100 : null,
-    error: result.error || validationError || (!fresh && result.ok ? `latest manifest is older than ${maxAgeHours}h: ${dateValue || '<missing>'}` : ''),
+    error: result.error || validationError || (!fresh && result.ok ? `latest manifest is older than 27h: ${dateValue || '<missing>'}` : ''),
     source: 'R2'
-  };
-}
-
-function previewUnavailableItem(item, code, detail) {
-  const message = `${code}: ${detail}`;
-  return {
-    ...item,
-    ok: false,
-    status: code,
-    error: message,
-    detail,
-    history_7d: null,
-    success_days_7d: null,
-    success_rate_7d: null,
-    history_skipped: null,
-    last_success_at: '',
-    consecutive_failures: null,
-    failure_date: '',
-    failure_stage: 'monitor'
   };
 }
 
@@ -4657,13 +3700,12 @@ async function ensureAlertSelfCheckTable(env) {
 async function evaluateDashboardAlerts(env, reason = 'cron', options = {}) {
   await ensureAlertTable(env);
   await ensureAlertSendLogTable(env);
-  const [backups, deployments, probes, expiries] = options.statuses || await Promise.all([
+  const [backups, deployments, probes] = await Promise.all([
     getBackupStatus(env),
     getDeploymentStatus(env),
-    getProbeSummary(env),
-    getExpiryStatus()
+    getProbeSummary(env)
   ]);
-  const redItems = collectAlertItems(backups, deployments, probes, expiries);
+  const redItems = collectAlertItems(backups, deployments, probes);
   const status = redItems.length ? 'red' : 'green';
   const fingerprint = redItems.map((item) => item.fingerprint || `${item.type}:${item.key}`).sort().join('|');
   const key = 'dashboard-control';
@@ -4780,7 +3822,7 @@ async function sendMonthlyAlertChannelSelfCheck(env, scheduledAt, reason = MONTH
   return { sent: false, recorded: true, month_key: monthKey, to: recipient };
 }
 
-export function collectAlertItems(backups, deployments, probes, expiries) {
+export function collectAlertItems(backups, deployments, probes) {
   const items = [];
   for (const item of backups?.items || []) {
     if (!item.ok && !item.manual) {
@@ -4823,30 +3865,6 @@ export function collectAlertItems(backups, deployments, probes, expiries) {
         status: item.latest?.status || 'missing',
         detail: item.latest?.error || item.url || '',
         latest_at: item.latest?.checked_at || ''
-      });
-    }
-  }
-  if (expiries?.status === 'config_error') {
-    items.push({
-      type: 'expiry',
-      key: 'config',
-      label: 'Expiry watch config',
-      status: 'config_error',
-      detail: expiries.error || 'expiry config error',
-      latest_at: expiries.generated_at || '',
-      fingerprint: `expiry:config:${expiries.error || 'unknown'}`
-    });
-  }
-  for (const item of expiries?.items || []) {
-    if (item.status === 'red' || item.status === 'expired') {
-      items.push({
-        type: 'expiry',
-        key: item.name,
-        label: item.name,
-        status: item.status,
-        detail: `${item.kind} expires_on=${item.expires_on}; owner=${item.owner}; ${item.renew_url_or_note}`,
-        latest_at: item.expires_on,
-        fingerprint: item.fingerprint || `expiry:${item.kind}:${item.name}:${item.expires_on}:${item.status}`
       });
     }
   }
@@ -4962,15 +3980,12 @@ async function sendDashboardAlert(env, status, redItems) {
 export function buildAlertEmailPreview(env, status, redItems) {
   const prefix = env.ALERT_SUBJECT_PREFIX || '';
   const backupItem = redItems.find((item) => item.type === 'backup');
-  const expiryItem = redItems.find((item) => item.type === 'expiry');
   const subject = status === 'red' && backupItem?.alert_kind === 'silent'
     ? `${prefix}[P0] Backup silent: ${backupItem.key} ${backupItem.failure_date} (no artifact by JST 12:00)`
     : status === 'red' && backupItem?.alert_kind === 'escalation'
       ? `${prefix}[P0] Backup failure: ${backupItem.key} ${backupItem.failure_date} ${backupItem.failure_stage || 'backup'} (day ${backupItem.consecutive_failures})`
       : status === 'red' && backupItem
         ? `${prefix}Backup failure: ${backupItem.key} ${backupItem.failure_date} ${backupItem.failure_stage || 'backup'}`
-        : status === 'red' && expiryItem
-          ? `${prefix}[Nice Dashboard] Expiry alert: ${expiryItem.key}`
         : status === 'red'
     ? `${prefix}[Nice Dashboard] ALERT: ${redItems.length} red item(s)`
     : `${prefix}[Nice Dashboard] RECOVERY: all monitored items green`;
@@ -4993,7 +4008,7 @@ export function buildAlertEmailPreview(env, status, redItems) {
       `Time: ${new Date().toISOString()}`
     ].join('\n')
     : [
-      'Nice dashboard recovery: backups, deployments, probes, and expiries are all green.',
+      'Nice dashboard recovery: backups, deployments, and probes are all green.',
       '',
       `Time: ${new Date().toISOString()}`
     ].join('\n');
@@ -5065,32 +4080,14 @@ export {
   BEACON_SCRIPT,
   PATH_CHECK_BASELINES,
   bingDateOnly,
-  collectConfigSnapshot,
   configuredSearchConsoleSites,
   configuredBingSites,
   checkPathContract,
-  diffSnapshotJson,
-  evaluateDashboardAlerts,
-  auditMonthRangeJst,
-  assertReadOnlySql,
-  buildAuditHumanMetricRows,
-  collectAuditBjtOrderAggregates,
-  collectAuditProgressAggregates,
-  createReadOnlyD1,
-  createReadOnlyKv,
-  getAuditHumanMetricsStatus,
-  getExpiryStatus,
   isFastPathCheckFailure,
-  normalizeSnapshot,
   normalizeBingQueryRow,
   normalizeSearchTermSource,
   parsePage,
-  runAuditHumanMetrics,
-  runConfigSnapshot,
-  sanitizeSecretName,
-  sha256Hex,
+  buildDailyBossBrief,
   shouldSendPathCheckAlert,
-  stableFingerprint,
-  validateAuditHumanDataPlan,
-  validateExpiryConfig
+  stableFingerprint
 };
