@@ -10,6 +10,7 @@ const PATH_CHECK_PREVIEW_TEST_EMAIL_CRON = '12 29 7 29 *';
 const GSC_DAILY_SYNC_CRON = '0 0 * * *';
 const CONFIG_SNAPSHOT_CRON = '7 0 * * *';
 const AUDIT_HUMAN_METRICS_CRON = '0 0 1 * *';
+const DAILY_BOSS_BRIEF_CRON = '0 11 * * *';
 const GSC_DEFAULT_SYNC_DAYS = 28;
 const GSC_REPORT_WINDOW_DAYS = 7;
 const BING_SYNC_DAYS = 7;
@@ -19,6 +20,7 @@ const VISITOR_EVENT_PATH = '/events';
 const VISITOR_DASHBOARD_PATH = '/visitors';
 const DAILY_BRIEF_SAMPLE_PATH = '/daily-brief/sample';
 const DAILY_BRIEF_RECIPIENT = 'aboutokinawa@gmail.com';
+const DAILY_BRIEF_SENT_PREFIX = 'daily_brief_sent:';
 const VISITOR_EVENT_RATE_LIMIT_PER_MINUTE = 30;
 const VISITOR_SAMPLE_MIN_EVENTS = 20;
 const VISITOR_DASHBOARD_DAY_OPTIONS = new Set([1, 7, 30, 180]);
@@ -199,10 +201,9 @@ export default {
         if (request.method === 'GET' || url.searchParams.get('dry_run') === '1') {
           return json({ ok: true, sent: false, ...report }, request);
         }
-        const config = getAlertConfig({ ...env, ALERT_RECIPIENTS: DAILY_BRIEF_RECIPIENT });
-        const subject = buildDailyBriefSubject(report, true);
-        const result = await sendAlertEmail(config, subject, renderDailyBossBrief(report));
-        return json({ ok: true, sent: true, to: config.to, subject, result, report }, request);
+        const sample = url.searchParams.get('sample') === '1';
+        const result = await sendDailyBossBrief(env, new Date(), { report, sample, reason: 'manual' });
+        return json({ ok: true, ...result }, request);
       } catch (error) {
         return json({ ok: false, error: clean(error.message || String(error), 300) }, request, 502);
       }
@@ -1121,6 +1122,18 @@ async function runScheduledTasks(event, env) {
       await runAuditHumanMetrics(env, { month: previousJstMonthKey(scheduledAt), reason: cron });
     } catch (e) {
       errors.push(`audit-human-metrics:${e.message}`);
+    }
+  }
+  if (cron === DAILY_BOSS_BRIEF_CRON) {
+    try {
+      await sendDailyBossBrief(env, scheduledAt, { reason: cron });
+    } catch (e) {
+      errors.push(`daily-boss-brief:${e.message}`);
+      try {
+        await sendDailyBossBriefFailureAlert(env, scheduledAt, e, cron);
+      } catch (alertError) {
+        errors.push(`daily-boss-brief-alert:${alertError.message}`);
+      }
     }
   }
   try {
@@ -5222,6 +5235,113 @@ function jstMonthKey(date) {
   return `${year}-${month}`;
 }
 
+function dailyBriefSentKey(date) {
+  return `${DAILY_BRIEF_SENT_PREFIX}${jstDateKey(date)}`;
+}
+
+async function ensureDailyBriefSentTable(env) {
+  if (!env.DB) throw new Error('missing_DB_for_daily_brief_idempotency');
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS daily_brief_sent (
+      key TEXT PRIMARY KEY,
+      jst_date TEXT NOT NULL,
+      status TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      sent_at TEXT,
+      subject TEXT,
+      reason TEXT,
+      error TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    )
+  `).run();
+}
+
+async function claimDailyBriefSend(env, key, jstDate, now, reason) {
+  await ensureDailyBriefSentTable(env);
+  const startedAt = now.toISOString();
+  const result = await env.DB.prepare(`
+    INSERT INTO daily_brief_sent (key, jst_date, status, started_at, reason, updated_at)
+    VALUES (?, ?, 'sending', ?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET
+      status = 'sending',
+      started_at = excluded.started_at,
+      reason = excluded.reason,
+      error = NULL,
+      updated_at = excluded.updated_at
+    WHERE daily_brief_sent.status = 'failed'
+  `).bind(key, jstDate, startedAt, reason || '', startedAt).run();
+  const changes = Number(result?.meta?.changes ?? result?.changes ?? 0);
+  if (changes > 0) return { acquired: true };
+  const previous = await first(env.DB, 'SELECT key, status, sent_at, subject, reason FROM daily_brief_sent WHERE key = ?', [key]);
+  return { acquired: false, previous };
+}
+
+async function markDailyBriefSent(env, key, subject, now) {
+  const sentAt = now.toISOString();
+  await env.DB.prepare(`
+    UPDATE daily_brief_sent
+    SET status = 'sent',
+        sent_at = ?,
+        subject = ?,
+        error = NULL,
+        updated_at = ?
+    WHERE key = ?
+  `).bind(sentAt, subject, sentAt, key).run();
+}
+
+async function markDailyBriefFailed(env, key, error, now) {
+  const failedAt = now.toISOString();
+  await env.DB.prepare(`
+    UPDATE daily_brief_sent
+    SET status = 'failed',
+        error = ?,
+        updated_at = ?
+    WHERE key = ?
+  `).bind(clean(error?.message || String(error), 300), failedAt, key).run();
+}
+
+async function sendDailyBossBrief(env, now = new Date(), options = {}) {
+  const report = options.report || await buildDailyBossBrief(env, now);
+  const sample = options.sample === true;
+  const sentKey = dailyBriefSentKey(now);
+  let claimed = false;
+  if (!sample) {
+    const claim = await claimDailyBriefSend(env, sentKey, jstDateKey(now), now, options.reason || '');
+    if (!claim.acquired) {
+      return { sent: false, skipped: true, reason: 'already_sent', key: sentKey, subject: buildDailyBriefSubject(report, false), report };
+    }
+    claimed = true;
+  }
+  const config = getAlertConfig({ ...env, ALERT_RECIPIENTS: DAILY_BRIEF_RECIPIENT });
+  const subject = buildDailyBriefSubject(report, sample);
+  try {
+    const result = await sendAlertEmail(config, subject, renderDailyBossBrief(report));
+    if (!sample) await markDailyBriefSent(env, sentKey, subject, now);
+    return { sent: true, skipped: false, key: sample ? '' : sentKey, to: config.to, subject, result, report };
+  } catch (error) {
+    if (!sample && claimed) {
+      await markDailyBriefFailed(env, sentKey, error, now).catch(() => {});
+    }
+    throw error;
+  }
+}
+
+async function sendDailyBossBriefFailureAlert(env, scheduledAt, error, reason) {
+  const config = getAlertConfig(env);
+  const date = jstDateKey(scheduledAt);
+  const subject = `${env.ALERT_SUBJECT_PREFIX || ''}[Nice Dashboard] Daily Boss Brief failed ${date}`;
+  const text = [
+    'Daily Boss Brief failed.',
+    '',
+    `JST date: ${date}`,
+    `Reason: ${reason}`,
+    `Error: ${clean(error?.message || String(error), 300)}`,
+    `Time: ${new Date().toISOString()}`
+  ].join('\n');
+  const result = await sendAlertEmail(config, subject, text);
+  return { sent: true, subject, to: config.to, result };
+}
+
 export {
   BEACON_SCRIPT,
   PATH_CHECK_BASELINES,
@@ -5247,6 +5367,8 @@ export {
   normalizeSearchTermSource,
   parsePage,
   buildDailyBossBrief,
+  sendDailyBossBrief,
+  dailyBriefSentKey,
   runAuditHumanMetrics,
   runConfigSnapshot,
   sanitizeSecretName,
