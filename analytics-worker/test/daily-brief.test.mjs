@@ -6,7 +6,9 @@ import {
   buildDailyBriefSubject,
   buildDailyBossBrief,
   classifyDailyBriefSource,
+  dailyBriefHasGscEvidence,
   dailyBriefLamp,
+  dailyBriefPathSignal,
   dailyBriefSentKey,
   jstWindow,
   renderDailyBossBrief,
@@ -36,6 +38,59 @@ test('daily brief lamp colors are deterministic and EI is distinct from green', 
   assert.equal(dailyBriefLamp([]).icon, '—');
 });
 
+test('daily brief path status accepts green and ok, red only for red, and missing stays EI-neutral', () => {
+  assert.equal(dailyBriefPathSignal({ status: 'green' }), true);
+  assert.equal(dailyBriefPathSignal({ status: 'ok' }), true);
+  assert.equal(dailyBriefPathSignal({ status: 'red' }), false);
+  assert.equal(dailyBriefPathSignal({ status: 'yellow' }), 'ei');
+  assert.equal(dailyBriefPathSignal(null), null);
+});
+
+test('daily brief GSC evidence requires both latest date and imported_at', () => {
+  assert.equal(dailyBriefHasGscEvidence({ latest_available_date: '2026-09-06', imported_at: '2026-09-07T00:00:00Z' }), true);
+  assert.equal(dailyBriefHasGscEvidence({ latest_available_date: '2026-09-06', imported_at: null }), false);
+  assert.equal(dailyBriefHasGscEvidence({ latest_available_date: '', imported_at: '2026-09-07T00:00:00Z' }), false);
+});
+
+test('daily brief business and SEO lamps mirror path states without turning green into red', async () => {
+  const env = fakeDailyBriefEnv({
+    pathStates: [
+      { check_key: 'site-bjt-home', status: 'green' },
+      { check_key: 'site-kiso-home', status: 'ok' },
+      { check_key: 'site-progress-home', status: 'red' },
+      { check_key: 'site-snorkel-home', status: 'green' }
+    ],
+    gscRows: [
+      { site: 'bjt', latest_available_date: '2026-09-06', imported_at: '2026-09-07T00:00:00Z' },
+      { site: 'kiso', latest_available_date: '2026-09-06', imported_at: '2026-09-07T00:00:00Z' },
+      { site: 'progress', latest_available_date: '2026-09-06', imported_at: '2026-09-07T00:00:00Z' },
+      { site: 'snorkel', latest_available_date: '2026-09-06', imported_at: '2026-09-07T00:00:00Z' }
+    ]
+  });
+  const report = await buildDailyBossBrief(env, new Date('2026-09-07T11:00:00.000Z'));
+  const business = Object.fromEntries(report.system.business_health.map((row) => [row.name, row.lamp.color]));
+  assert.equal(business.KISO, 'green');
+  assert.equal(business.Progress, 'red');
+  const seo = Object.fromEntries(report.seo.map((row) => [row.site, row]));
+  assert.equal(seo.bjt.seo.color, 'green');
+  assert.equal(seo.snorkel.seo.color, 'green');
+  assert.equal(seo.snorkel.geo.color, 'green');
+  assert.equal(seo.progress.seo.color, 'red');
+});
+
+test('daily brief GSC zero rows or missing imported_at renders SEO/GEO as EI and not red', async () => {
+  const env = fakeDailyBriefEnv({
+    pathStates: [{ check_key: 'site-bjt-home', status: 'green' }],
+    gscRows: [{ site: 'bjt', latest_available_date: '2026-09-06', imported_at: null }]
+  });
+  const report = await buildDailyBossBrief(env, new Date('2026-09-07T11:00:00.000Z'));
+  const bjt = report.seo.find((row) => row.site === 'bjt');
+  assert.equal(bjt.seo.color, 'ei');
+  assert.equal(bjt.geo.color, 'ei');
+  assert.equal(bjt.evidence_status, 'EI');
+  assert.match(renderDailyBossBrief(report), /bjt（bjt\.nice\.okinawa）：SEO —｜GEO —｜GSC latest_available_date 2026-09-06｜EI/);
+});
+
 test('sample subject and body use the sample gate and EI fallback', () => {
   const report = {
     generated_at: '2026-09-05T11:00:00.000Z',
@@ -51,6 +106,13 @@ test('sample subject and body use the sample gate and EI fallback', () => {
   };
   assert.match(buildDailyBriefSubject(report, true), /^【SAMPLE｜Nice Okinawa Daily】09\/05｜待审核—｜系统0红｜今日访客3$/);
   assert.match(renderDailyBossBrief(report), /EI \/ 数据暂不可用/);
+});
+
+test('review missing config renders as not configured instead of naked EI', async () => {
+  const report = await buildDailyBossBrief(fakeDailyBriefEnv(), new Date('2026-09-07T11:00:00.000Z'));
+  assert.equal(report.review.available, false);
+  assert.equal(report.review.status, 'not_configured');
+  assert.match(renderDailyBossBrief(report), /Review 摘要（业务分组仅显示数量）\n- —（未配置）/);
 });
 
 test('formal daily brief cron is 20:00 JST and old 08:30 summary cron is absent', () => {
@@ -160,14 +222,21 @@ function fakeDailyBriefEnv(options = {}) {
     ALERT_FROM_EMAIL: 'Nice Okinawa <noreply@nice.okinawa>',
     ALERT_RECIPIENTS: 'ops@example.invalid',
     REVIEW_TASK_API_URL: options.reviewUrl || '',
-    DB: fakeDb(options.dbMode)
+    DB: fakeDb(options)
   };
 }
 
-function fakeDb(mode = 'empty') {
+function fakeDb(options = {}) {
   const dailyBriefMarkers = new Map();
+  const mode = typeof options === 'string' ? options : options.dbMode;
+  const pathStates = options.pathStates || [];
+  const gscRows = options.gscRows || [];
   return {
     dailyBriefMarkers,
+    async batch(statements) {
+      for (const statement of statements || []) await statement.run();
+      return [];
+    },
     prepare(sql) {
       if (mode === 'throw') throw new Error('db_unavailable');
       return {
@@ -176,7 +245,11 @@ function fakeDb(mode = 'empty') {
           this.values = values;
           return this;
         },
-        async all() { return { results: [] }; },
+        async all() {
+          if (/FROM path_check_state/i.test(sql)) return { results: pathStates };
+          if (/FROM search_terms/i.test(sql) && /source = 'google'/i.test(sql)) return { results: gscRows };
+          return { results: [] };
+        },
         async first() {
           if (/FROM daily_brief_sent/i.test(sql)) {
             const [key] = this.values;

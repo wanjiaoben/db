@@ -1419,6 +1419,10 @@ function dailyBriefUnavailable(source, error = 'data_unavailable') {
   return { available: false, value: null, status: 'EI', source, latest_available_date: '', error: clean(error, 180) };
 }
 
+function dailyBriefReviewUnavailable(error = 'not_configured') {
+  return { available: false, value: null, status: 'not_configured', source: 'Review task API', latest_available_date: '', error: clean(error, 180) };
+}
+
 async function dailyBriefSource(label, loader) {
   try {
     const value = await loader();
@@ -1451,7 +1455,7 @@ async function loadDailyBriefVisitors(env, window) {
 
 async function loadDailyBriefReview(env) {
   const url = env.REVIEW_TASK_API_URL || '';
-  if (!url) return dailyBriefUnavailable('Review task API', 'missing_REVIEW_TASK_API_URL');
+  if (!url) return dailyBriefReviewUnavailable('missing_REVIEW_TASK_API_URL');
   const response = await fetch(url, { headers: { accept: 'application/json' } });
   if (!response.ok) throw new Error(`review_api_http_${response.status}`);
   const data = await response.json();
@@ -1468,20 +1472,42 @@ async function loadDailyBriefSeo(env, pathStatus) {
   let gsc = new Map();
   try {
     await ensureSearchTermsTable(env);
-    const rows = await all(env.DB, `SELECT site, MAX(date) AS latest_available_date FROM search_terms WHERE source = 'google' GROUP BY site`);
-    gsc = new Map(rows.map((row) => [row.site, row.latest_available_date]));
+    const rows = await all(env.DB, `
+      SELECT site, MAX(date) AS latest_available_date, MAX(imported_at) AS imported_at
+      FROM search_terms
+      WHERE source = 'google'
+      GROUP BY site
+    `);
+    gsc = new Map(rows.map((row) => [row.site, row]));
   } catch (_) { /* hard gate: each site remains EI */ }
   const pathRows = new Map((pathStatus?.states || []).map((row) => [row.check_key, row]));
   return Object.entries(VISITOR_EVENT_SITES).map(([site, host]) => {
     const path = pathRows.get(`site-${site}-home`);
-    const pathSignal = path ? (path.status === 'ok') : null;
+    const pathSignal = dailyBriefPathSignal(path);
+    const gscRow = gsc.get(site);
+    const hasGscEvidence = dailyBriefHasGscEvidence(gscRow);
+    const seoLamp = hasGscEvidence ? dailyBriefLamp([pathSignal, true]) : dailyBriefLamp(['ei']);
+    const geoLamp = hasGscEvidence ? dailyBriefLamp([pathSignal]) : dailyBriefLamp(['ei']);
     return {
-      site, host, seo: dailyBriefLamp([pathSignal, gsc.has(site) ? true : 'ei']),
-      geo: dailyBriefLamp([pathSignal]),
-      signals: { robots: '—', sitemap: '—', canonical: '—', not_found_404: '—', schema: '—', gsc_latest_available_date: gsc.get(site) || '—' },
-      note: '仅报告可观察信号；未编排名'
+      site, host, seo: seoLamp,
+      geo: geoLamp,
+      signals: { robots: '—', sitemap: '—', canonical: '—', not_found_404: '—', schema: '—', gsc_latest_available_date: gscRow?.latest_available_date || '—' },
+      evidence_status: hasGscEvidence ? 'OK' : 'EI',
+      note: hasGscEvidence ? '仅报告可观察信号；未编排名' : 'EI：Search Console 暂无可用导入行'
     };
   });
+}
+
+function dailyBriefPathSignal(path) {
+  if (!path) return null;
+  const status = String(path.status || '').toLowerCase();
+  if (status === 'green' || status === 'ok') return true;
+  if (status === 'red') return false;
+  return 'ei';
+}
+
+function dailyBriefHasGscEvidence(row) {
+  return Boolean(row?.latest_available_date && row?.imported_at);
 }
 
 async function buildDailyBossBrief(env, now = new Date()) {
@@ -1501,9 +1527,9 @@ async function buildDailyBossBrief(env, now = new Date()) {
   const pathFor = (site) => pathStates.find((row) => row.check_key === `site-${site}-home`);
   const backupFor = (key) => backupItems.find((row) => row.key === key);
   const businessHealth = [
-    { name: 'BJT', lamp: dailyBriefLamp([pathFor('bjt')?.status === 'ok' ? true : pathFor('bjt') ? false : null, backupFor('bjt')?.ok ?? null]) },
-    { name: 'KISO', lamp: dailyBriefLamp([pathFor('kiso')?.status === 'ok' ? true : pathFor('kiso') ? false : null]) },
-    { name: 'Progress', lamp: dailyBriefLamp([pathFor('progress')?.status === 'ok' ? true : pathFor('progress') ? false : null, backupFor('progress-production')?.ok ?? null]) }
+    { name: 'BJT', lamp: dailyBriefLamp([dailyBriefPathSignal(pathFor('bjt')), backupFor('bjt')?.ok ?? null]) },
+    { name: 'KISO', lamp: dailyBriefLamp([dailyBriefPathSignal(pathFor('kiso'))]) },
+    { name: 'Progress', lamp: dailyBriefLamp([dailyBriefPathSignal(pathFor('progress')), backupFor('progress-production')?.ok ?? null]) }
   ];
   const systemRed = redAlerts.length + businessHealth.filter((item) => item.lamp.color === 'red').length;
   const headline = systemRed ? '🔴 有系统红项，先处理阻断项' : (review.value?.pending ? '🟡 有待审核事项，建议今日处理' : '🟢 今日暂无紧急阻断');
@@ -1520,14 +1546,17 @@ export function buildDailyBriefSubject(report, sample = false) {
 }
 
 export function renderDailyBossBrief(report) {
+  const reviewUnavailableText = report.review?.status === 'not_configured'
+    ? '- —（未配置）'
+    : '- —（EI / 数据暂不可用）';
   const lines = [
     report.headline, '', `窗口：${report.window.start} → ${report.window.end}（JST）`,
-    `待我处理：${report.review_count ?? '—'}${report.review_count === null ? '（EI / 数据暂不可用）' : ''}`,
+    `待我处理：${report.review_count ?? '—'}${report.review_count === null ? (report.review?.status === 'not_configured' ? '（未配置）' : '（EI / 数据暂不可用）') : ''}`,
     `系统处理中：${report.system?.business_health?.map((item) => `${item.name}${item.lamp.icon}`).join(' / ') || '—'}`,
     `系统红项：${report.system_red || 0}`, '', '今日访客', `访客：${report.visitors?.totals?.visitors ?? '—'}｜会话：${report.visitors?.totals?.sessions ?? '—'}｜PV：${report.visitors?.totals?.pageviews ?? '—'}`,
     '来源占比（底层保留真实 referrer；证据不足归 Direct/Unknown）', ...Object.entries(report.visitors?.by_source || {}).map(([key, value]) => `- ${key}：${value.views || 0}`), '',
-    'Review 摘要（业务分组仅显示数量）', ...(report.review.available ? Object.entries(report.review.value.groups).map(([key, value]) => `- ${key}：${value}`) : ['- —（EI / 数据暂不可用）']), report.review.available ? `审核台：${report.review.value.entry}` : '', '',
-    '营业健康', ...report.system.business_health.map((item) => `- ${item.lamp.icon} ${item.name}`), '', '全站 SEO/GEO', ...report.seo.map((site) => `- ${site.site}（${site.host}）：SEO ${site.seo.icon}｜GEO ${site.geo.icon}｜GSC latest_available_date ${site.signals.gsc_latest_available_date}`), '',
+    'Review 摘要（业务分组仅显示数量）', ...(report.review.available ? Object.entries(report.review.value.groups).map(([key, value]) => `- ${key}：${value}`) : [reviewUnavailableText]), report.review.available ? `审核台：${report.review.value.entry}` : '', '',
+    '营业健康', ...report.system.business_health.map((item) => `- ${item.lamp.icon} ${item.name}`), '', '全站 SEO/GEO', ...report.seo.map((site) => `- ${site.site}（${site.host}）：SEO ${site.seo.icon}｜GEO ${site.geo.icon}｜GSC latest_available_date ${site.signals.gsc_latest_available_date}${site.evidence_status === 'EI' ? '｜EI' : ''}`), '',
     'SNS 队列六指标', '- 排队：—｜可发布：—｜已排程：—｜已发布：—｜失败：—｜过期：—（EI / 数据暂不可用）', '', '今日值得做（最多 3 件）', ...(report.top_actions.length ? report.top_actions.map((item) => `- ${item}`) : ['- 暂无']), '', '数据不可用项按 — / EI 展示；单项缺失不阻断日报。', `生成：${report.generated_at}`
   ];
   return lines.filter((line, index) => !(line === '' && lines[index - 1] === '')).join('\n');
@@ -5367,6 +5396,8 @@ export {
   normalizeSearchTermSource,
   parsePage,
   buildDailyBossBrief,
+  dailyBriefHasGscEvidence,
+  dailyBriefPathSignal,
   sendDailyBossBrief,
   dailyBriefSentKey,
   runAuditHumanMetrics,
