@@ -3602,7 +3602,11 @@ async function runConfigSnapshot(env, reason = 'manual', options = {}) {
     ORDER BY ts DESC, id DESC
     LIMIT 1
   `, [CONFIG_SNAPSHOT_SOURCE]);
-  const changed = Boolean(previous && previous.sha256 !== sha256);
+  const ownReleaseRuns = Object.hasOwn(options, 'ownReleaseRuns')
+    ? options.ownReleaseRuns
+    : (previous && previous.sha256 !== sha256 ? await fetchRecentAtomicReleaseRuns(env) : []);
+  const classification = classifyConfigSnapshotChange(previous?.json || '', jsonText, ownReleaseRuns);
+  const changed = Boolean(previous && classification.changed);
   const ts = new Date().toISOString();
   await env.DB.prepare(`
     INSERT INTO config_snapshot (ts, source, json, sha256)
@@ -3611,7 +3615,7 @@ async function runConfigSnapshot(env, reason = 'manual', options = {}) {
 
   let alert = null;
   let sendLock = null;
-  const diff = changed ? diffSnapshotJson(previous.json, jsonText) : [];
+  const diff = changed ? classification.diff : [];
   const fingerprint = changed ? `config:${sha256}` : '';
   if (changed && options.notify !== false) {
     sendLock = await claimAlertSend(env, {
@@ -3642,11 +3646,145 @@ async function runConfigSnapshot(env, reason = 'manual', options = {}) {
     previous_sha256: previous?.sha256 || '',
     changed,
     diff,
+    expected_changes: classification.expected_changes,
     permissions: safeSnapshot.permissions || [],
     pending_authorization: safeSnapshot.pending_authorization || [],
     alert,
     send_lock: sendLock
   };
+}
+
+function classifyConfigSnapshotChange(previousJson, nextJson, ownReleaseRuns = []) {
+  if (!previousJson) return { changed: false, diff: [], expected_changes: [] };
+  const previous = JSON.parse(previousJson || '{}');
+  const next = JSON.parse(nextJson || '{}');
+  const expected_changes = collectExpectedOwnReleaseChanges(previous, next, ownReleaseRuns);
+  const comparablePrevious = comparableConfigSnapshot(previous);
+  const comparableNext = comparableConfigSnapshot(applyExpectedOwnReleaseChanges(previous, next, expected_changes));
+  const diff = diffConfigObjects(comparablePrevious, comparableNext);
+  return { changed: diff.length > 0, diff, expected_changes };
+}
+
+function comparableConfigSnapshot(snapshot) {
+  if (Array.isArray(snapshot)) return snapshot.map(comparableConfigSnapshot).sort(compareJsonStable);
+  if (!snapshot || typeof snapshot !== 'object') return snapshot;
+  const out = {};
+  for (const key of Object.keys(snapshot).sort()) {
+    if (isConfigSnapshotMetaTimeKey(key)) continue;
+    out[key] = comparableConfigSnapshot(snapshot[key]);
+  }
+  return out;
+}
+
+function isConfigSnapshotMetaTimeKey(key) {
+  const lower = String(key || '').toLowerCase();
+  return lower === 'generated_at'
+    || lower === 'fetched_at'
+    || lower === 'collected_at'
+    || lower === 'snapshot_at'
+    || lower === 'run_id'
+    || lower === 'request_id';
+}
+
+function collectExpectedOwnReleaseChanges(previous, next, ownReleaseRuns = []) {
+  const runs = normalizeAtomicReleaseRuns(ownReleaseRuns);
+  if (!runs.length) return [];
+  const previousWorkers = workerScriptSnapshotMap(previous);
+  const nextWorkers = workerScriptSnapshotMap(next);
+  const changes = [];
+  for (const [name, nextItem] of nextWorkers.entries()) {
+    const previousItem = previousWorkers.get(name);
+    if (!previousItem) continue;
+    const fields = [];
+    for (const field of ['modified_on', 'version', 'version_id', 'current_version_id']) {
+      if (previousItem[field] !== nextItem[field]) fields.push(field);
+    }
+    if (!fields.length) continue;
+    const timestamp = nextItem.modified_on || nextItem.fetched_at || next.generated_at;
+    const run = findAtomicReleaseRunNear(timestamp, runs);
+    if (!run) continue;
+    changes.push({
+      type: 'EXPECTED_OWN_RELEASE',
+      resource: `worker:${name}`,
+      fields,
+      old_values: Object.fromEntries(fields.map((field) => [field, previousItem[field] || ''])),
+      new_values: Object.fromEntries(fields.map((field) => [field, nextItem[field] || ''])),
+      run_id: run.id || run.databaseId || '',
+      run_url: run.url || run.html_url || '',
+      run_head_sha: run.headSha || run.head_sha || '',
+      run_tag: run.headBranch || run.head_branch || ''
+    });
+  }
+  return changes;
+}
+
+function applyExpectedOwnReleaseChanges(previous, next, expectedChanges = []) {
+  if (!expectedChanges.length) return next;
+  const out = structuredClone(next);
+  const previousWorkers = workerScriptSnapshotMap(previous);
+  for (const item of workerScriptItems(out)) {
+    const name = item.script_name || item.id;
+    const expected = expectedChanges.find((change) => change.resource === `worker:${name}`);
+    if (!expected) continue;
+    const previousItem = previousWorkers.get(name);
+    if (!previousItem) continue;
+    for (const field of expected.fields || []) item[field] = previousItem[field];
+  }
+  return out;
+}
+
+function workerScriptSnapshotMap(snapshot) {
+  const map = new Map();
+  for (const item of workerScriptItems(snapshot)) {
+    const name = item.script_name || item.id;
+    if (name) map.set(name, item);
+  }
+  return map;
+}
+
+function workerScriptItems(snapshot) {
+  const endpoints = snapshot?.cloudflare?.items;
+  if (!Array.isArray(endpoints)) return [];
+  const workers = endpoints.find((entry) => entry?.key === 'cf.workers_scripts');
+  return Array.isArray(workers?.items) ? workers.items : [];
+}
+
+function normalizeAtomicReleaseRuns(runs = []) {
+  return (Array.isArray(runs) ? runs : [])
+    .filter((run) => (run.conclusion || '').toLowerCase() === 'success')
+    .filter((run) => String(run.headBranch || run.head_branch || '').startsWith('worker-prod-'))
+    .map((run) => ({ ...run, time_ms: Date.parse(run.updatedAt || run.updated_at || run.createdAt || run.created_at || '') }))
+    .filter((run) => Number.isFinite(run.time_ms));
+}
+
+function findAtomicReleaseRunNear(timestamp, runs) {
+  const time = Date.parse(timestamp || '');
+  if (!Number.isFinite(time)) return null;
+  const windowMs = 30 * 60 * 1000;
+  return runs
+    .map((run) => ({ run, distance: Math.abs(run.time_ms - time) }))
+    .filter((item) => item.distance <= windowMs)
+    .sort((a, b) => a.distance - b.distance)[0]?.run || null;
+}
+
+async function fetchRecentAtomicReleaseRuns(env) {
+  const token = env.GITHUB_TOKEN || '';
+  const repo = clean(env.CONFIG_SNAPSHOT_RELEASE_REPO || 'wanjiaoben/db', 120) || 'wanjiaoben/db';
+  if (!token) return [];
+  const response = await fetchGithubConfig(`/repos/${repo}/actions/runs?per_page=30&event=push`, token);
+  if (!response.ok) return [];
+  const runs = Array.isArray(response.data?.workflow_runs) ? response.data.workflow_runs : [];
+  return runs
+    .filter((run) => String(run.name || '').includes('Atomic Release') || String(run.display_title || '').includes('Atomic Release') || String(run.head_branch || '').startsWith('worker-prod-'))
+    .map((run) => ({
+      id: run.id,
+      url: run.html_url,
+      headBranch: run.head_branch,
+      headSha: run.head_sha,
+      conclusion: run.conclusion,
+      createdAt: run.created_at,
+      updatedAt: run.updated_at
+    }));
 }
 
 async function collectConfigSnapshot(env) {
@@ -3986,8 +4124,11 @@ async function sha256Hex(text) {
 }
 
 function diffSnapshotJson(previousJson, nextJson) {
-  const previous = JSON.parse(previousJson || '{}');
-  const next = JSON.parse(nextJson || '{}');
+  const { diff } = classifyConfigSnapshotChange(previousJson, nextJson, []);
+  return diff;
+}
+
+function diffConfigObjects(previous, next) {
   const diffs = [];
   collectDiffs('', previous, next, diffs);
   return diffs.slice(0, 50);
@@ -5396,6 +5537,7 @@ export {
   normalizeSearchTermSource,
   parsePage,
   buildDailyBossBrief,
+  classifyConfigSnapshotChange,
   dailyBriefHasGscEvidence,
   dailyBriefPathSignal,
   sendDailyBossBrief,
