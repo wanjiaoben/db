@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import worker, {
+  classifyConfigSnapshotChange,
   collectConfigSnapshot,
   diffSnapshotJson,
   normalizeSnapshot,
@@ -205,4 +206,60 @@ test('dashboard renders config snapshot health row', () => {
 test('diffSnapshotJson reports added fields for alert payloads', () => {
   const diff = diffSnapshotJson(JSON.stringify({ a: { b: 1 } }), JSON.stringify({ a: { b: 1, c: 2 } }));
   assert.deepEqual(diff, ['a.c changed']);
+});
+
+test('config snapshot diff ignores generated and fetched timestamps', () => {
+  const previous = JSON.stringify({
+    generated_at: '2026-09-08T00:00:00Z',
+    cloudflare: {
+      items: [{ key: 'cf.account', fetched_at: '2026-09-08T00:00:01Z', items: [{ name: 'account' }] }]
+    }
+  });
+  const next = JSON.stringify({
+    generated_at: '2026-09-08T00:15:00Z',
+    cloudflare: {
+      items: [{ key: 'cf.account', fetched_at: '2026-09-08T00:15:01Z', items: [{ name: 'account' }] }]
+    }
+  });
+  assert.deepEqual(diffSnapshotJson(previous, next), []);
+});
+
+test('worker modified_on near own atomic release is expected, not changed', () => {
+  const previous = JSON.stringify({
+    cloudflare: {
+      items: [{ key: 'cf.workers_scripts', items: [{ id: 'nice-analytics', modified_on: '2026-09-07T00:22:08Z', compatibility_date: '2026-06-12' }] }]
+    }
+  });
+  const next = JSON.stringify({
+    cloudflare: {
+      items: [{ key: 'cf.workers_scripts', items: [{ id: 'nice-analytics', modified_on: '2026-09-07T22:40:10Z', compatibility_date: '2026-06-12' }] }]
+    }
+  });
+  const result = classifyConfigSnapshotChange(previous, next, [{
+    conclusion: 'success',
+    headBranch: 'worker-prod-daily-0907-02-20260907',
+    headSha: '7cea97f',
+    updatedAt: '2026-09-07T22:40:20Z',
+    url: 'https://github.com/wanjiaoben/db/actions/runs/34167426573'
+  }]);
+  assert.equal(result.changed, false);
+  assert.equal(result.diff.length, 0);
+  assert.equal(result.expected_changes.length, 1);
+  assert.equal(result.expected_changes[0].type, 'EXPECTED_OWN_RELEASE');
+});
+
+test('worker modified_on without matching atomic release remains changed', () => {
+  const previous = JSON.stringify({
+    cloudflare: {
+      items: [{ key: 'cf.workers_scripts', items: [{ id: 'db-private', modified_on: '2026-09-07T00:22:12Z', compatibility_date: '2026-06-12' }] }]
+    }
+  });
+  const next = JSON.stringify({
+    cloudflare: {
+      items: [{ key: 'cf.workers_scripts', items: [{ id: 'db-private', modified_on: '2026-09-07T22:40:16Z', compatibility_date: '2026-06-12' }] }]
+    }
+  });
+  const result = classifyConfigSnapshotChange(previous, next, []);
+  assert.equal(result.changed, true);
+  assert.deepEqual(result.diff, ['cloudflare.items changed']);
 });
