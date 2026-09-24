@@ -49,6 +49,9 @@ const PATH_CHECK_INTERVAL_MS = 15 * 60 * 1000;
 const PATH_CHECK_TIMEOUT_MS = 12000;
 const PATH_CHECK_FAILURE_DEBOUNCE = 3;
 const PATH_CHECK_FAST_FAILURE_DEBOUNCE = 2;
+const REVIEW_ONLINE_CHECK_KEY = 'review-online';
+const REVIEW_ONLINE_CHECK_LABEL = '审核台在线';
+const REVIEW_ONLINE_FAILURE_DEBOUNCE = 2;
 const DEPLOYMENT_IN_PROGRESS_ALERT_MS = 30 * 60 * 1000;
 const CONFIG_SNAPSHOT_SOURCE = 'cloudflare-github-config';
 const CONFIG_SNAPSHOT_ALERT_KEY = 'config-snapshot';
@@ -2273,6 +2276,40 @@ function pathCheckInjectedFailure() {
   );
 }
 
+function reviewOnlineCheckEnabled(env) {
+  return String(env.REVIEW_ONLINE_CHECK_ENABLED || '').trim() === '1';
+}
+
+function reviewOnlineProbeUrl(env) {
+  return String(env.REVIEW_ONLINE_PROBE_URL || '').trim();
+}
+
+function reviewOnlinePathCheckTarget(env) {
+  if (!reviewOnlineCheckEnabled(env)) return null;
+  const url = reviewOnlineProbeUrl(env);
+  if (!url) {
+    throw new Error('REVIEW_ONLINE_PROBE_URL_missing');
+  }
+  return {
+    key: REVIEW_ONLINE_CHECK_KEY,
+    label: REVIEW_ONLINE_CHECK_LABEL,
+    url,
+    okStatuses: [200, 204],
+    contract: null,
+    critical: true,
+    failure_debounce: REVIEW_ONLINE_FAILURE_DEBOUNCE,
+    sensitive: true,
+    alert_profile: 'review_online'
+  };
+}
+
+function pathCheckTargets(env, extraTargets = []) {
+  const targets = [...PATH_CHECK_BASELINES];
+  const reviewTarget = reviewOnlinePathCheckTarget(env);
+  if (reviewTarget) targets.push(reviewTarget);
+  return [...targets, ...(extraTargets || [])];
+}
+
 async function ensurePathCheckTables(env) {
   const statements = [
     env.DB.prepare(`
@@ -2353,7 +2390,7 @@ async function runPathChecks(env, reason = 'manual', options = {}) {
   await ensurePathCheckTables(env);
   const startedAt = new Date();
   const runId = `path-${startedAt.toISOString()}-${randomId().slice(0, 8)}`;
-  const targets = [...PATH_CHECK_BASELINES, ...(options.extraTargets || [])];
+  const targets = pathCheckTargets(env, options.extraTargets || []);
   await env.DB.prepare(`
     INSERT INTO path_check_runs (run_id, started_at, trigger, worker_version)
     VALUES (?, ?, ?, ?)
@@ -2367,15 +2404,17 @@ async function runPathChecks(env, reason = 'manual', options = {}) {
   const failedResults = results.filter((result) => !result.ok);
   const groupFailure = isFastPathCheckFailure(failedResults, results);
   const alertCandidates = [];
+  const recoveryCandidates = [];
   const stateUpdates = [];
   for (const result of results) {
     const state = await updatePathCheckState(env, result, finishedAt, groupFailure);
     stateUpdates.push(state);
     if (state.should_alert) alertCandidates.push({ result, state });
+    if (state.should_recover_alert) recoveryCandidates.push({ result, state });
   }
   const alert = options.notify === false
-    ? { sent: false, skipped: true, reason: 'notify_disabled', candidates: alertCandidates.length }
-    : await sendPathCheckAlerts(env, alertCandidates, reason, finishedAt);
+    ? { sent: false, skipped: true, reason: 'notify_disabled', candidates: alertCandidates.length, recoveries: recoveryCandidates.length }
+    : await sendPathCheckNotifications(env, alertCandidates, recoveryCandidates, reason, finishedAt);
 
   const summary = {
     reason,
@@ -2481,9 +2520,12 @@ async function checkPathTarget(target, env, runId) {
     duration_ms: Date.now() - started,
     error: clean(error || contract.error || '', 300),
     fingerprint: ok ? '' : stableFingerprint(`${target.key}|${failureText}`),
-    excerpt: clean(text.replace(/\s+/g, ' ').trim(), 240),
+    excerpt: target.sensitive ? '' : clean(text.replace(/\s+/g, ' ').trim(), 240),
     checked_at: checkedAt,
     critical: target.critical !== false,
+    failure_debounce: Number(target.failure_debounce || 0) || null,
+    alert_profile: target.alert_profile || '',
+    failure_stage: pathCheckFailureStage(status, error),
     resources: resourceResults
   };
   await env.DB.prepare(`
@@ -2606,6 +2648,19 @@ function isFastPathCheckFailure(failedResults, results) {
   return failedRatio >= 0.25;
 }
 
+function pathCheckFailureStage(status, error = '') {
+  if (error) return String(error).includes('timeout') ? 'timeout' : 'fetch';
+  if (status === 0) return 'fetch';
+  if (status >= 500) return 'http_5xx';
+  if (status >= 400) return 'http_4xx';
+  return status ? 'contract' : 'unknown';
+}
+
+function pathCheckAlertThreshold(result, groupFailure) {
+  return Number(result?.failure_debounce || 0)
+    || (groupFailure ? PATH_CHECK_FAST_FAILURE_DEBOUNCE : PATH_CHECK_FAILURE_DEBOUNCE);
+}
+
 async function updatePathCheckState(env, result, now, groupFailure) {
   const previous = await first(env.DB, `
     SELECT check_key, status, fingerprint, consecutive_failures, last_ok_at, last_fail_at, last_alert_at
@@ -2616,7 +2671,8 @@ async function updatePathCheckState(env, result, now, groupFailure) {
   let consecutiveFailures = 0;
   let status = 'green';
   let shouldAlert = false;
-  const threshold = groupFailure ? PATH_CHECK_FAST_FAILURE_DEBOUNCE : PATH_CHECK_FAILURE_DEBOUNCE;
+  let shouldRecoverAlert = false;
+  const threshold = pathCheckAlertThreshold(result, groupFailure);
   if (!result.ok) {
     status = 'red';
     consecutiveFailures = previous?.fingerprint === result.fingerprint
@@ -2655,6 +2711,7 @@ async function updatePathCheckState(env, result, now, groupFailure) {
     ).run();
   } else {
     const recovered = previous?.status === 'red';
+    shouldRecoverAlert = recovered && result.alert_profile === 'review_online';
     await env.DB.prepare(`
       INSERT INTO path_check_state (
         check_key, label, url, status, fingerprint, consecutive_failures,
@@ -2685,7 +2742,10 @@ async function updatePathCheckState(env, result, now, groupFailure) {
     fingerprint: result.fingerprint,
     consecutive_failures: consecutiveFailures,
     threshold,
-    should_alert: shouldAlert
+    should_alert: shouldAlert,
+    should_recover_alert: shouldRecoverAlert,
+    previous_fingerprint: previous?.fingerprint || '',
+    previous_last_ok_at: previous?.last_ok_at || ''
   };
 }
 
@@ -2739,16 +2799,55 @@ async function sendPathCheckAlerts(env, candidates, reason, now) {
   return { sent: sent.some((item) => item.ok), candidates: candidates.length, sent_items: sent, skipped };
 }
 
-async function trySendPathCheckAlert(env, candidate, reason, now) {
+async function sendPathCheckNotifications(env, alertCandidates, recoveryCandidates, reason, now) {
+  const alerts = await sendPathCheckAlerts(env, alertCandidates, reason, now);
+  const recoveries = await sendPathCheckRecoveries(env, recoveryCandidates, reason, now);
+  return {
+    sent: Boolean(alerts.sent || recoveries.sent),
+    candidates: alertCandidates.length,
+    recoveries: recoveryCandidates.length,
+    alerts,
+    recovery_alerts: recoveries
+  };
+}
+
+async function sendPathCheckRecoveries(env, candidates, reason, now) {
+  if (!candidates.length) return { sent: false, candidates: 0 };
+  const sent = [];
+  const skipped = [];
+  for (const candidate of candidates) {
+    const { result, state } = candidate;
+    const lock = await claimAlertSend(env, {
+      key: `path-check:${result.key}`,
+      status: 'green',
+      fingerprint: state.previous_fingerprint || result.key,
+      reason,
+      detail: JSON.stringify({ key: result.key, status: 'recovered', recovered_at: now.toISOString() })
+    }, PATH_CHECK_ALERT_WINDOW_MS);
+    if (!lock.acquired) {
+      skipped.push({ key: result.key, reason: 'dedup_window', fingerprint: lock.fingerprint });
+      continue;
+    }
+    const alert = await trySendPathCheckAlert(env, candidate, reason, now, 'green');
+    await finishAlertSend(env, lock.id, alert);
+    sent.push({ key: result.key, ok: alert.ok, error: alert.error || '' });
+  }
+  return { sent: sent.some((item) => item.ok), candidates: candidates.length, sent_items: sent, skipped };
+}
+
+async function trySendPathCheckAlert(env, candidate, reason, now, status = 'red') {
   try {
-    const result = await sendPathCheckAlert(env, candidate, reason, now);
+    const result = await sendPathCheckAlert(env, candidate, reason, now, status);
     return { ok: true, result };
   } catch (error) {
     return { ok: false, error: clean(error.message || String(error), 300) };
   }
 }
 
-async function sendPathCheckAlert(env, candidate, reason, now) {
+async function sendPathCheckAlert(env, candidate, reason, now, status = 'red') {
+  if (candidate?.result?.alert_profile === 'review_online') {
+    return sendReviewOnlinePathCheckAlert(env, candidate, reason, now, status);
+  }
   const config = getAlertConfig(env);
   const prefix = env.ALERT_SUBJECT_PREFIX || '';
   const { result, state } = candidate;
@@ -2771,6 +2870,29 @@ async function sendPathCheckAlert(env, candidate, reason, now) {
     `Excerpt: ${result.excerpt || '-'}`
   ].join('\n');
   return sendAlertEmail(config, subject, text);
+}
+
+function buildReviewOnlineAlertPreview(env, candidate, reason, now, status = 'red') {
+  const prefix = env.ALERT_SUBJECT_PREFIX || '';
+  const { result, state } = candidate;
+  const recovered = status === 'green';
+  const subject = `${prefix}[Nice Path Check] ${recovered ? 'RECOVERY' : 'ALERT'}: ${REVIEW_ONLINE_CHECK_LABEL}`;
+  const text = [
+    recovered ? 'Nice review desk online check recovered.' : 'Nice review desk online check failed.',
+    '',
+    `Time: ${now.toISOString()}`,
+    `Check: ${REVIEW_ONLINE_CHECK_LABEL}`,
+    `Failure stage: ${recovered ? 'recovered' : (result.failure_stage || 'unknown')}`,
+    `HTTP status: ${result.status || 0}`,
+    `Last success time: ${recovered ? result.checked_at : (state.previous_last_ok_at || '-')}`
+  ].join('\n');
+  return { subject, text, recipient: getAlertRecipient(env), reason };
+}
+
+async function sendReviewOnlinePathCheckAlert(env, candidate, reason, now, status = 'red') {
+  const config = getAlertConfig(env);
+  const preview = buildReviewOnlineAlertPreview(env, candidate, reason, now, status);
+  return sendAlertEmail(config, preview.subject, preview.text);
 }
 
 async function sendPathCheckTestAlert(env) {
@@ -2808,7 +2930,50 @@ async function getPathCheckStatus(env) {
     ORDER BY started_at DESC
     LIMIT 5
   `);
-  return { heartbeat, states, recent_runs: recentRuns, baseline_count: PATH_CHECK_BASELINES.length };
+  return {
+    heartbeat,
+    states,
+    recent_runs: recentRuns,
+    baseline_count: PATH_CHECK_BASELINES.length,
+    review_online: reviewOnlineStatus(env, states)
+  };
+}
+
+function reviewOnlineStatus(env, states = []) {
+  if (!reviewOnlineCheckEnabled(env)) {
+    return {
+      enabled: false,
+      key: REVIEW_ONLINE_CHECK_KEY,
+      label: REVIEW_ONLINE_CHECK_LABEL,
+      status: 'disabled',
+      display_status: '未启用',
+      last_ok_at: '',
+      updated_at: ''
+    };
+  }
+  const state = (states || []).find((item) => item.check_key === REVIEW_ONLINE_CHECK_KEY);
+  if (!state) {
+    return {
+      enabled: true,
+      key: REVIEW_ONLINE_CHECK_KEY,
+      label: REVIEW_ONLINE_CHECK_LABEL,
+      status: 'unknown',
+      display_status: '无数据',
+      last_ok_at: '',
+      updated_at: ''
+    };
+  }
+  return {
+    enabled: true,
+    key: REVIEW_ONLINE_CHECK_KEY,
+    label: state.label || REVIEW_ONLINE_CHECK_LABEL,
+    status: state.status || 'unknown',
+    display_status: state.status === 'green' ? '在线' : (state.status === 'red' ? '离线' : '无数据'),
+    last_ok_at: state.last_ok_at || '',
+    last_fail_at: state.last_fail_at || '',
+    consecutive_failures: Number(state.consecutive_failures || 0),
+    updated_at: state.updated_at || ''
+  };
 }
 
 function stableFingerprint(value) {
@@ -5515,7 +5680,10 @@ async function sendDailyBossBriefFailureAlert(env, scheduledAt, error, reason) {
 export {
   BEACON_SCRIPT,
   PATH_CHECK_BASELINES,
+  REVIEW_ONLINE_CHECK_KEY,
+  REVIEW_ONLINE_FAILURE_DEBOUNCE,
   bingDateOnly,
+  buildReviewOnlineAlertPreview,
   collectConfigSnapshot,
   configuredSearchConsoleSites,
   configuredBingSites,
@@ -5532,6 +5700,10 @@ export {
   getAuditHumanMetricsStatus,
   getExpiryStatus,
   isFastPathCheckFailure,
+  pathCheckAlertThreshold,
+  reviewOnlineCheckEnabled,
+  reviewOnlinePathCheckTarget,
+  reviewOnlineStatus,
   normalizeSnapshot,
   normalizeBingQueryRow,
   normalizeSearchTermSource,
