@@ -72,6 +72,9 @@ PATH_CHECK_ALERTS_ENABLED = "1"
 DASHBOARD_ALERTS_ENABLED = "1"
 REVIEW_ONLINE_CHECK_ENABLED = "0"
 REVIEW_ONLINE_PROBE_URL = ""
+SHELF_RECONCILIATION_CHECK_ENABLED = "0"
+SHELF_STATUS_SUMMARY_URL = ""
+# Secret required on launch: SHELF_STATUS_READ_TOKEN. Scope: BJT shelf operational status summary read-only; no content read/write.
 AUDIT_ARTIFACTS_PREFIX = "audit/human-metrics/"
 # Monthly alert-channel self-check records status only; green runs do not send email.
 
@@ -142,4 +145,7 @@ PATH_CHECK_ALERTS_ENABLED = "0"
 DASHBOARD_ALERTS_ENABLED = "0"
 REVIEW_ONLINE_CHECK_ENABLED = "0"
 REVIEW_ONLINE_PROBE_URL = ""
+SHELF_RECONCILIATION_CHECK_ENABLED = "0"
+SHELF_STATUS_SUMMARY_URL = ""
+# Secret required on launch: SHELF_STATUS_READ_TOKEN. Scope: BJT shelf operational status summary read-only; no content read/write.
 AUDIT_ARTIFACTS_PREFIX = "audit/human-metrics/preview/"

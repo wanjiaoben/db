@@ -6,13 +6,19 @@ import {
   PATH_CHECK_BASELINES,
   REVIEW_ONLINE_CHECK_KEY,
   REVIEW_ONLINE_FAILURE_DEBOUNCE,
+  SHELF_RECONCILIATION_CHECK_KEY,
+  SHELF_RECONCILIATION_FAILURE_DEBOUNCE,
   buildReviewOnlineAlertPreview,
+  buildShelfReconciliationAlertPreview,
   checkPathContract,
   isFastPathCheckFailure,
   pathCheckAlertThreshold,
   reviewOnlineCheckEnabled,
   reviewOnlinePathCheckTarget,
   reviewOnlineStatus,
+  shelfReconciliationCheckEnabled,
+  shelfReconciliationPathCheckTarget,
+  shelfReconciliationStatus,
   shouldSendPathCheckAlert,
   stableFingerprint
 } from '../src/worker.js';
@@ -236,6 +242,103 @@ test('review online alert and recovery emails stay inside the approved field whi
   assert.doesNotMatch(recovery.text, /review\.example\.invalid|private body|private error/);
 });
 
+test('shelf reconciliation check is disabled by default and does not join the baseline', () => {
+  assert.equal(shelfReconciliationCheckEnabled({}), false);
+  assert.equal(shelfReconciliationPathCheckTarget({}), null);
+  assert.equal(PATH_CHECK_BASELINES.some((target) => target.key === SHELF_RECONCILIATION_CHECK_KEY), false);
+
+  const disabled = shelfReconciliationStatus({}, []);
+  assert.equal(disabled.enabled, false);
+  assert.equal(disabled.status, 'disabled');
+  assert.equal(disabled.display_status, '未启用');
+});
+
+test('shelf reconciliation status contract treats normal as green and needs_reconciliation as red', () => {
+  const contract = { type: 'shelf_operational_status' };
+  assert.deepEqual(
+    checkPathContract(contract, JSON.stringify({ question_banks: [{ question_bank: 'mogi', operational_status: 'normal' }] })),
+    { ok: true, operational_status: 'normal', question_banks: ['mogi'] }
+  );
+  const needs = checkPathContract(contract, JSON.stringify({ question_banks: [{ question_bank: 'mogi', operational_status: 'needs_reconciliation' }] }));
+  assert.equal(needs.ok, false);
+  assert.equal(needs.error, 'needs_reconciliation');
+  assert.equal(needs.operational_status, 'needs_reconciliation');
+  assert.deepEqual(needs.question_banks, ['mogi']);
+
+  const badJson = checkPathContract(contract, '<html>not json</html>');
+  assert.equal(badJson.ok, false);
+  assert.equal(badJson.error, 'bad_json');
+
+  const missing = checkPathContract(contract, JSON.stringify({ ok: true }));
+  assert.equal(missing.ok, false);
+  assert.equal(missing.error, 'missing_operational_status');
+});
+
+test('shelf reconciliation target is opt-in, read-only-token protected, and alerts immediately', () => {
+  const target = shelfReconciliationPathCheckTarget({
+    SHELF_RECONCILIATION_CHECK_ENABLED: '1',
+    SHELF_STATUS_SUMMARY_URL: 'https://example.test/shelf/status',
+    SHELF_STATUS_READ_TOKEN: 'readonly-status-token'
+  });
+  assert.equal(target.key, SHELF_RECONCILIATION_CHECK_KEY);
+  assert.equal(target.label, '货架需核对');
+  assert.deepEqual(target.okStatuses, [200]);
+  assert.deepEqual(target.contract, { type: 'shelf_operational_status' });
+  assert.equal(target.headers.authorization, 'Bearer readonly-status-token');
+  assert.equal(target.sensitive, true);
+  assert.equal(target.alert_profile, 'shelf_reconciliation');
+  assert.equal(target.failure_debounce, SHELF_RECONCILIATION_FAILURE_DEBOUNCE);
+
+  const result = { ok: false, critical: true, fingerprint: 'shelfdead', failure_debounce: target.failure_debounce };
+  const threshold = pathCheckAlertThreshold(result, false);
+  assert.equal(threshold, 1);
+  assert.equal(shouldSendPathCheckAlert({
+    result,
+    previous: null,
+    consecutiveFailures: 1,
+    threshold,
+    now: new Date('2026-09-25T01:00:00.000Z')
+  }), true);
+});
+
+test('shelf reconciliation alert and recovery emails stay inside the approved field whitelist', () => {
+  const env = { ALERT_RECIPIENTS: 'aboutokinawa@gmail.com' };
+  const now = new Date('2026-09-25T02:00:00.000Z');
+  const candidate = {
+    result: {
+      key: SHELF_RECONCILIATION_CHECK_KEY,
+      label: '货架需核对',
+      url: 'https://bjt.example.invalid/admin/shelf/internal',
+      ok: false,
+      status: 200,
+      failure_stage: 'contract',
+      operational_status: 'needs_reconciliation',
+      question_banks: ['mogi'],
+      excerpt: 'internal shelf detail should not leak',
+      error: 'private shelf error should not leak',
+      alert_profile: 'shelf_reconciliation',
+      checked_at: '2026-09-25T02:00:00.000Z'
+    },
+    state: {
+      previous_last_ok_at: '2026-09-25T01:45:00.000Z',
+      previous_fingerprint: 'oldshelf'
+    }
+  };
+  const alert = buildShelfReconciliationAlertPreview(env, candidate, 'test', now, 'red');
+  assert.match(alert.subject, /ALERT: 货架需核对/);
+  for (const allowed of ['Time:', 'Question bank:', 'Operational status:', 'Last normal time:', 'Check failure stage:']) {
+    assert.match(alert.text, new RegExp(allowed));
+  }
+  for (const forbidden of ['bjt.example.invalid', 'internal shelf detail', 'private shelf error', 'URL:', 'Excerpt:', 'Fingerprint:', 'HTTP status:']) {
+    assert.doesNotMatch(alert.text, new RegExp(forbidden));
+  }
+
+  const recovery = buildShelfReconciliationAlertPreview(env, candidate, 'test', now, 'green');
+  assert.match(recovery.subject, /RECOVERY: 货架需核对/);
+  assert.match(recovery.text, /Operational status: normal/);
+  assert.doesNotMatch(recovery.text, /bjt\.example\.invalid|internal shelf detail|private shelf error/);
+});
+
 test('path checker test hooks do not send dashboard self-check email', () => {
   const source = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
   const wrangler = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
@@ -258,7 +361,11 @@ test('path checker test hooks do not send dashboard self-check email', () => {
   assert.match(wrangler, /DASHBOARD_ALERTS_ENABLED = "1"/);
   assert.match(wrangler, /REVIEW_ONLINE_CHECK_ENABLED = "0"/);
   assert.match(wrangler, /REVIEW_ONLINE_PROBE_URL = ""/);
+  assert.match(wrangler, /SHELF_RECONCILIATION_CHECK_ENABLED = "0"/);
+  assert.match(wrangler, /SHELF_STATUS_SUMMARY_URL = ""/);
+  assert.match(wrangler, /SHELF_STATUS_READ_TOKEN\. Scope: BJT shelf operational status summary read-only/);
   assert.match(wrangler, /\[env\.preview\.vars\][\s\S]*PATH_CHECK_ALERTS_ENABLED = "0"/);
   assert.match(wrangler, /\[env\.preview\.vars\][\s\S]*DASHBOARD_ALERTS_ENABLED = "0"/);
   assert.match(wrangler, /\[env\.preview\.vars\][\s\S]*REVIEW_ONLINE_CHECK_ENABLED = "0"/);
+  assert.match(wrangler, /\[env\.preview\.vars\][\s\S]*SHELF_RECONCILIATION_CHECK_ENABLED = "0"/);
 });
