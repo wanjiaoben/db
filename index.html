@@ -2827,11 +2827,19 @@ function renderPathCheckStatus(data) {
   const reviewLastOk = review.last_ok_at ? timeText(review.last_ok_at) : '-';
   const reviewLabel = review.display_status || (reviewEnabled ? (review.status || '无数据') : '未启用');
   const reviewDetail = '审核台在线：' + reviewLabel + (reviewEnabled ? (' · 最近成功 ' + reviewLastOk) : '');
+  const shelf = data?.shelf_reconciliation || {};
+  const shelfEnabled = shelf.enabled !== false;
+  const shelfRed = shelfEnabled && shelf.status === 'red';
+  const shelfNeutral = !shelfEnabled || shelf.status === 'unknown';
+  const shelfLastOk = shelf.last_ok_at ? timeText(shelf.last_ok_at) : '-';
+  const shelfLabel = shelf.display_status || (shelfEnabled ? (shelf.status || '无数据') : '未启用');
+  const shelfDetail = '货架需核对：' + shelfLabel + (shelfEnabled ? (' · 最近正常 ' + shelfLastOk) : '');
   el.innerHTML =
     '<div class="path-check-main"' + title + '>' + statusDot(!red, false) + escapeHtml(main) + '</div>' +
     '<div class="path-check-meta">PASS ' + n(passed) + ' / FAIL ' + n(failed) + '</div>' +
     '<div class="path-check-detail">' + escapeHtml(detail) + '</div>' +
-    '<div class="path-check-detail">' + statusDot(!reviewRed && reviewEnabled, false, reviewNeutral) + escapeHtml(reviewDetail) + '</div>';
+    '<div class="path-check-detail">' + statusDot(!reviewRed && reviewEnabled, false, reviewNeutral) + escapeHtml(reviewDetail) + '</div>' +
+    '<div class="path-check-detail">' + statusDot(!shelfRed && shelfEnabled, false, shelfNeutral) + escapeHtml(shelfDetail) + '</div>';
 }
 
 async function loadPathCheckStatus() {

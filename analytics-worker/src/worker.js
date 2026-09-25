@@ -52,6 +52,10 @@ const PATH_CHECK_FAST_FAILURE_DEBOUNCE = 2;
 const REVIEW_ONLINE_CHECK_KEY = 'review-online';
 const REVIEW_ONLINE_CHECK_LABEL = '审核台在线';
 const REVIEW_ONLINE_FAILURE_DEBOUNCE = 2;
+const SHELF_RECONCILIATION_CHECK_KEY = 'shelf-reconciliation';
+const SHELF_RECONCILIATION_CHECK_LABEL = '货架需核对';
+const SHELF_RECONCILIATION_FAILURE_DEBOUNCE = 1;
+const SHELF_NORMAL_OPERATIONAL_STATUSES = new Set(['ok', 'normal', 'healthy', 'ready']);
 const DEPLOYMENT_IN_PROGRESS_ALERT_MS = 30 * 60 * 1000;
 const CONFIG_SNAPSHOT_SOURCE = 'cloudflare-github-config';
 const CONFIG_SNAPSHOT_ALERT_KEY = 'config-snapshot';
@@ -2303,10 +2307,46 @@ function reviewOnlinePathCheckTarget(env) {
   };
 }
 
+function shelfReconciliationCheckEnabled(env) {
+  return String(env.SHELF_RECONCILIATION_CHECK_ENABLED || '').trim() === '1';
+}
+
+function shelfStatusSummaryUrl(env) {
+  return String(env.SHELF_STATUS_SUMMARY_URL || '').trim();
+}
+
+function shelfStatusReadToken(env) {
+  return String(env.SHELF_STATUS_READ_TOKEN || '').trim();
+}
+
+function shelfReconciliationPathCheckTarget(env) {
+  if (!shelfReconciliationCheckEnabled(env)) return null;
+  const url = shelfStatusSummaryUrl(env);
+  const token = shelfStatusReadToken(env);
+  if (!url) throw new Error('SHELF_STATUS_SUMMARY_URL_missing');
+  if (!token) throw new Error('SHELF_STATUS_READ_TOKEN_missing');
+  return {
+    key: SHELF_RECONCILIATION_CHECK_KEY,
+    label: SHELF_RECONCILIATION_CHECK_LABEL,
+    url,
+    okStatuses: [200],
+    headers: {
+      authorization: `Bearer ${token}`
+    },
+    contract: { type: 'shelf_operational_status' },
+    critical: true,
+    failure_debounce: SHELF_RECONCILIATION_FAILURE_DEBOUNCE,
+    sensitive: true,
+    alert_profile: 'shelf_reconciliation'
+  };
+}
+
 function pathCheckTargets(env, extraTargets = []) {
   const targets = [...PATH_CHECK_BASELINES];
   const reviewTarget = reviewOnlinePathCheckTarget(env);
   if (reviewTarget) targets.push(reviewTarget);
+  const shelfTarget = shelfReconciliationPathCheckTarget(env);
+  if (shelfTarget) targets.push(shelfTarget);
   return [...targets, ...(extraTargets || [])];
 }
 
@@ -2525,7 +2565,9 @@ async function checkPathTarget(target, env, runId) {
     critical: target.critical !== false,
     failure_debounce: Number(target.failure_debounce || 0) || null,
     alert_profile: target.alert_profile || '',
-    failure_stage: pathCheckFailureStage(status, error),
+    failure_stage: pathCheckFailureStage(status, error, contract.error),
+    operational_status: contract.operational_status || '',
+    question_banks: Array.isArray(contract.question_banks) ? contract.question_banks : [],
     resources: resourceResults
   };
   await env.DB.prepare(`
@@ -2559,7 +2601,8 @@ async function pathFetch(target, env, signal) {
     method: target.method || 'GET',
     headers: {
       accept: 'application/json,text/html,text/plain,*/*',
-      'user-agent': 'nice-customer-path-checker/1.0'
+      'user-agent': 'nice-customer-path-checker/1.0',
+      ...(target.headers || {})
     },
     signal,
     cf: { cacheTtl: 0, cacheEverything: false }
@@ -2624,7 +2667,75 @@ function checkPathContract(contract, text) {
     }
     return { ok: true };
   }
+  if (contract.type === 'shelf_operational_status') {
+    return checkShelfOperationalStatus(text);
+  }
   return { ok: false, error: `unknown_contract:${contract.type}` };
+}
+
+function checkShelfOperationalStatus(text) {
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    return { ok: false, error: 'bad_json', operational_status: 'unknown', question_banks: ['unknown'] };
+  }
+  const entries = extractShelfOperationalEntries(data);
+  if (!entries.length) {
+    return { ok: false, error: 'missing_operational_status', operational_status: 'unknown', question_banks: ['unknown'] };
+  }
+  const needs = entries.filter((entry) => entry.status === 'needs_reconciliation');
+  if (needs.length) {
+    return {
+      ok: false,
+      error: 'needs_reconciliation',
+      operational_status: 'needs_reconciliation',
+      question_banks: uniqueStrings(needs.map((entry) => entry.bank))
+    };
+  }
+  const unknown = entries.find((entry) => !SHELF_NORMAL_OPERATIONAL_STATUSES.has(entry.status));
+  if (unknown) {
+    return {
+      ok: false,
+      error: `unknown_operational_status:${unknown.status || 'blank'}`,
+      operational_status: unknown.status || 'unknown',
+      question_banks: uniqueStrings(entries.map((entry) => entry.bank))
+    };
+  }
+  return {
+    ok: true,
+    operational_status: 'normal',
+    question_banks: uniqueStrings(entries.map((entry) => entry.bank))
+  };
+}
+
+function extractShelfOperationalEntries(data) {
+  const records = [];
+  const pushRecord = (item, fallbackBank = 'all') => {
+    if (!item || typeof item !== 'object') return;
+    const rawStatus = item.operational_status ?? item.ops_status ?? item.status;
+    if (rawStatus === undefined || rawStatus === null) return;
+    records.push({
+      bank: clean(item.question_bank || item.bank || item.scope || item.book || fallbackBank || 'unknown', 80) || 'unknown',
+      status: String(rawStatus).trim().toLowerCase()
+    });
+  };
+  pushRecord(data, 'all');
+  for (const key of ['question_banks', 'banks', 'items', 'results', 'statuses']) {
+    if (Array.isArray(data?.[key])) {
+      for (const item of data[key]) pushRecord(item, 'unknown');
+    } else if (data?.[key] && typeof data[key] === 'object') {
+      for (const [bank, value] of Object.entries(data[key])) {
+        if (value && typeof value === 'object') pushRecord({ question_bank: bank, ...value }, bank);
+        else if (value !== undefined && value !== null) pushRecord({ question_bank: bank, operational_status: value }, bank);
+      }
+    }
+  }
+  return records;
+}
+
+function uniqueStrings(values) {
+  return [...new Set((values || []).map((value) => clean(value || 'unknown', 80) || 'unknown'))];
 }
 
 function hasJsonPath(data, path) {
@@ -2648,8 +2759,9 @@ function isFastPathCheckFailure(failedResults, results) {
   return failedRatio >= 0.25;
 }
 
-function pathCheckFailureStage(status, error = '') {
+function pathCheckFailureStage(status, error = '', contractError = '') {
   if (error) return String(error).includes('timeout') ? 'timeout' : 'fetch';
+  if (contractError === 'bad_json') return 'parse';
   if (status === 0) return 'fetch';
   if (status >= 500) return 'http_5xx';
   if (status >= 400) return 'http_4xx';
@@ -2711,7 +2823,7 @@ async function updatePathCheckState(env, result, now, groupFailure) {
     ).run();
   } else {
     const recovered = previous?.status === 'red';
-    shouldRecoverAlert = recovered && result.alert_profile === 'review_online';
+    shouldRecoverAlert = recovered && pathCheckProfileSendsRecovery(result.alert_profile);
     await env.DB.prepare(`
       INSERT INTO path_check_state (
         check_key, label, url, status, fingerprint, consecutive_failures,
@@ -2747,6 +2859,10 @@ async function updatePathCheckState(env, result, now, groupFailure) {
     previous_fingerprint: previous?.fingerprint || '',
     previous_last_ok_at: previous?.last_ok_at || ''
   };
+}
+
+function pathCheckProfileSendsRecovery(profile) {
+  return profile === 'review_online' || profile === 'shelf_reconciliation';
 }
 
 function shouldSendPathCheckAlert({ result, previous, consecutiveFailures, threshold, now }) {
@@ -2848,6 +2964,9 @@ async function sendPathCheckAlert(env, candidate, reason, now, status = 'red') {
   if (candidate?.result?.alert_profile === 'review_online') {
     return sendReviewOnlinePathCheckAlert(env, candidate, reason, now, status);
   }
+  if (candidate?.result?.alert_profile === 'shelf_reconciliation') {
+    return sendShelfReconciliationPathCheckAlert(env, candidate, reason, now, status);
+  }
   const config = getAlertConfig(env);
   const prefix = env.ALERT_SUBJECT_PREFIX || '';
   const { result, state } = candidate;
@@ -2895,6 +3014,32 @@ async function sendReviewOnlinePathCheckAlert(env, candidate, reason, now, statu
   return sendAlertEmail(config, preview.subject, preview.text);
 }
 
+function buildShelfReconciliationAlertPreview(env, candidate, reason, now, status = 'red') {
+  const prefix = env.ALERT_SUBJECT_PREFIX || '';
+  const { result, state } = candidate;
+  const recovered = status === 'green';
+  const subject = `${prefix}[Nice Path Check] ${recovered ? 'RECOVERY' : 'ALERT'}: ${SHELF_RECONCILIATION_CHECK_LABEL}`;
+  const banks = Array.isArray(result.question_banks) && result.question_banks.length
+    ? result.question_banks.join(', ')
+    : 'unknown';
+  const text = [
+    recovered ? 'Nice shelf reconciliation check recovered.' : 'Nice shelf reconciliation check needs attention.',
+    '',
+    `Time: ${now.toISOString()}`,
+    `Question bank: ${banks}`,
+    `Operational status: ${recovered ? 'normal' : (result.operational_status || 'unknown')}`,
+    `Last normal time: ${recovered ? result.checked_at : (state.previous_last_ok_at || '-')}`,
+    `Check failure stage: ${recovered ? 'recovered' : (result.failure_stage || 'unknown')}`
+  ].join('\n');
+  return { subject, text, recipient: getAlertRecipient(env), reason };
+}
+
+async function sendShelfReconciliationPathCheckAlert(env, candidate, reason, now, status = 'red') {
+  const config = getAlertConfig(env);
+  const preview = buildShelfReconciliationAlertPreview(env, candidate, reason, now, status);
+  return sendAlertEmail(config, preview.subject, preview.text);
+}
+
 async function sendPathCheckTestAlert(env) {
   const config = getAlertConfig(env);
   const prefix = env.ALERT_SUBJECT_PREFIX || '';
@@ -2935,7 +3080,8 @@ async function getPathCheckStatus(env) {
     states,
     recent_runs: recentRuns,
     baseline_count: PATH_CHECK_BASELINES.length,
-    review_online: reviewOnlineStatus(env, states)
+    review_online: reviewOnlineStatus(env, states),
+    shelf_reconciliation: shelfReconciliationStatus(env, states)
   };
 }
 
@@ -2969,6 +3115,43 @@ function reviewOnlineStatus(env, states = []) {
     label: state.label || REVIEW_ONLINE_CHECK_LABEL,
     status: state.status || 'unknown',
     display_status: state.status === 'green' ? '在线' : (state.status === 'red' ? '离线' : '无数据'),
+    last_ok_at: state.last_ok_at || '',
+    last_fail_at: state.last_fail_at || '',
+    consecutive_failures: Number(state.consecutive_failures || 0),
+    updated_at: state.updated_at || ''
+  };
+}
+
+function shelfReconciliationStatus(env, states = []) {
+  if (!shelfReconciliationCheckEnabled(env)) {
+    return {
+      enabled: false,
+      key: SHELF_RECONCILIATION_CHECK_KEY,
+      label: SHELF_RECONCILIATION_CHECK_LABEL,
+      status: 'disabled',
+      display_status: '未启用',
+      last_ok_at: '',
+      updated_at: ''
+    };
+  }
+  const state = (states || []).find((item) => item.check_key === SHELF_RECONCILIATION_CHECK_KEY);
+  if (!state) {
+    return {
+      enabled: true,
+      key: SHELF_RECONCILIATION_CHECK_KEY,
+      label: SHELF_RECONCILIATION_CHECK_LABEL,
+      status: 'unknown',
+      display_status: '无数据',
+      last_ok_at: '',
+      updated_at: ''
+    };
+  }
+  return {
+    enabled: true,
+    key: SHELF_RECONCILIATION_CHECK_KEY,
+    label: state.label || SHELF_RECONCILIATION_CHECK_LABEL,
+    status: state.status || 'unknown',
+    display_status: state.status === 'green' ? '正常' : (state.status === 'red' ? '需核对' : '无数据'),
     last_ok_at: state.last_ok_at || '',
     last_fail_at: state.last_fail_at || '',
     consecutive_failures: Number(state.consecutive_failures || 0),
@@ -5682,8 +5865,11 @@ export {
   PATH_CHECK_BASELINES,
   REVIEW_ONLINE_CHECK_KEY,
   REVIEW_ONLINE_FAILURE_DEBOUNCE,
+  SHELF_RECONCILIATION_CHECK_KEY,
+  SHELF_RECONCILIATION_FAILURE_DEBOUNCE,
   bingDateOnly,
   buildReviewOnlineAlertPreview,
+  buildShelfReconciliationAlertPreview,
   collectConfigSnapshot,
   configuredSearchConsoleSites,
   configuredBingSites,
@@ -5704,6 +5890,9 @@ export {
   reviewOnlineCheckEnabled,
   reviewOnlinePathCheckTarget,
   reviewOnlineStatus,
+  shelfReconciliationCheckEnabled,
+  shelfReconciliationPathCheckTarget,
+  shelfReconciliationStatus,
   normalizeSnapshot,
   normalizeBingQueryRow,
   normalizeSearchTermSource,
