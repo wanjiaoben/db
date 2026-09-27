@@ -45,10 +45,12 @@ jobs:
         working-directory: analytics-worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 97608888ce434ffd0b3883a0e91396e1
         run: npx --yes wrangler@4.112.0 deploy --config wrangler.toml
 
       - name: Deploy db-private
         working-directory: private-worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 97608888ce434ffd0b3883a0e91396e1
         run: npx --yes wrangler@4.112.0 deploy --config wrangler.toml
