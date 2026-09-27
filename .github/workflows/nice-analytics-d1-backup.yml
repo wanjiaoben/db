@@ -31,6 +31,7 @@ jobs:
       - name: Export nice_analytics D1 to R2 and verify read-back sha256
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_BACKUP_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 97608888ce434ffd0b3883a0e91396e1
           NICE_ANALYTICS_D1_DATABASE: nice_analytics
           NICE_ANALYTICS_BACKUP_BUCKET: progress-backup
           NICE_ANALYTICS_BACKUP_PREFIX: d1/nice_analytics/production
