@@ -4,8 +4,15 @@ import test from 'node:test';
 
 import {
   PATH_CHECK_BASELINES,
+  REVIEW_ONLINE_CHECK_KEY,
+  REVIEW_ONLINE_FAILURE_DEBOUNCE,
+  buildReviewOnlineAlertPreview,
   checkPathContract,
   isFastPathCheckFailure,
+  pathCheckAlertThreshold,
+  reviewOnlineCheckEnabled,
+  reviewOnlinePathCheckTarget,
+  reviewOnlineStatus,
   shouldSendPathCheckAlert,
   stableFingerprint
 } from '../src/worker.js';
@@ -150,6 +157,85 @@ test('path checker alert escalation keeps same-fingerprint red lights quiet insi
   }), false);
 });
 
+test('review online check is disabled by default and does not join the baseline', () => {
+  assert.equal(reviewOnlineCheckEnabled({}), false);
+  assert.equal(reviewOnlinePathCheckTarget({}), null);
+  assert.equal(PATH_CHECK_BASELINES.some((target) => target.key === REVIEW_ONLINE_CHECK_KEY), false);
+
+  const disabled = reviewOnlineStatus({}, []);
+  assert.equal(disabled.enabled, false);
+  assert.equal(disabled.status, 'disabled');
+  assert.equal(disabled.display_status, '未启用');
+});
+
+test('review online check target is opt-in, status-only, and alerts after two failures', () => {
+  const target = reviewOnlinePathCheckTarget({
+    REVIEW_ONLINE_CHECK_ENABLED: '1',
+    REVIEW_ONLINE_PROBE_URL: 'https://example.test/review-online'
+  });
+  assert.equal(target.key, REVIEW_ONLINE_CHECK_KEY);
+  assert.equal(target.label, '审核台在线');
+  assert.deepEqual(target.okStatuses, [200, 204]);
+  assert.equal(target.contract, null);
+  assert.equal(target.sensitive, true);
+  assert.equal(target.alert_profile, 'review_online');
+  assert.equal(target.failure_debounce, REVIEW_ONLINE_FAILURE_DEBOUNCE);
+
+  const result = { ok: false, critical: true, fingerprint: 'reviewdead', failure_debounce: target.failure_debounce };
+  const threshold = pathCheckAlertThreshold(result, false);
+  assert.equal(threshold, 2);
+  assert.equal(shouldSendPathCheckAlert({
+    result,
+    previous: null,
+    consecutiveFailures: 1,
+    threshold,
+    now: new Date('2026-09-23T01:00:00.000Z')
+  }), false);
+  assert.equal(shouldSendPathCheckAlert({
+    result,
+    previous: null,
+    consecutiveFailures: 2,
+    threshold,
+    now: new Date('2026-09-23T01:15:00.000Z')
+  }), true);
+});
+
+test('review online alert and recovery emails stay inside the approved field whitelist', () => {
+  const env = { ALERT_RECIPIENTS: 'aboutokinawa@gmail.com' };
+  const now = new Date('2026-09-23T02:00:00.000Z');
+  const candidate = {
+    result: {
+      key: REVIEW_ONLINE_CHECK_KEY,
+      label: '审核台在线',
+      url: 'https://review.example.invalid/internal-healthz',
+      ok: false,
+      status: 503,
+      failure_stage: 'http_5xx',
+      excerpt: 'server says private body should not leak',
+      error: 'private error should not leak',
+      alert_profile: 'review_online',
+      checked_at: '2026-09-23T02:00:00.000Z'
+    },
+    state: {
+      previous_last_ok_at: '2026-09-23T01:30:00.000Z',
+      previous_fingerprint: 'oldred'
+    }
+  };
+  const alert = buildReviewOnlineAlertPreview(env, candidate, 'test', now, 'red');
+  assert.match(alert.subject, /ALERT: 审核台在线/);
+  for (const allowed of ['Time:', 'Check:', 'Failure stage:', 'HTTP status:', 'Last success time:']) {
+    assert.match(alert.text, new RegExp(allowed));
+  }
+  for (const forbidden of ['review.example.invalid', 'internal-healthz', 'private body', 'private error', 'URL:', 'Excerpt:', 'Fingerprint:']) {
+    assert.doesNotMatch(alert.text, new RegExp(forbidden));
+  }
+
+  const recovery = buildReviewOnlineAlertPreview(env, candidate, 'test', now, 'green');
+  assert.match(recovery.subject, /RECOVERY: 审核台在线/);
+  assert.match(recovery.text, /Failure stage: recovered/);
+  assert.doesNotMatch(recovery.text, /review\.example\.invalid|private body|private error/);
+});
+
 test('path checker test hooks do not send dashboard self-check email', () => {
   const source = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
   const wrangler = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
@@ -170,6 +256,9 @@ test('path checker test hooks do not send dashboard self-check email', () => {
   assert.match(source, /dashboardAlertsEnabled\(env\)/);
   assert.match(wrangler, /PATH_CHECK_ALERTS_ENABLED = "1"/);
   assert.match(wrangler, /DASHBOARD_ALERTS_ENABLED = "1"/);
+  assert.match(wrangler, /REVIEW_ONLINE_CHECK_ENABLED = "0"/);
+  assert.match(wrangler, /REVIEW_ONLINE_PROBE_URL = ""/);
   assert.match(wrangler, /\[env\.preview\.vars\][\s\S]*PATH_CHECK_ALERTS_ENABLED = "0"/);
   assert.match(wrangler, /\[env\.preview\.vars\][\s\S]*DASHBOARD_ALERTS_ENABLED = "0"/);
+  assert.match(wrangler, /\[env\.preview\.vars\][\s\S]*REVIEW_ONLINE_CHECK_ENABLED = "0"/);
 });

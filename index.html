@@ -2820,10 +2820,18 @@ function renderPathCheckStatus(data) {
   const detail = stale
     ? '心跳超过 45 分钟未更新'
     : ('最近一轮 ' + (failed ? 'FAIL' : 'PASS') + ' · baseline ' + n(data?.baseline_count || total));
+  const review = data?.review_online || {};
+  const reviewEnabled = review.enabled !== false;
+  const reviewRed = reviewEnabled && review.status === 'red';
+  const reviewNeutral = !reviewEnabled || review.status === 'unknown';
+  const reviewLastOk = review.last_ok_at ? timeText(review.last_ok_at) : '-';
+  const reviewLabel = review.display_status || (reviewEnabled ? (review.status || '无数据') : '未启用');
+  const reviewDetail = '审核台在线：' + reviewLabel + (reviewEnabled ? (' · 最近成功 ' + reviewLastOk) : '');
   el.innerHTML =
     '<div class="path-check-main"' + title + '>' + statusDot(!red, false) + escapeHtml(main) + '</div>' +
     '<div class="path-check-meta">PASS ' + n(passed) + ' / FAIL ' + n(failed) + '</div>' +
-    '<div class="path-check-detail">' + escapeHtml(detail) + '</div>';
+    '<div class="path-check-detail">' + escapeHtml(detail) + '</div>' +
+    '<div class="path-check-detail">' + statusDot(!reviewRed && reviewEnabled, false, reviewNeutral) + escapeHtml(reviewDetail) + '</div>';
 }
 
 async function loadPathCheckStatus() {
