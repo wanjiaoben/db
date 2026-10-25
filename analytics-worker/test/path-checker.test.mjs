@@ -75,6 +75,23 @@ test('japanusedcars home contract uses stable title text case-insensitively', ()
   );
 });
 
+test('translation home stays healthy when service copy changes but requires the contact section', () => {
+  const target = PATH_CHECK_BASELINES.find((entry) => entry.key === 'site-translation-home');
+  assert.deepEqual(target.okStatuses, [200]);
+  for (const title of ['中日英商务翻译', '中日英德商务文件翻译', 'Okinawa business translation']) {
+    const page = `<html><title>${title}</title><section id="contact"><a href="mailto:info@nice.okinawa">Email</a></section></html>`;
+    assert.deepEqual(checkPathContract(target.contract, page), { ok: true });
+  }
+  for (const broken of [
+    '<html><title>中日英德商务文件翻译</title><body></body></html>',
+    '<html><title>中日英商务翻译</title><body>Temporarily unavailable</body></html>',
+    ''
+  ]) {
+    assert.equal(checkPathContract(target.contract, broken).ok, false);
+  }
+  assert.equal(target.critical, true);
+});
+
 test('path checker JSON contracts require fields and exact values', () => {
   const contract = {
     type: 'json_fields',

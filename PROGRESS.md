@@ -1,5 +1,7 @@
 # db.nice.okinawa Progress
 
+M1025-01 db｜A功能：修复 translation 首页旧文案导致的路径误报。监控继续要求 HTTP 200，内容契约改查稳定咨询区 `id="contact"`，不再绑定语言列表或营销标题。现网只读取样显示旧契约失败、新契约通过；删除咨询区反向样例仍失败。analytics 110 项、db-private 17 项测试及 release gate/reference 检查通过。CLAUDE.md 按常设授权同步 wan-rules v1.19，未手改宪法。仅改监控目标、回归测试及治理/进度文档；未改站点、学习/权益/支付/预授权、邮件模板/收件人/开关、路由或生产数据；对三项零影响以变更范围为证，未冒称真实付费账号/建单验收。当前仅候选修复，尚未部署，须完成 Wan 审核后按现有 Actions + annotated Wan-Verified tag 发布。发布后由原定时巡检自然更新状态，不手写清零、不手动触发发信。代码回滚方式：单独 revert 本次修复 commit；生产回滚须按既有 release gate 使用上一已验证 release。仓内 RULES/FREEZE/MERGE_GATE/DEPLOY_GATE 文件缺失，已读取 wan-rules CONSTITUTION/FREEZE/ANTI_PATTERNS 与本仓现有 release workflow/scripts，未新增或放宽发布门禁。
+
 INFRA-0904-02 drafts Cloudflare/GitHub configuration snapshots into analytics Worker巡检, with safe name/value redaction, D1 diff storage, dashboard status, and missing-permission reporting.
 
 AUTH-0903-01 adds Cloudflare Access JWT verification to db-private before falling back to Basic, with AUD/email env allowlist checks and beacon write-path regression tests.
