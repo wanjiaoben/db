@@ -75,6 +75,17 @@ test('japanusedcars home contract uses stable title text case-insensitively', ()
   );
 });
 
+test('translation home contract survives language-list changes but rejects a broken 200 shell', () => {
+  const target = PATH_CHECK_BASELINES.find((item) => item.key === 'site-translation-home');
+  assert.equal(target.contract.contains, '商务文件翻译');
+  assert.equal(target.contract.case_insensitive, true);
+  for (const languages of ['中日英德', '中日英']) {
+    assert.deepEqual(checkPathContract(target.contract,
+      `<title>冲绳・${languages}商务文件翻译・法务劳务税务手续预约协调同行翻译</title>`), { ok: true });
+  }
+  assert.equal(checkPathContract(target.contract, '<main>服务暂不可用</main>').ok, false);
+});
+
 test('path checker JSON contracts require fields and exact values', () => {
   const contract = {
     type: 'json_fields',

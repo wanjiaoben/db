@@ -82,7 +82,7 @@ const PATH_CHECK_BASELINES = Object.freeze([
   pageCheck('site-japanusedcars-home', 'japanusedcars home', 'https://japanusedcars.nice.okinawa/', 'Okinawa Used Cars', { caseInsensitive: true }),
   pageCheck('site-golf-home', 'golf home', 'https://golf.nice.okinawa/', 'Okinawa Golf Guide'),
   pageCheck('site-activity-home', 'activity home', 'https://activity.nice.okinawa/', '冲绳体验预约'),
-  pageCheck('site-translation-home', 'translation home', 'https://translation.nice.okinawa/', '中日英商务翻译'),
+  pageCheck('site-translation-home', 'translation home', 'https://translation.nice.okinawa/', '商务文件翻译', { caseInsensitive: true }),
   pageCheck('site-ev-home', 'ev home', 'https://ev.nice.okinawa/', 'EV SEA'),
   pageCheck('site-nice-okinawa-home', 'nice.okinawa home', 'https://nice.okinawa/', 'Nice Okinawa'),
   pageCheck('site-bjt-home', 'bjt home', 'https://bjt.nice.okinawa/', 'BJT商务日语能力考试'),
