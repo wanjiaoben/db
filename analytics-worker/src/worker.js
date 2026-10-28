@@ -1396,14 +1396,23 @@ export function jstWindow(ms = Date.now()) {
 }
 
 export function classifyDailyBriefSource(referrer, utmSource = '') {
-  const value = `${String(referrer || '')} ${String(utmSource || '')}`.toLowerCase();
+  const host = dailyBriefExternalHost(referrer);
+  const value = (host || String(utmSource || '')).toLowerCase();
   if (!value.trim()) return 'Direct';
-  if (/google\./.test(value)) return 'Google';
+  if (/google\.|\bgoogle\b/.test(value)) return 'Google';
   if (/\b(bing|msn)\./.test(value) || /\bbing\b/.test(value)) return 'Bing';
   if (/chatgpt|openai|perplexity|claude|anthropic|gemini|copilot|you\.com/.test(value)) return 'AI';
   if (/instagram|facebook|tiktok|youtube|twitter|x\.com|linkedin|line\.me|threads|pinterest/.test(value)) return 'SNS';
-  if (/^https?:\/\/(?:www\.)?nice\.okinawa(?:\/|$)/.test(String(referrer || '').toLowerCase())) return 'Direct';
   return 'Other';
+}
+
+function dailyBriefExternalHost(referrer) {
+  try {
+    const value = String(referrer || '').trim();
+    if (!value || value.toLowerCase() === 'direct') return '';
+    const host = new URL(value.includes('://') ? value : `https://${value}`).hostname.toLowerCase().replace(/\.$/, '');
+    return host === 'nice.okinawa' || host.endsWith('.nice.okinawa') ? '' : host;
+  } catch (_) { return ''; }
 }
 
 export function dailyBriefLamp(signals) {
@@ -1432,25 +1441,73 @@ async function dailyBriefSource(label, loader) {
   catch (error) { return dailyBriefUnavailable(label, error.message || String(error)); }
 }
 
-async function loadDailyBriefVisitors(env, window) {
+export async function loadDailyBriefVisitors(env, window) {
   const rows = await all(env.DB, `
-    SELECT referrer_host, utm_source, COUNT(*) AS views, COUNT(DISTINCT visitor_id) AS visitors
-    FROM visitor_events
-    WHERE created_at >= ? AND created_at < ? AND event_type = 'pageview'
+    WITH pageviews AS (
+      SELECT *, COUNT(*) OVER (PARTITION BY visitor_id) AS views
+      FROM visitor_events
+      WHERE created_at >= ? AND created_at < ? AND event_type = 'pageview'
+    ), ranked AS (
+      SELECT *, ROW_NUMBER() OVER (PARTITION BY visitor_id ORDER BY
+        CASE WHEN TRIM(COALESCE(referrer_host, '')) <> ''
+          AND LOWER(TRIM(referrer_host)) NOT IN ('direct', 'nice.okinawa')
+          AND LOWER(RTRIM(TRIM(referrer_host), '.')) <> 'nice.okinawa'
+          AND LOWER(RTRIM(TRIM(referrer_host), '.')) NOT LIKE '%.nice.okinawa' THEN 0
+          WHEN TRIM(COALESCE(utm_source, '')) <> '' THEN 1 ELSE 2 END,
+        created_at, id) AS rn
+      FROM pageviews
+    )
+    SELECT referrer_host, utm_source, COUNT(*) AS visitors, SUM(views) AS views
+    FROM ranked WHERE rn = 1
     GROUP BY referrer_host, utm_source
   `, [window.start, window.end.toISOString()]);
   const bySource = Object.fromEntries(['Google', 'AI', 'Bing', 'SNS', 'Direct', 'Other'].map((key) => [key, { views: 0, visitors: 0, raw_referrers: [] }]));
+  const otherHosts = new Map();
   for (const row of rows) {
     const category = classifyDailyBriefSource(row.referrer_host, row.utm_source);
     bySource[category].views += Number(row.views || 0);
     bySource[category].visitors += Number(row.visitors || 0);
-    if (row.referrer_host) bySource[category].raw_referrers.push(row.referrer_host);
+    const host = dailyBriefExternalHost(row.referrer_host);
+    if (host) bySource[category].raw_referrers.push(host);
+    if (category === 'Other' && host) {
+      const counts = otherHosts.get(host) || { views: 0, visitors: 0, raw_referrers: [host] };
+      counts.views += Number(row.views || 0);
+      counts.visitors += Number(row.visitors || 0);
+      otherHosts.set(host, counts);
+    }
+  }
+  for (const [host, counts] of [...otherHosts].sort((a, b) => b[1].visitors - a[1].visitors || a[0].localeCompare(b[0])).slice(0, 5)) {
+    bySource[`外链 ${host}`] = counts;
+    bySource.Other.views -= counts.views;
+    bySource.Other.visitors -= counts.visitors;
   }
   const totals = await first(env.DB, `
     SELECT COUNT(*) AS pageviews, COUNT(DISTINCT visitor_id) AS visitors, COUNT(DISTINCT session_id) AS sessions
     FROM visitor_events WHERE created_at >= ? AND created_at < ? AND event_type = 'pageview'
   `, [window.start, window.end.toISOString()]);
   return { totals: { pageviews: Number(totals?.pageviews || 0), visitors: Number(totals?.visitors || 0), sessions: Number(totals?.sessions || 0) }, by_source: bySource };
+}
+
+export function dailyBriefRedItems(alerts, businessHealth = []) {
+  const items = [];
+  for (const alert of alerts) {
+    let detail;
+    try { detail = JSON.parse(alert.detail); } catch (_) { /* plain-text alerts */ }
+    const children = Array.isArray(detail?.red_items) && detail.red_items.length ? detail.red_items : [alert];
+    for (const item of children) {
+      const key = item.key || alert.key;
+      if (items.some((existing) => existing.key === key)) continue;
+      const staleHours = String(item.detail || '').match(/older than (\d+)h/);
+      const reason = item.status === 'stale' && staleHours
+        ? `备份超过 ${staleHours[1]} 小时未更新${item.latest_at ? `；最近成功 ${dailyBriefJstTime(item.latest_at)} JST` : ''}`
+        : item.detail || item.error || item.status || '状态异常';
+      items.push({ key, label: item.label || key, detail: clean(reason, 240).replace(/\s+/g, ' ') });
+    }
+  }
+  for (const item of businessHealth.filter((item) => item.lamp.color === 'red')) {
+    items.push({ key: `business:${item.name}`, label: `${item.name} 营业健康`, detail: '首页巡检或备份异常，详见面板' });
+  }
+  return items;
 }
 
 async function loadDailyBriefReview(env) {
@@ -1531,10 +1588,11 @@ async function buildDailyBossBrief(env, now = new Date()) {
     { name: 'KISO', lamp: dailyBriefLamp([dailyBriefPathSignal(pathFor('kiso'))]) },
     { name: 'Progress', lamp: dailyBriefLamp([dailyBriefPathSignal(pathFor('progress')), backupFor('progress-production')?.ok ?? null]) }
   ];
-  const systemRed = redAlerts.length + businessHealth.filter((item) => item.lamp.color === 'red').length;
+  const redItems = dailyBriefRedItems(redAlerts, businessHealth);
+  const systemRed = redItems.length;
   const headline = systemRed ? '🔴 有系统红项，先处理阻断项' : (review.value?.pending ? '🟡 有待审核事项，建议今日处理' : '🟢 今日暂无紧急阻断');
   const reviewCount = review.available ? review.value.pending : null;
-  return { generated_at: now.toISOString(), window: { timezone: 'Asia/Tokyo', start: window.start, end: window.end.toISOString() }, headline, review_count: reviewCount, system_red: systemRed, visitors: visitorValue, review, system: { red_items: redAlerts, business_health: businessHealth }, seo: seo.available ? seo.value : Object.entries(VISITOR_EVENT_SITES).map(([site, host]) => ({ site, host, seo: dailyBriefLamp([]), geo: dailyBriefLamp([]), signals: { robots: '—', sitemap: '—', canonical: '—', not_found_404: '—', schema: '—', gsc_latest_available_date: '—' } })), sns: dailyBriefUnavailable('SNS queue', 'no_existing_sns_queue_source'), top_actions: redAlerts.slice(0, 3).map((item) => item.detail || item.key).concat(review.value?.pending ? ['打开审核台处理待审核项'] : []).slice(0, 3), sources: { visitors, review, customer_paths: paths, backup: backups, alert_state: alerts, search_console: seo } };
+  return { generated_at: now.toISOString(), window: { timezone: 'Asia/Tokyo', start: window.start, end: window.end.toISOString() }, headline, review_count: reviewCount, system_red: systemRed, visitors: visitorValue, review, system: { red_items: redItems, business_health: businessHealth }, seo: seo.available ? seo.value : Object.entries(VISITOR_EVENT_SITES).map(([site, host]) => ({ site, host, seo: dailyBriefLamp([]), geo: dailyBriefLamp([]), signals: { robots: '—', sitemap: '—', canonical: '—', not_found_404: '—', schema: '—', gsc_latest_available_date: '—' } })), sns: dailyBriefUnavailable('SNS queue', 'no_existing_sns_queue_source'), top_actions: redItems.slice(0, 3).map((item) => `${item.label}：${item.detail}`).concat(review.value?.pending ? ['打开审核台处理待审核项'] : []).slice(0, 3), sources: { visitors, review, customer_paths: paths, backup: backups, alert_state: alerts, search_console: seo } };
 }
 
 export function buildDailyBriefSubject(report, sample = false) {
@@ -1545,19 +1603,33 @@ export function buildDailyBriefSubject(report, sample = false) {
   return `${sample ? '【SAMPLE｜Nice Okinawa Daily】' : '【Nice Okinawa Daily】'}${date}｜待审核${review}｜系统${red}红｜今日访客${visitors}`;
 }
 
+function dailyBriefJstTime(value) {
+  return new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).format(new Date(value));
+}
+
 export function renderDailyBossBrief(report) {
-  const reviewUnavailableText = report.review?.status === 'not_configured'
-    ? '- —（未配置）'
-    : '- —（EI / 数据暂不可用）';
+  const redItems = report.system?.red_items || [];
+  const visitorCount = report.visitors?.totals?.visitors || 0;
+  const reviewLines = report.review?.available ? [
+    'Review 摘要（业务分组仅显示数量）',
+    ...Object.entries(report.review.value.groups).map(([key, value]) => `- ${key}：${value}`),
+    `审核台：${report.review.value.entry}`, ''
+  ] : [];
   const lines = [
-    report.headline, '', `窗口：${report.window.start} → ${report.window.end}（JST）`,
-    `待我处理：${report.review_count ?? '—'}${report.review_count === null ? (report.review?.status === 'not_configured' ? '（未配置）' : '（EI / 数据暂不可用）') : ''}`,
+    report.headline, '', `窗口：${dailyBriefJstTime(report.window.start)} → ${dailyBriefJstTime(report.window.end)} JST`,
+    ...(report.review?.available ? [`待我处理：${report.review_count}`] : []),
     `系统处理中：${report.system?.business_health?.map((item) => `${item.name}${item.lamp.icon}`).join(' / ') || '—'}`,
-    `系统红项：${report.system_red || 0}`, '', '今日访客', `访客：${report.visitors?.totals?.visitors ?? '—'}｜会话：${report.visitors?.totals?.sessions ?? '—'}｜PV：${report.visitors?.totals?.pageviews ?? '—'}`,
-    '来源占比（底层保留真实 referrer；证据不足归 Direct/Unknown）', ...Object.entries(report.visitors?.by_source || {}).map(([key, value]) => `- ${key}：${value.views || 0}`), '',
-    'Review 摘要（业务分组仅显示数量）', ...(report.review.available ? Object.entries(report.review.value.groups).map(([key, value]) => `- ${key}：${value}`) : [reviewUnavailableText]), report.review.available ? `审核台：${report.review.value.entry}` : '', '',
+    `系统红项：${report.system_red || 0}`,
+    ...redItems.slice(0, 5).map((item) => `- ${item.label || item.key || '系统检查'}：${item.detail || '状态异常，详见面板'}`),
+    ...(redItems.length > 5 ? [`另 ${redItems.length - 5} 条见面板`] : []),
+    '', '今日访客', `访客：${report.visitors?.totals?.visitors ?? '—'}｜会话：${report.visitors?.totals?.sessions ?? '—'}｜PV：${report.visitors?.totals?.pageviews ?? '—'}`,
+    '来源占比（按唯一访客；外部 referrer → UTM → Direct；站内自引用排除）',
+    ...Object.entries(report.visitors?.by_source || {}).map(([key, value]) => `- ${key}：${value.visitors || 0} 人（${visitorCount ? ((value.visitors || 0) * 100 / visitorCount).toFixed(1) : '0.0'}%）`), '',
+    ...reviewLines,
     '营业健康', ...report.system.business_health.map((item) => `- ${item.lamp.icon} ${item.name}`), '', '全站 SEO/GEO', ...report.seo.map((site) => `- ${site.site}（${site.host}）：SEO ${site.seo.icon}｜GEO ${site.geo.icon}｜GSC latest_available_date ${site.signals.gsc_latest_available_date}${site.evidence_status === 'EI' ? '｜EI' : ''}`), '',
-    'SNS 队列六指标', '- 排队：—｜可发布：—｜已排程：—｜已发布：—｜失败：—｜过期：—（EI / 数据暂不可用）', '', '今日值得做（最多 3 件）', ...(report.top_actions.length ? report.top_actions.map((item) => `- ${item}`) : ['- 暂无']), '', '数据不可用项按 — / EI 展示；单项缺失不阻断日报。', `生成：${report.generated_at}`
+    'SNS 队列六指标', '- 排队：—｜可发布：—｜已排程：—｜已发布：—｜失败：—｜过期：—（EI / 数据暂不可用）', '', '今日值得做（最多 3 件）', ...(report.top_actions.length ? report.top_actions.map((item) => `- ${item}`) : ['- 暂无']), '', '数据不可用项按 — / EI 展示；单项缺失不阻断日报。', `生成：${dailyBriefJstTime(report.generated_at)} JST`
   ];
   return lines.filter((line, index) => !(line === '' && lines[index - 1] === '')).join('\n');
 }
