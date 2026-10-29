@@ -4,6 +4,10 @@ import test from 'node:test';
 
 import worker, {
   classifyConfigSnapshotChange,
+  describeConfigSnapshotChanges,
+  buildAlertEmailPreview,
+  normalizeConfigSnapshotForComparison,
+  getConfigSnapshotStatus,
   collectConfigSnapshot,
   diffSnapshotJson,
   normalizeSnapshot,
@@ -111,6 +115,54 @@ test('config snapshot normalization sorts stably and redacts secret-looking valu
   assert.equal(await sha256Hex(JSON.stringify(a)), await sha256Hex(JSON.stringify(b)));
 });
 
+test('readable snapshot changes identify each Worker, route, schedule, Pages and Access field', async () => {
+  const before = { generated_at: '2026-10-28T00:07:00Z', cloudflare: { items: [
+    { key: 'cf.workers_scripts', items: [{ script_name: 'nice-analytics', compatibility_date: '2026-06-12' }] },
+    { key: 'cf.workers_routes', items: [{ pattern: 'db.nice.okinawa/*', script: 'old-worker' }] },
+    { key: 'cf.workers.nice-analytics.schedules', items: [{ cron: '0 0 * * *' }] },
+    { key: 'cf.pages_projects', items: [{ name: 'test-site', domains: ['old.example'] }] },
+    { key: 'cf.access_apps', items: [{ name: 'db-dashboard', session_duration: '24h' }] }
+  ] } };
+  const after = structuredClone(before);
+  after.generated_at = '2026-10-29T00:07:00Z';
+  after.cloudflare.items[0].items[0].compatibility_date = '2026-10-28';
+  after.cloudflare.items[1].items[0].script = 'new-worker';
+  after.cloudflare.items[2].items.push({ cron: '*/5 * * * *' });
+  after.cloudflare.items[3].items[0].domains.push('new.example');
+  after.cloudflare.items[4].items[0].session_duration = '730h';
+  const changes = await describeConfigSnapshotChanges(JSON.stringify(before), JSON.stringify(after));
+  const text = JSON.stringify(changes);
+  assert.match(text, /nice-analytics/);
+  assert.match(text, /2026-06-12 → 2026-10-28/);
+  assert.match(text, /old-worker → new-worker/);
+  assert.match(text, /new.example/);
+  assert.match(text, /24h → 730h/);
+  assert.deepEqual(new Set(changes.map((item) => item.type)), new Set(['Worker','route','schedule','Pages','Access']));
+  assert.doesNotMatch(text, /generated_at|T11:34:27Z/);
+});
+
+test('snapshot email hashes every secret name and lists additions and removals only', async () => {
+  const make = (names) => JSON.stringify({ cloudflare: { items: [{ key: 'cf.workers.nice-analytics.secrets', items: names.map((name) => ({ secret_names: [{ name, value: 'must-not-leak' }] })) }] } });
+  const changes = await describeConfigSnapshotChanges(make(['OLD_PRIVATE_NAME']), make(['NEW_PRIVATE_NAME']));
+  assert.equal(changes.length, 2);
+  const email = buildAlertEmailPreview({ ALERT_RECIPIENTS: 'ops@example.invalid' }, 'red', [{ type: 'config_snapshot', latest_at: '2026-10-29T00:07:49.472Z', changes }]);
+  assert.match(email.subject, /\[Nice Dashboard\] 配置变更：Cloudflare 2 项/);
+  assert.match(email.text, /2026-10-29 09:07:49\.472 JST/);
+  assert.match(email.text, /新增 name_hash=[0-9a-f]{64}/);
+  assert.match(email.text, /删除 name_hash=[0-9a-f]{64}/);
+  assert.doesNotMatch(JSON.stringify(email), /OLD_PRIVATE_NAME|NEW_PRIVATE_NAME|must-not-leak|T00:07/);
+});
+
+test('snapshot detail email caps at ten, keeps metadata-only snapshots silent and preserves routing', async () => {
+  const changes = Array.from({ length: 12 }, (_, i) => ({ source: 'Cloudflare', type: 'Worker', name: `test-worker-${i}`, change: 'version：old → new' }));
+  const email = buildAlertEmailPreview({ ALERT_RECIPIENTS: 'ops@example.invalid' }, 'red', [{ type: 'config_snapshot', latest_at: '2026-10-29T00:07:00Z', changes }]);
+  assert.equal(email.text.split('\n').filter((line) => line.startsWith('- ')).length, 10);
+  assert.match(email.text, /另 2 条见面板/);
+  assert.equal(email.recipient, 'ops@example.invalid');
+  assert.deepEqual(await describeConfigSnapshotChanges('{"generated_at":"old"}', '{"generated_at":"new"}'), []);
+  assert.match(buildAlertEmailPreview({ ALERT_RECIPIENTS: 'ops@example.invalid' }, 'red', [{ type: 'probe', label: 'test-probe' }]).subject, /ALERT: 1 red item/);
+});
+
 test('sensitive business secret names are hashed instead of stored verbatim', () => {
   assert.deepEqual(sanitizeSecretName('DASHBOARD_KEY'), { name: 'DASHBOARD_KEY' });
   const sensitive = sanitizeSecretName('CUSTOMER_EMAIL_KEY');
@@ -129,9 +181,9 @@ test('config snapshot diff reports changed fields only after baseline', async ()
   };
   const originalFetch = globalThis.fetch;
   const sentSubjects = [];
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, init) => {
     if (String(url) === 'https://api.resend.com/emails') {
-      sentSubjects.push('sent');
+      sentSubjects.push(JSON.parse(init.body));
       return new Response(JSON.stringify({ id: 'email_123' }), { status: 200 });
     }
     throw new Error('unexpected network in config snapshot test');
@@ -147,6 +199,9 @@ test('config snapshot diff reports changed fields only after baseline', async ()
     });
     assert.equal(second.changed, true);
     assert.equal(sentSubjects.length, 1);
+    assert.match(sentSubjects[0].subject, /\[Nice Dashboard\] 配置变更：GitHub 1 项/);
+    assert.match(sentSubjects[0].text, /新增 required_checks\[\]：extra/);
+    assert.doesNotMatch(sentSubjects[0].text, /\d{2}:\d{2}:\d{2}\.\d{3}Z/);
     assert.equal(db.state.alertSendLog.length, 1);
 
     const third = await runConfigSnapshot(env, 'test', {
@@ -248,7 +303,7 @@ test('worker modified_on near own atomic release is expected, not changed', () =
   assert.equal(result.expected_changes[0].type, 'EXPECTED_OWN_RELEASE');
 });
 
-test('worker modified_on without matching atomic release remains changed', () => {
+test('worker modified_on without matching atomic release is deployment metadata, not a config change', () => {
   const previous = JSON.stringify({
     cloudflare: {
       items: [{ key: 'cf.workers_scripts', items: [{ id: 'db-private', modified_on: '2026-09-07T00:22:12Z', compatibility_date: '2026-06-12' }] }]
@@ -260,6 +315,98 @@ test('worker modified_on without matching atomic release remains changed', () =>
     }
   });
   const result = classifyConfigSnapshotChange(previous, next, []);
-  assert.equal(result.changed, true);
-  assert.deepEqual(result.diff, ['cloudflare.items changed']);
+  assert.equal(result.changed, false);
+  assert.deepEqual(result.diff, []);
+});
+
+test('comparison strips deployment metadata but preserves actual resource binding ids', () => {
+  const a = { cloudflare: { items: [{ key: 'cf.workers_scripts', items: [{ id: 'test-worker',
+    modified_on: 'old', created_on: 'old', deployment_id: 'old', version_id: 'old', version: 'old', etag: 'old',
+    bindings: [{ name: 'DB', database_id: 'resource-a' }]
+  }] }] } };
+  const b = structuredClone(a);
+  Object.assign(b.cloudflare.items[0].items[0], { modified_on:'new', created_on:'new', deployment_id:'new', version_id:'new', version:'new', etag:'new' });
+  assert.deepEqual(normalizeConfigSnapshotForComparison(a), normalizeConfigSnapshotForComparison(b));
+  b.cloudflare.items[0].items[0].bindings[0].database_id = 'resource-b';
+  assert.equal(classifyConfigSnapshotChange(JSON.stringify(a), JSON.stringify(b)).changed, true);
+});
+
+test('binding capture keeps public resource ids but discards all secret and variable values', async () => {
+  const originalFetch=globalThis.fetch;
+  globalThis.fetch=async (url) => {
+    if (String(url).endsWith('/settings')) return Response.json({result:{bindings:[
+      {name:'DB',type:'d1',database_id:'11111111-2222-4333-8444-555555555555'},
+      {name:'PRIVATE_TEST_NAME',type:'secret_text',text:'private-secret-value'},
+      {name:'PUBLIC_LABEL',type:'plain_text',text:'must-not-store-variable-value'}
+    ]}});
+    return Response.json({result:[]});
+  };
+  try {
+    const data=normalizeSnapshot(await collectConfigSnapshot({CLOUDFLARE_CONFIG_READ_TOKEN:'stub',CLOUDFLARE_ACCOUNT_ID:'test'}));
+    const text=JSON.stringify(data);
+    assert.match(text,/11111111-2222-4333-8444-555555555555/);
+    assert.doesNotMatch(text,/PRIVATE_TEST_NAME|private-secret-value|must-not-store-variable-value/);
+    const changed=structuredClone(data);
+    const settings=changed.cloudflare.items.find((item)=>item.key==='cf.workers.nice-analytics.settings');
+    settings.items[0].bindings.find((item)=>item.type==='d1').database_id='aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    assert.equal(classifyConfigSnapshotChange(JSON.stringify(data),JSON.stringify(changed)).changed,true);
+  } finally {globalThis.fetch=originalFetch;}
+});
+
+test('migration rebuilds a normalized baseline silently, keeps raw history and aligns dashboard status', async () => {
+  const db = memoryDb();
+  const old = snapshot({ generated_at: '2026-10-28T00:07:00Z', cloudflare: { items: [{ key:'cf.workers_scripts',items:[{id:'nice-analytics',modified_on:'2026-10-28T11:00:00Z'}] }] } });
+  const oldJson = JSON.stringify(normalizeSnapshot(old));
+  db.state.snapshots.push({ id:1, ts:'2026-10-28T00:07:00Z', source:'cloudflare-github-config', json:oldJson, sha256:await sha256Hex(oldJson) });
+  const next = structuredClone(old);
+  next.generated_at = '2026-10-29T00:07:00Z';
+  next.cloudflare.items[0].items[0].modified_on = '2026-10-29T00:00:00Z';
+  const env = { DB: db, ALERT_RECIPIENTS:'ops@example.invalid', RESEND_API_KEY:'stub' };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('baseline must never send'); };
+  try {
+    const first = await runConfigSnapshot(env, 'test', { snapshot:next });
+    assert.equal(first.baseline_rebuilt, true);
+    assert.equal(first.changed, false);
+    assert.equal(first.alert, null);
+    assert.equal(db.state.alertSendLog.length, 0);
+    assert.equal(db.state.snapshots[0].json, oldJson);
+    assert.ok(first.deployment_records.some((item) => item.name === 'nice-analytics' && item.time_jst.endsWith('JST')));
+    const status = await getConfigSnapshotStatus(env);
+    assert.equal(status.changed, false);
+    assert.equal(status.baseline_pending, false);
+    assert.equal(status.sha256, first.normalized_sha256);
+    next.cloudflare.items[0].items[0].modified_on = '2026-10-29T01:00:00Z';
+    const second = await runConfigSnapshot(env, 'test', { snapshot:next });
+    assert.equal(second.baseline_rebuilt, false);
+    assert.equal(second.changed, false);
+    assert.equal(second.normalized_sha256, first.normalized_sha256);
+    assert.notEqual(second.sha256, first.sha256);
+    assert.equal((await getConfigSnapshotStatus(env)).changed, false);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('route, schedule, secret name and Access changes stay red after baseline and appear in email', async () => {
+  for (const [key, beforeItem, afterItem] of [
+    ['cf.workers_routes', {pattern:'site.example/*',script:'old'}, {pattern:'site.example/*',script:'new'}],
+    ['cf.workers.test.schedules', {cron:'0 0 * * *'}, {cron:'*/5 * * * *'}],
+    ['cf.workers.test.secrets', {secret_names:[{name:'OLD_NAME'}]}, {secret_names:[{name:'NEW_NAME'}]}],
+    ['cf.access_apps', {name:'test-access',policies:[{name:'allow',decision:'allow'}]}, {name:'test-access',policies:[{name:'allow',decision:'deny'}]}]
+  ]) {
+    const db = memoryDb();
+    const env = { DB:db, ALERT_RECIPIENTS:'ops@example.invalid', ALERT_FROM_EMAIL:'ops@example.invalid',RESEND_API_KEY:'stub' };
+    const make = (item) => ({cloudflare:{items:[{key,items:[item]}]}});
+    await runConfigSnapshot(env,'test',{snapshot:make(beforeItem),notify:false});
+    const sent = [];
+    const originalFetch=globalThis.fetch;
+    globalThis.fetch=async (url, init) => { sent.push(JSON.parse(init.body));return Response.json({id:'mock-email'}); };
+    try {
+      const result=await runConfigSnapshot(env,'test',{snapshot:make(afterItem)});
+      assert.equal(result.changed,true,key);
+      assert.equal(sent.length,1,key);
+      assert.match(sent[0].subject,/配置变更/);
+      assert.doesNotMatch(sent[0].text,/OLD_NAME|NEW_NAME/);
+      assert.equal((await getConfigSnapshotStatus(env)).changed,true,key);
+    } finally { globalThis.fetch=originalFetch; }
+  }
 });

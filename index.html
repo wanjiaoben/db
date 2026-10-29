@@ -1746,6 +1746,10 @@ td.num, th.num { text-align: right; }
         <tbody id="configSnapshotTable"><tr><td colspan="4" class="empty">等待配置快照</td></tr></tbody>
       </table>
       <table style="margin-top:8px">
+        <thead><tr><th>部署记录</th><th>时间（JST）</th></tr></thead>
+        <tbody id="configDeploymentTable"><tr><td colspan="2" class="empty">暂无部署记录</td></tr></tbody>
+      </table>
+      <table style="margin-top:8px">
         <thead><tr><th>AUDIT 数据</th><th>上次月份</th><th>时间</th><th>状态</th></tr></thead>
         <tbody id="auditHumanMetricsTable"><tr><td colspan="4" class="empty">等待 AUDIT 数据</td></tr></tbody>
       </table>
@@ -2726,8 +2730,12 @@ async function loadControl() {
     renderRows('configSnapshotTable', [configSnapshot], (r) => row([
       escapeHtml(r.source || 'cloudflare-github-config'),
       escapeHtml(timeText(r.latest_at)),
-      { html: statusDot(r.ok && !r.changed, false, !r.configured, r.changed) + escapeHtml(!r.configured ? '未建立基线' : (r.changed ? '有变化' : '无变化')) },
+      { html: statusDot(r.ok && !r.changed && !r.baseline_pending, false, !r.configured || r.baseline_pending, r.changed) + escapeHtml(!r.configured ? '未建立基线' : (r.baseline_pending ? '待重建基线' : (r.changed ? '有变化' : '无变化'))) },
       escapeHtml((r.sha256 || '-').slice(0, 16))
+    ]));
+
+    renderRows('configDeploymentTable', configSnapshot.deployment_records || [], (r) => row([
+      escapeHtml(r.name || '-'), escapeHtml(r.time_jst || '-')
     ]));
 
     const auditHumanMetrics = data.audit_human_metrics || {};

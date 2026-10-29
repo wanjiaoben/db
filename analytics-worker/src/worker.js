@@ -51,6 +51,8 @@ const PATH_CHECK_FAILURE_DEBOUNCE = 3;
 const PATH_CHECK_FAST_FAILURE_DEBOUNCE = 2;
 const DEPLOYMENT_IN_PROGRESS_ALERT_MS = 30 * 60 * 1000;
 const CONFIG_SNAPSHOT_SOURCE = 'cloudflare-github-config';
+const CONFIG_SNAPSHOT_COMPARISON_SOURCE = 'cloudflare-github-config:comparison-v2';
+const CONFIG_SNAPSHOT_NORMALIZATION_VERSION = 2;
 const CONFIG_SNAPSHOT_ALERT_KEY = 'config-snapshot';
 const CONFIG_SNAPSHOT_ALERT_WINDOW_MS = 24 * 60 * 60 * 1000;
 const AUDIT_HUMAN_METRICS_SOURCE = 'audit-human-data-plan';
@@ -69,7 +71,10 @@ const CLOUDFLARE_CONFIG_ENDPOINTS = Object.freeze([
   { key: 'cf.workers.nice-analytics.secrets', path: (accountId) => `/accounts/${accountId}/workers/scripts/nice-analytics/secrets` },
   { key: 'cf.workers.nice-analytics.schedules', path: (accountId) => `/accounts/${accountId}/workers/scripts/nice-analytics/schedules` },
   { key: 'cf.workers.db-private.secrets', path: (accountId) => `/accounts/${accountId}/workers/scripts/db-private/secrets` },
-  { key: 'cf.workers.db-private.schedules', path: (accountId) => `/accounts/${accountId}/workers/scripts/db-private/schedules` }
+  { key: 'cf.workers.db-private.schedules', path: (accountId) => `/accounts/${accountId}/workers/scripts/db-private/schedules` },
+  ...['nice-analytics', 'db-private', 'progress-api', 'progress-api-preview'].map((name) => ({
+    key: `cf.workers.${name}.settings`, path: (accountId) => `/accounts/${accountId}/workers/scripts/${name}/settings`
+  }))
 ]);
 const CLOUDFLARE_ZONE_CONFIG_ENDPOINTS = Object.freeze([
   { key: 'cf.workers_routes', path: (zoneId) => `/zones/${zoneId}/workers/routes` }
@@ -3001,7 +3006,7 @@ async function ensureConfigSnapshotTable(env) {
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_config_snapshot_source_sha ON config_snapshot(source, sha256)').run();
 }
 
-async function getConfigSnapshotStatus(env) {
+export async function getConfigSnapshotStatus(env) {
   try {
     await ensureConfigSnapshotTable(env);
     const latest = await first(env.DB, `
@@ -3011,22 +3016,29 @@ async function getConfigSnapshotStatus(env) {
       ORDER BY ts DESC, id DESC
       LIMIT 1
     `, [CONFIG_SNAPSHOT_SOURCE]);
-    const previous = latest ? await first(env.DB, `
-      SELECT ts, source, sha256
+    const comparison = latest ? await first(env.DB, `
+      SELECT ts, source, sha256, json
       FROM config_snapshot
-      WHERE source = ? AND ts < ?
+      WHERE source = ?
       ORDER BY ts DESC, id DESC
       LIMIT 1
-    `, [CONFIG_SNAPSHOT_SOURCE, latest.ts]) : null;
+    `, [CONFIG_SNAPSHOT_COMPARISON_SOURCE]) : null;
     const parsed = latest?.json ? JSON.parse(latest.json) : null;
+    const ledger = comparison?.json ? JSON.parse(comparison.json) : null;
+    const current = ledger?.normalization_version === CONFIG_SNAPSHOT_NORMALIZATION_VERSION && ledger.raw_sha256 === latest?.sha256;
     return {
       ok: true,
       configured: Boolean(latest),
       source: CONFIG_SNAPSHOT_SOURCE,
       latest_at: latest?.ts || '',
-      sha256: latest?.sha256 || '',
-      changed: Boolean(previous && previous.sha256 !== latest.sha256),
-      previous_sha256: previous?.sha256 || '',
+      sha256: current ? comparison.sha256 : '',
+      raw_sha256: latest?.sha256 || '',
+      changed: current ? Boolean(ledger.changed) : false,
+      baseline_pending: !current,
+      baseline_rebuilt: current ? Boolean(ledger.baseline_rebuilt) : false,
+      normalization_version: current ? ledger.normalization_version : null,
+      previous_sha256: current ? ledger.previous_normalized_sha256 : '',
+      deployment_records: current ? ledger.deployment_records || [] : [],
       permissions: parsed?.permissions || [],
       pending_authorization: parsed?.pending_authorization || []
     };
@@ -3667,6 +3679,8 @@ async function runConfigSnapshot(env, reason = 'manual', options = {}) {
   assertNoSecretValues(safeSnapshot);
   const jsonText = JSON.stringify(safeSnapshot);
   const sha256 = await sha256Hex(jsonText);
+  const normalized = comparableConfigSnapshot(safeSnapshot);
+  const normalizedSha256 = await sha256Hex(JSON.stringify(normalized));
   const previous = await first(env.DB, `
     SELECT ts, sha256, json
     FROM config_snapshot
@@ -3674,21 +3688,39 @@ async function runConfigSnapshot(env, reason = 'manual', options = {}) {
     ORDER BY ts DESC, id DESC
     LIMIT 1
   `, [CONFIG_SNAPSHOT_SOURCE]);
-  const ownReleaseRuns = Object.hasOwn(options, 'ownReleaseRuns')
-    ? options.ownReleaseRuns
-    : (previous && previous.sha256 !== sha256 ? await fetchRecentAtomicReleaseRuns(env) : []);
-  const classification = classifyConfigSnapshotChange(previous?.json || '', jsonText, ownReleaseRuns);
-  const changed = Boolean(previous && classification.changed);
+  const previousComparison = await first(env.DB, `
+    SELECT ts, sha256, json FROM config_snapshot WHERE source = ? ORDER BY ts DESC, id DESC LIMIT 1
+  `, [CONFIG_SNAPSHOT_COMPARISON_SOURCE]);
+  const previousLedger = previousComparison?.json ? JSON.parse(previousComparison.json) : null;
+  const baselineRebuilt = previousLedger?.normalization_version !== CONFIG_SNAPSHOT_NORMALIZATION_VERSION
+    || previousLedger?.raw_sha256 !== previous?.sha256;
+  const classification = classifyConfigSnapshotChange(previous?.json || '', jsonText, options.ownReleaseRuns || []);
+  const changed = !baselineRebuilt && previousComparison.sha256 !== normalizedSha256;
+  const newDeployments = configSnapshotDeploymentRecords(previous?.json || '', jsonText);
+  const deploymentRecords = [...newDeployments, ...(previousLedger?.deployment_records || [])]
+    .filter((item, index, rows) => rows.findIndex((other) => other.name === item.name && other.at === item.at) === index)
+    .sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 20);
   const ts = new Date().toISOString();
   await env.DB.prepare(`
     INSERT INTO config_snapshot (ts, source, json, sha256)
     VALUES (?, ?, ?, ?)
   `).bind(ts, CONFIG_SNAPSHOT_SOURCE, jsonText, sha256).run();
+  const ledger = {
+    normalization_version: CONFIG_SNAPSHOT_NORMALIZATION_VERSION,
+    raw_sha256: sha256,
+    previous_normalized_sha256: baselineRebuilt ? '' : previousComparison.sha256,
+    changed,
+    baseline_rebuilt: baselineRebuilt,
+    deployment_records: deploymentRecords
+  };
+  await env.DB.prepare(`
+    INSERT INTO config_snapshot (ts, source, json, sha256) VALUES (?, ?, ?, ?)
+  `).bind(ts, CONFIG_SNAPSHOT_COMPARISON_SOURCE, JSON.stringify(ledger), normalizedSha256).run();
 
   let alert = null;
   let sendLock = null;
   const diff = changed ? classification.diff : [];
-  const fingerprint = changed ? `config:${sha256}` : '';
+  const fingerprint = changed ? `config:${normalizedSha256}` : '';
   if (changed && options.notify !== false) {
     sendLock = await claimAlertSend(env, {
       key: CONFIG_SNAPSHOT_ALERT_KEY,
@@ -3705,7 +3737,8 @@ async function runConfigSnapshot(env, reason = 'manual', options = {}) {
         status: 'changed',
         detail: diff.slice(0, 12).join('; ') || 'snapshot changed',
         latest_at: ts,
-        fingerprint
+        fingerprint,
+        changes: await describeConfigSnapshotChanges(JSON.stringify(comparableConfigSnapshot(JSON.parse(previous.json))), JSON.stringify(normalized))
       }]);
       await finishAlertSend(env, sendLock.id, alert);
     }
@@ -3715,6 +3748,10 @@ async function runConfigSnapshot(env, reason = 'manual', options = {}) {
     source: CONFIG_SNAPSHOT_SOURCE,
     ts,
     sha256,
+    normalized_sha256: normalizedSha256,
+    normalization_version: CONFIG_SNAPSHOT_NORMALIZATION_VERSION,
+    baseline_rebuilt: baselineRebuilt,
+    deployment_records: deploymentRecords,
     previous_sha256: previous?.sha256 || '',
     changed,
     diff,
@@ -3737,13 +3774,102 @@ function classifyConfigSnapshotChange(previousJson, nextJson, ownReleaseRuns = [
   return { changed: diff.length > 0, diff, expected_changes };
 }
 
+export async function describeConfigSnapshotChanges(previousJson, nextJson) {
+  const changes = [];
+  const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const identity = (item) => {
+    if (item?.script_name || item?.id) return `worker:${item.script_name || item.id}:${item.created_on || ''}`;
+    return item?.key || item?.name || item?.repo || item?.pattern || item?.cron || JSON.stringify(item);
+  };
+  const contextFor = (item, context) => {
+    const key = item?.key || '';
+    const types = { 'cf.workers_scripts': 'Worker', 'cf.workers_routes': 'route', 'cf.access_apps': 'Access', 'cf.access_service_tokens': 'Access', 'cf.pages_projects': 'Pages' };
+    return {
+      source: key.startsWith('cf.') ? 'Cloudflare' : context.source,
+      type: types[key] || (key.endsWith('.schedules') ? 'schedule' : key.endsWith('.settings') ? 'Worker binding' : context.type),
+      name: item?.script_name || item?.name || item?.repo || item?.pattern || item?.cron || key || context.name
+    };
+  };
+  const valueText = (value) => {
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value))) return configSnapshotJstTime(value);
+    return clean(typeof value === 'object' ? '配置对象' : String(value), 200).replace(/\s+/g, ' ');
+  };
+  const hashes = async (value) => {
+    const found = [];
+    const collect = (node) => {
+      if (Array.isArray(node)) node.forEach(collect);
+      else if (node && typeof node === 'object') {
+        if (node.name_hash) found.push(Promise.resolve(node.name_hash));
+        else if (node.name) found.push(sha256Hex(String(node.name)));
+        else for (const [key, child] of Object.entries(node)) if (key !== 'key') collect(child);
+      } else if (typeof node === 'string') found.push(sha256Hex(node));
+    };
+    collect(value);
+    return new Set(await Promise.all(found));
+  };
+  const walk = async (before, after, path, context) => {
+    if (equal(before, after)) return;
+    if ((before?.type === 'secret_text' || after?.type === 'secret_text') && !/secret/i.test(path)) {
+      return walk(before, after, `${path}.secret_names`, context);
+    }
+    if (/secret/i.test(path)) {
+      const oldNames = await hashes(before);
+      const newNames = await hashes(after);
+      for (const hash of [...oldNames].sort()) if (!newNames.has(hash)) changes.push({ ...context, type: 'secret 名', change: `删除 name_hash=${hash}` });
+      for (const hash of [...newNames].sort()) if (!oldNames.has(hash)) changes.push({ ...context, type: 'secret 名', change: `新增 name_hash=${hash}` });
+      return;
+    }
+    if (before === undefined || after === undefined) {
+      const value = before === undefined ? after : before;
+      changes.push({ ...contextFor(value, context), change: `${before === undefined ? '新增' : '删除'} ${path.split('.').at(-1)}${value !== null && typeof value !== 'object' ? `：${valueText(value)}` : ''}` });
+      return;
+    }
+    if (Array.isArray(before) && Array.isArray(after)) {
+      const a = new Map(before.map((item) => [identity(item), item]));
+      const b = new Map(after.map((item) => [identity(item), item]));
+      for (const key of [...new Set([...a.keys(), ...b.keys()])].sort()) {
+        const item = b.get(key) || a.get(key);
+        await walk(a.get(key), b.get(key), `${path}[]${item?.key || ''}`, contextFor(item, context));
+      }
+    } else if (before && after && typeof before === 'object' && typeof after === 'object') {
+      for (const key of [...new Set([...Object.keys(before), ...Object.keys(after)])].sort()) {
+        if (isConfigSnapshotMetaTimeKey(key) || secretValueKey(key)) continue;
+        await walk(before[key], after[key], `${path}.${key}`, context);
+      }
+    } else {
+      changes.push({ ...context, change: `${path.split('.').at(-1)}：${valueText(before)} → ${valueText(after)}` });
+    }
+  };
+  const before = JSON.parse(previousJson || '{}');
+  const after = JSON.parse(nextJson || '{}');
+  for (const source of [...new Set([...Object.keys(before), ...Object.keys(after)])].sort()) {
+    if (isConfigSnapshotMetaTimeKey(source)) continue;
+    await walk(before[source], after[source], source, { source: source === 'cloudflare' ? 'Cloudflare' : source === 'github' ? 'GitHub' : '配置', type: '配置', name: source });
+  }
+  return changes;
+}
+
+function configSnapshotJstTime(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '时间未知';
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3, hourCycle: 'h23' }).format(date).replace(',', '.') + ' JST';
+}
+
 function comparableConfigSnapshot(snapshot) {
-  if (Array.isArray(snapshot)) return snapshot.map(comparableConfigSnapshot).sort(compareJsonStable);
+  return normalizeConfigSnapshotForComparison(snapshot);
+}
+
+export function normalizeConfigSnapshotForComparison(snapshot, path = '') {
+  if (Array.isArray(snapshot)) return snapshot.map((item) => {
+    if (/secret_names|secrets_names/.test(path) && typeof item === 'string') return { name_hash: stableSyncHash(item) };
+    return normalizeConfigSnapshotForComparison(item, path);
+  }).sort(compareJsonStable);
   if (!snapshot || typeof snapshot !== 'object') return snapshot;
   const out = {};
   for (const key of Object.keys(snapshot).sort()) {
     if (isConfigSnapshotMetaTimeKey(key)) continue;
-    out[key] = comparableConfigSnapshot(snapshot[key]);
+    if (/secret_names|secrets_names/.test(path) && key === 'name') out.name_hash = stableSyncHash(String(snapshot[key]));
+    else out[key] = normalizeConfigSnapshotForComparison(snapshot[key], `${path}.${key}`);
   }
   return out;
 }
@@ -3755,7 +3881,21 @@ function isConfigSnapshotMetaTimeKey(key) {
     || lower === 'collected_at'
     || lower === 'snapshot_at'
     || lower === 'run_id'
-    || lower === 'request_id';
+    || lower === 'request_id'
+    || ['modified_on', 'created_on', 'updated_at', 'modified_at', 'created_at', 'deployed_at', 'uploaded_on', 'deployment_id', 'version_id', 'current_version_id', 'latest_version_id', 'etag', 'deployment', 'deployments', 'latest_deployment', 'canonical_deployment'].includes(lower)
+    || lower === 'version';
+}
+
+export function configSnapshotDeploymentRecords(previousJson, nextJson) {
+  const previous = previousJson ? JSON.parse(previousJson) : {};
+  const next = JSON.parse(nextJson || '{}');
+  const oldWorkers = workerScriptSnapshotMap(previous);
+  return [...workerScriptSnapshotMap(next)].flatMap(([name, item]) => {
+    const before = oldWorkers.get(name);
+    if (before && ['modified_on', 'version', 'version_id', 'current_version_id', 'deployment_id', 'etag'].every((key) => before[key] === item[key])) return [];
+    const at = item.modified_on || item.created_on || next.generated_at;
+    return [{ name, at, time_jst: configSnapshotJstTime(at) }];
+  });
 }
 
 function collectExpectedOwnReleaseChanges(previous, next, ownReleaseRuns = []) {
@@ -4016,6 +4156,23 @@ function normalizeCloudflareItem(key, item) {
       cron_triggers: sortedStrings(item.schedules || item.cron_triggers || [])
     });
   }
+  if (key.endsWith('.settings')) {
+    return pickDefined({
+      compatibility_date: item.compatibility_date,
+      compatibility_flags: sortedStrings(item.compatibility_flags || []),
+      bindings: (item.bindings || []).map((binding) => pickDefined({
+        ...(binding.type === 'secret_text' ? { name_hash: stableSyncHash(String(binding.name || '')) } : { name: binding.name }),
+        type: binding.type,
+        database_id: binding.database_id,
+        namespace_id: binding.namespace_id,
+        bucket_name: binding.bucket_name,
+        service: binding.service,
+        environment: binding.environment,
+        entrypoint: binding.entrypoint,
+        class_name: binding.class_name
+      })).sort(compareJsonStable)
+    });
+  }
   if (key.endsWith('.secrets')) {
     return pickDefined({
       secret_names: secretNameList(Array.isArray(item) ? item.map((entry) => entry.name) : [item.name].filter(Boolean))
@@ -4156,15 +4313,17 @@ function recordConfigPermission(permissions, pendingAuthorization, target, resul
   }
 }
 
-function normalizeSnapshot(value) {
-  if (Array.isArray(value)) return value.map((item) => normalizeSnapshot(item)).sort(compareJsonStable);
+function normalizeSnapshot(value, path = '') {
+  if (Array.isArray(value)) return value.map((item) => normalizeSnapshot(item, path)).sort(compareJsonStable);
   if (!value || typeof value !== 'object') return redactConfigScalar(value);
   const out = {};
   for (const key of Object.keys(value).sort()) {
     if (secretValueKey(key)) {
       out[key] = value[key] === undefined || value[key] === null || value[key] === '' ? '' : 'present';
+    } else if (path.includes('.bindings') && ['database_id', 'namespace_id', 'bucket_name', 'service'].includes(key)) {
+      out[key] = clean(value[key], 300);
     } else {
-      out[key] = normalizeSnapshot(value[key]);
+      out[key] = normalizeSnapshot(value[key], `${path}.${key}`);
     }
   }
   return out;
@@ -5377,6 +5536,22 @@ async function sendDashboardAlert(env, status, redItems) {
 
 export function buildAlertEmailPreview(env, status, redItems) {
   const prefix = env.ALERT_SUBJECT_PREFIX || '';
+  const snapshot = redItems.find((item) => item.type === 'config_snapshot');
+  if (status === 'red' && snapshot?.changes) {
+    const counts = new Map();
+    for (const item of snapshot.changes) counts.set(item.source, (counts.get(item.source) || 0) + 1);
+    const summary = [...counts].map(([source, count]) => `${source} ${count} 项`).join(' / ');
+    return {
+      subject: `${prefix}[Nice Dashboard] 配置变更：${summary || '配置 0 项'}`,
+      text: [
+        'Nice Dashboard 配置快照变更',
+        `时间：${configSnapshotJstTime(snapshot.latest_at)}`,
+        ...snapshot.changes.slice(0, 10).map((item) => `- ${item.type} / ${item.name} / ${item.change}`),
+        ...(snapshot.changes.length > 10 ? [`另 ${snapshot.changes.length - 10} 条见面板`] : [])
+      ].join('\n'),
+      recipient: getAlertRecipient(env)
+    };
+  }
   const backupItem = redItems.find((item) => item.type === 'backup');
   const expiryItem = redItems.find((item) => item.type === 'expiry');
   const subject = status === 'red' && backupItem?.alert_kind === 'silent'
