@@ -3705,7 +3705,8 @@ async function runConfigSnapshot(env, reason = 'manual', options = {}) {
         status: 'changed',
         detail: diff.slice(0, 12).join('; ') || 'snapshot changed',
         latest_at: ts,
-        fingerprint
+        fingerprint,
+        changes: await describeConfigSnapshotChanges(previous.json, jsonText)
       }]);
       await finishAlertSend(env, sendLock.id, alert);
     }
@@ -3735,6 +3736,84 @@ function classifyConfigSnapshotChange(previousJson, nextJson, ownReleaseRuns = [
   const comparableNext = comparableConfigSnapshot(applyExpectedOwnReleaseChanges(previous, next, expected_changes));
   const diff = diffConfigObjects(comparablePrevious, comparableNext);
   return { changed: diff.length > 0, diff, expected_changes };
+}
+
+export async function describeConfigSnapshotChanges(previousJson, nextJson) {
+  const changes = [];
+  const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const identity = (item) => {
+    if (item?.script_name || item?.id) return `worker:${item.script_name || item.id}:${item.created_on || ''}`;
+    return item?.key || item?.name || item?.repo || item?.pattern || item?.cron || JSON.stringify(item);
+  };
+  const contextFor = (item, context) => {
+    const key = item?.key || '';
+    const types = { 'cf.workers_scripts': 'Worker', 'cf.workers_routes': 'route', 'cf.access_apps': 'Access', 'cf.access_service_tokens': 'Access', 'cf.pages_projects': 'Pages' };
+    return {
+      source: key.startsWith('cf.') ? 'Cloudflare' : context.source,
+      type: types[key] || (key.endsWith('.schedules') ? 'schedule' : context.type),
+      name: item?.script_name || item?.name || item?.repo || item?.pattern || item?.cron || key || context.name
+    };
+  };
+  const valueText = (value) => {
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value))) return configSnapshotJstTime(value);
+    return clean(typeof value === 'object' ? '配置对象' : String(value), 200).replace(/\s+/g, ' ');
+  };
+  const hashes = async (value) => {
+    const found = [];
+    const collect = (node) => {
+      if (Array.isArray(node)) node.forEach(collect);
+      else if (node && typeof node === 'object') {
+        if (node.name_hash) found.push(Promise.resolve(node.name_hash));
+        else if (node.name) found.push(sha256Hex(String(node.name)));
+        else for (const [key, child] of Object.entries(node)) if (key !== 'key') collect(child);
+      } else if (typeof node === 'string') found.push(sha256Hex(node));
+    };
+    collect(value);
+    return new Set(await Promise.all(found));
+  };
+  const walk = async (before, after, path, context) => {
+    if (equal(before, after)) return;
+    if (/secret/i.test(path)) {
+      const oldNames = await hashes(before);
+      const newNames = await hashes(after);
+      for (const hash of [...oldNames].sort()) if (!newNames.has(hash)) changes.push({ ...context, type: 'secret 名', change: `删除 name_hash=${hash}` });
+      for (const hash of [...newNames].sort()) if (!oldNames.has(hash)) changes.push({ ...context, type: 'secret 名', change: `新增 name_hash=${hash}` });
+      return;
+    }
+    if (before === undefined || after === undefined) {
+      const value = before === undefined ? after : before;
+      changes.push({ ...contextFor(value, context), change: `${before === undefined ? '新增' : '删除'} ${path.split('.').at(-1)}${value !== null && typeof value !== 'object' ? `：${valueText(value)}` : ''}` });
+      return;
+    }
+    if (Array.isArray(before) && Array.isArray(after)) {
+      const a = new Map(before.map((item) => [identity(item), item]));
+      const b = new Map(after.map((item) => [identity(item), item]));
+      for (const key of [...new Set([...a.keys(), ...b.keys()])].sort()) {
+        const item = b.get(key) || a.get(key);
+        await walk(a.get(key), b.get(key), `${path}[]${item?.key || ''}`, contextFor(item, context));
+      }
+    } else if (before && after && typeof before === 'object' && typeof after === 'object') {
+      for (const key of [...new Set([...Object.keys(before), ...Object.keys(after)])].sort()) {
+        if (isConfigSnapshotMetaTimeKey(key) || secretValueKey(key)) continue;
+        await walk(before[key], after[key], `${path}.${key}`, context);
+      }
+    } else {
+      changes.push({ ...context, change: `${path.split('.').at(-1)}：${valueText(before)} → ${valueText(after)}` });
+    }
+  };
+  const before = JSON.parse(previousJson || '{}');
+  const after = JSON.parse(nextJson || '{}');
+  for (const source of [...new Set([...Object.keys(before), ...Object.keys(after)])].sort()) {
+    if (isConfigSnapshotMetaTimeKey(source)) continue;
+    await walk(before[source], after[source], source, { source: source === 'cloudflare' ? 'Cloudflare' : source === 'github' ? 'GitHub' : '配置', type: '配置', name: source });
+  }
+  return changes;
+}
+
+function configSnapshotJstTime(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '时间未知';
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3, hourCycle: 'h23' }).format(date).replace(',', '.') + ' JST';
 }
 
 function comparableConfigSnapshot(snapshot) {
@@ -5377,6 +5456,22 @@ async function sendDashboardAlert(env, status, redItems) {
 
 export function buildAlertEmailPreview(env, status, redItems) {
   const prefix = env.ALERT_SUBJECT_PREFIX || '';
+  const snapshot = redItems.find((item) => item.type === 'config_snapshot');
+  if (status === 'red' && snapshot?.changes) {
+    const counts = new Map();
+    for (const item of snapshot.changes) counts.set(item.source, (counts.get(item.source) || 0) + 1);
+    const summary = [...counts].map(([source, count]) => `${source} ${count} 项`).join(' / ');
+    return {
+      subject: `${prefix}[Nice Dashboard] 配置变更：${summary || '配置 0 项'}`,
+      text: [
+        'Nice Dashboard 配置快照变更',
+        `时间：${configSnapshotJstTime(snapshot.latest_at)}`,
+        ...snapshot.changes.slice(0, 10).map((item) => `- ${item.type} / ${item.name} / ${item.change}`),
+        ...(snapshot.changes.length > 10 ? [`另 ${snapshot.changes.length - 10} 条见面板`] : [])
+      ].join('\n'),
+      recipient: getAlertRecipient(env)
+    };
+  }
   const backupItem = redItems.find((item) => item.type === 'backup');
   const expiryItem = redItems.find((item) => item.type === 'expiry');
   const subject = status === 'red' && backupItem?.alert_kind === 'silent'

@@ -73,6 +73,7 @@ M0718-19 splits Progress backup health into production/preview manifests, valida
 - Temporarily inserted a 2026-06-15 history snapshot and reran the script to verify positive, negative, and zero `change` values, then restored real history and regenerated the final JSON.
 M0807-69 db：新增 nice_analytics 生产 D1 每日备份 workflow，UTC 18:29 导出到 `progress-backup/d1/nice_analytics/production/`，manifest 记录时间、大小、sha256、表行数、failures 与 30 天游走+月留一份保留策略；上传后立即读回校验 sha256；dashboard 备份健康加入 nice_analytics manifest 校验。
 BACKUP-0902-03 db：监控分别展示 Progress preview JSON/SQL 专用桶，按每日 17:18 UTC cadence 增加 36h warning / 48h critical freshness；新增只读 `PROGRESS_DB_BACKUP` binding，production 既有 JSON bucket/key/freshness 语义保持不变。
+CFG-1029-01 db：10/29 配置快照仅四个 Worker modified_on 变化，均对应 DAILY-1028-02 / BKP-1028-02 preview 验证及发车/回滚 / BKP-1028-03；无显式 baseline 接受接口，未写生产状态。Draft 仅改善快照邮件逐项差异、JST 与项目主题；待办 CFG-1029-01-STATUS：getConfigSnapshotStatus 仍直接比较含 generated_at 的原始 sha，面板 changed 可能假红，需另车修；下一自然快照尚待观察。
 DAILY-1028-01 db：日报展开具体红项、JST 时间、唯一访客来源占比与外链 Top5，并隐藏无源 Review 占位；只读诊断发现 progress-preview-sql 最近备份 2026-10-26 03:18 JST 已超过 48h，首次本轮告警记录 2026-10-28 03:31 JST，客人路径当前 25/25；备份故障另车处理，本车停 Draft。
 MON-1026-01 db：translation 首页巡检契约改用稳定短语「商务文件翻译」（不区分大小写），避免语言清单扩展导致正常 200 页面假红；停 Draft 待验收。
 MON-0904-01 db：Draft 修复 Progress preview SQL 监控读桶为 `PROGRESS_DB_BACKUP_PREVIEW`，并将 db-private 浏览器面板鉴权改为 Cloudflare Access JWT，程序接口继续走 `x-dashboard-key`。
