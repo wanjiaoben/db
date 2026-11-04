@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { attachBackupHistory, backupHistoryFromIndex, backupItem, buildAlertEmailPreview, collectAlertItems, dailyD1BackupItem, deploymentWorkflowStatus, d1BackupItem, getBackupStatus, progressBackupItem, readProgressBackupHistory, readR2Json, selectDeploymentWorkflowRun } from '../src/worker.js';
+import { attachBackupHistory, backupHistoryFromIndex, backupItem, buildAlertEmailPreview, collectAlertItems, dailyD1BackupItem, deploymentWorkflowStatus, d1BackupItem, getBackupStatus, progressBackupItem, readProgressBackupHistory, readDailyBackupHistory, readR2Json, selectDeploymentWorkflowRun } from '../src/worker.js';
 
 const now = new Date('2026-07-18T21:00:00.000Z');
 
@@ -249,22 +249,22 @@ test('preview history accepts only strict timestamp keys and ignores invalid key
   assert.equal(item.success_rate_7d, 0.5);
 });
 
-test('production and preview manifests pass independently inside 27h', () => {
+test('production and preview manifests pass independently inside 36h', () => {
   const production = progressBackupItem('production', 'production', result('production', '2026-07-17T18:17:01.000Z'), 'production', 'progress', now);
   const preview = progressBackupItem('preview', 'preview', result('preview', '2026-07-18T18:17:01.000Z'), 'preview', 'progress-otp-preview', now);
   assert.equal(production.ok, true);
   assert.equal(preview.ok, true);
-  assert.equal(production.max_age_hours, 27);
+  assert.equal(production.max_age_hours, 36);
 });
 
-test('a Progress backup at exactly 27h is still fresh and 28h is stale', () => {
-  const boundary = progressBackupItem('production', 'production', result('production', '2026-07-17T18:00:00.000Z'), 'production', 'progress', now);
-  const item = progressBackupItem('production', 'production', result('production', '2026-07-17T17:00:00.000Z'), 'production', 'progress', now);
+test('a Progress backup at exactly 36h is still fresh and 37h is stale', () => {
+  const boundary = progressBackupItem('production', 'production', result('production', '2026-07-17T09:00:00.000Z'), 'production', 'progress', now);
+  const item = progressBackupItem('production', 'production', result('production', '2026-07-17T08:00:00.000Z'), 'production', 'progress', now);
   assert.equal(boundary.ok, true);
-  assert.equal(boundary.age_hours, 27);
+  assert.equal(boundary.age_hours, 36);
   assert.equal(item.ok, false);
   assert.equal(item.status, 'stale');
-  assert.match(item.error, /older than 27h/);
+  assert.match(item.error, /older than 36h/);
 });
 
 test('BJT rolling freshness follows every-other-day 51h window', () => {
@@ -293,22 +293,22 @@ test('BJT rolling freshness follows every-other-day 51h window', () => {
   assert.deepEqual(alert.map((item) => item.key), ['bjt']);
 });
 
-test('Progress rolling freshness remains daily 27h', () => {
+test('Progress rolling freshness remains daily 36h', () => {
   const freshProgress = progressBackupItem(
     'progress-production', 'Progress production', result('production', '2026-07-17T19:00:00.000Z'),
     'production', 'progress', now
   );
   const staleProgress = progressBackupItem(
-    'progress-production', 'Progress production', result('production', '2026-07-17T17:00:00.000Z'),
+    'progress-production', 'Progress production', result('production', '2026-07-17T08:00:00.000Z'),
     'production', 'progress', now
   );
   const noAlert = collectAlertItems({ items: [freshProgress] }, { items: [] }, { targets: [] });
   const alert = collectAlertItems({ items: [staleProgress] }, { items: [] }, { targets: [] });
 
   assert.equal(freshProgress.ok, true);
-  assert.equal(freshProgress.max_age_hours, 27);
+  assert.equal(freshProgress.max_age_hours, 36);
   assert.equal(staleProgress.ok, false);
-  assert.match(staleProgress.error, /27h/);
+  assert.match(staleProgress.error, /36h/);
   assert.equal(noAlert.length, 0);
   assert.deepEqual(alert.map((item) => item.key), ['progress-production']);
 });
@@ -657,4 +657,18 @@ test('deployment alerts only include failed runs and timed-out in-progress runs'
     'bjt:failure',
     'bjt:in_progress'
   ]);
+});
+
+
+test('timestamped manifests preserve each run and latest failure remains visible in history', async () => {
+  const prefix = 'd1/daily/2026-07-19/';
+  const bucket = memoryBucket('daily', {
+    [prefix + 'manifest.json']: { data: { status: 'complete', generated_at: '2026-07-18T16:00:00Z' } },
+    [prefix + 'manifest-2026-07-18T18-00-00-000Z.json']: { data: { status: 'complete', generated_at: '2026-07-18T18:00:00Z' } },
+    [prefix + 'manifest-2026-07-18T19-00-00-000Z.json']: { data: { status: 'failed', generated_at: '2026-07-18T19:00:00Z', failures: [{ stage: 'export', error: 'test failure' }] } }
+  });
+  const rows = await readDailyBackupHistory(bucket, 'd1/daily', now, 1);
+  assert.equal(rows[0].status, 'failed');
+  assert.match(rows[0].error, /test failure/);
+  assert.equal(rows[0].latest_at, '2026-07-18T19:00:00Z');
 });
