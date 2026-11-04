@@ -4586,11 +4586,27 @@ async function readR2JsonFallback(bucket, keys) {
   return readR2Json(bucket, keys[0] || '');
 }
 
-async function readDailyBackupHistory(bucket, prefix, now, days = 7) {
+export async function readDailyBackupHistory(bucket, prefix, now, days = 7) {
   const entries = [];
   for (let offset = 0; offset < days; offset += 1) {
     const date = shiftDateKey(jstDateKey(now), -offset);
-    const result = await readR2Json(bucket, `${prefix}/${date}/manifest.json`);
+    let key = `${prefix}/${date}/manifest.json`;
+    if (prefix === 'd1/daily' && bucket?.list) {
+      const keys = [];
+      let cursor;
+      try {
+        do {
+          const page = await bucket.list({ prefix: `${prefix}/${date}/manifest-`, limit: 1000, ...(cursor ? { cursor } : {}) });
+          keys.push(...(page.objects || []).map(o => o.key).filter(k => /\/manifest-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.json$/.test(k)));
+          cursor = page.truncated ? page.cursor : undefined;
+        } while (cursor);
+        if (keys.length) key = keys.sort().at(-1);
+      } catch (error) {
+        entries.push({ date, ok: false, status: 'error', latest_at: '', error: `backup history list failed: ${clean(error?.message || 'unknown', 200)}` });
+        continue;
+      }
+    }
+    const result = await readR2Json(bucket, key);
     const data = result.data || {};
     const ok = result.ok && data.status === 'complete' && !(data.failures || []).length;
     entries.push({
@@ -4800,6 +4816,7 @@ function sleep(ms) {
 }
 
 const DAILY_BACKUP_MAX_AGE_HOURS = 27;
+const PROGRESS_BACKUP_MAX_AGE_HOURS = 36;
 const BJT_BACKUP_MAX_AGE_HOURS = 51;
 
 function backupAge(dateValue, now, maxAgeHours) {
@@ -4834,13 +4851,13 @@ export function progressBackupItem(key, label, result, expectedEnvironment, expe
   if (result?.ok && result.data?.kind === 'progress-d1-r2-daily-backup') {
     return dailyD1BackupItem(key, label, result, now);
   }
-  return d1BackupItem(key, label, result, expectedEnvironment, expectedDatabase, `d1/progress/${expectedEnvironment}/`, now, options);
+  return d1BackupItem(key, label, result, expectedEnvironment, expectedDatabase, `d1/progress/${expectedEnvironment}/`, now, { criticalAgeHours: PROGRESS_BACKUP_MAX_AGE_HOURS, ...options });
 }
 
 export function dailyD1BackupItem(key, label, result, now = new Date()) {
   const data = result.data || {};
   const dateValue = firstDateValue(data, ['generated_at', 'generatedAt', 'created_at', 'date']) || result.updated_at || '';
-  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now, DAILY_BACKUP_MAX_AGE_HOURS);
+  const { ageMs, fresh: ageFresh } = backupAge(dateValue, now, PROGRESS_BACKUP_MAX_AGE_HOURS);
   const complete = data.status === 'complete' && !(data.failures || []).length;
   const fresh = result.ok && complete && ageFresh;
   const failureDetail = (data.failures || []).map((item) => `${item.stage || 'backup'}: ${item.error || ''}`).join('; ');
@@ -4854,9 +4871,9 @@ export function dailyD1BackupItem(key, label, result, now = new Date()) {
     status: fresh ? 'ok' : (result.ok ? (complete ? 'stale' : (data.status || 'failed')) : result.status),
     ok: fresh,
     latest_at: dateValue,
-    max_age_hours: DAILY_BACKUP_MAX_AGE_HOURS,
+    max_age_hours: PROGRESS_BACKUP_MAX_AGE_HOURS,
     age_hours: Number.isFinite(ageMs) ? Math.round(ageMs / 36000) / 100 : null,
-    error: result.error || failureDetail || (!fresh && result.ok ? `latest manifest is older than ${DAILY_BACKUP_MAX_AGE_HOURS}h: ${dateValue || '<missing>'}` : ''),
+    error: result.error || failureDetail || (!fresh && result.ok ? `latest manifest is older than ${PROGRESS_BACKUP_MAX_AGE_HOURS}h: ${dateValue || '<missing>'}` : ''),
     source: 'R2'
   };
 }
