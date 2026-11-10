@@ -672,3 +672,13 @@ test('timestamped manifests preserve each run and latest failure remains visible
   assert.match(rows[0].error, /test failure/);
   assert.equal(rows[0].latest_at, '2026-07-18T19:00:00Z');
 });
+
+// HB-059: only nice_analytics gets the approved 36-hour daily window.
+test('nice_analytics explicit 36h window keeps failure validation', () => {
+ const now=new Date('2026-11-10T10:00:00Z');
+ const r={ok:true,status:'ok',key:'d1/nice_analytics/production/latest.json',data:{environment:'production',database:'nice_analytics',generated_at:'2026-11-09T03:00:00Z',object_key:'d1/nice_analytics/production/a.sql'}};
+ const args=['nice-analytics-production','test',r,'production','nice_analytics','d1/nice_analytics/production/',now];
+ const old=d1BackupItem(...args),next=d1BackupItem(...args,{criticalAgeHours:36});
+ assert.equal(old.max_age_hours,27);assert.equal(old.ok,false);assert.equal(next.max_age_hours,36);assert.equal(next.ok,true);
+ assert.equal(d1BackupItem(...args.slice(0,6),new Date('2026-11-10T16:00:00Z'),{criticalAgeHours:36}).ok,false);
+});
