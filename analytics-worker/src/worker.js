@@ -4564,7 +4564,7 @@ export async function getBackupStatus(env, now = new Date()) {
   const previewSqlItem = !previewProgressSqlBucket
     ? previewUnavailableItem(previewSqlBase, 'MONITOR_BINDING_MISSING', 'missing PROGRESS_DB_BACKUP_PREVIEW binding')
     : previewSqlBase;
-  const niceItem = attachBackupHistory(d1BackupItem('nice-analytics-production', 'nice_analytics production D1 export', niceAnalyticsProduction, 'production', 'nice_analytics', 'd1/nice_analytics/production/', now), niceAnalyticsHistory);
+  const niceItem = attachBackupHistory(d1BackupItem('nice-analytics-production', 'nice_analytics production D1 export', niceAnalyticsProduction, 'production', 'nice_analytics', 'd1/nice_analytics/production/', now, { criticalAgeHours: 36 }), niceAnalyticsHistory);
   return {
     generated_at: now.toISOString(),
     items: [
