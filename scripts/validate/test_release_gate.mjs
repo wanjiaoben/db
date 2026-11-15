@@ -41,6 +41,27 @@ assert.throws(
 git(cwd, ['tag', '-a', 'worker-prod-valid', '-m', 'DB Workers release\n\nWan-Verified: yes']);
 const valid = verifyReleaseRef({ cwd, tagName: 'worker-prod-valid', fetchRemote: false });
 assert.equal(valid.tagCommit, mainCommit);
+assert.equal(valid.releaseTarget, 'both');
+for (const [suffix, annotation, expected] of [
+  ['analytics', 'Release-Target: analytics-only', 'analytics-only'],
+  ['both', 'Release-Target: both', 'both'],
+]) {
+  const tagName = 'worker-prod-scope-' + suffix;
+  git(cwd, ['tag', '-a', tagName, '-m', 'Wan-Verified: yes\n' + annotation]);
+  const outputFile = path.join(cwd, suffix + '.output');
+  const actual = verifyReleaseRef({ cwd, tagName, outputFile, fetchRemote: false });
+  assert.equal(actual.releaseTarget, expected);
+  assert.match(fs.readFileSync(outputFile, 'utf8'), new RegExp('target=' + expected + '\\n'));
+}
+for (const [suffix, annotation] of [
+  ['unknown', 'Release-Target: private-only'],
+  ['duplicate', 'Release-Target: analytics-only\nRelease-Target: both'],
+]) {
+  const tagName = 'worker-prod-bad-' + suffix;
+  git(cwd, ['tag', '-a', tagName, '-m', 'Wan-Verified: yes\n' + annotation]);
+  assert.throws(() => verifyReleaseRef({ cwd, tagName, fetchRemote: false }), /Release-Target/);
+}
+
 
 fs.writeFileSync(path.join(cwd, 'fixture.txt'), 'off-main\n');
 git(cwd, ['add', 'fixture.txt']);

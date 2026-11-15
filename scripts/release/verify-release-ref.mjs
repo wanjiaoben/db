@@ -26,6 +26,12 @@ export function verifyReleaseRef({ cwd = process.cwd(), tagName, outputFile, fet
     throw new Error('Production release tag must contain: Wan-Verified: yes');
   }
 
+  // Optional, approval-bound scope. Existing tags keep the original two-Worker release.
+  const targetLines = annotation.split(/\r?\n/).filter((line) => line.startsWith('Release-Target:'));
+  if (targetLines.length > 1) throw new Error('Duplicate Release-Target annotation');
+  const releaseTarget = targetLines.length ? targetLines[0].slice('Release-Target:'.length).trim() : 'both';
+  if (!['both', 'analytics-only'].includes(releaseTarget)) throw new Error('Invalid Release-Target annotation');
+
   const tagCommit = git(cwd, ['rev-list', '-n', '1', tagRef]).stdout.trim();
   if (fetchRemote) git(cwd, ['fetch', 'origin', 'main']);
   const onMain = git(cwd, ['merge-base', '--is-ancestor', tagCommit, 'origin/main'], { allowFailure: true });
@@ -33,8 +39,8 @@ export function verifyReleaseRef({ cwd = process.cwd(), tagName, outputFile, fet
     throw new Error('Production release tag must point to a commit contained in origin/main');
   }
 
-  if (outputFile) appendFileSync(outputFile, `tag=${tagName}\ncommit=${tagCommit}\n`);
-  return { tagName, tagCommit };
+  if (outputFile) appendFileSync(outputFile, `tag=${tagName}\ncommit=${tagCommit}\ntarget=${releaseTarget}\n`);
+  return { tagName, tagCommit, releaseTarget };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
