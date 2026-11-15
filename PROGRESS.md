@@ -81,3 +81,5 @@ MON-0904-01 db：Draft 修复 Progress preview SQL 监控读桶为 `PROGRESS_DB_
 EXP-0904-01 db：Draft 新增配置文件驱动的到期提醒，30 天内面板黄灯、7 天内/已过期走现有 dashboard 告警线，首批覆盖 nice.okinawa 域名、GitHub PAT nice-dashboard、Cloudflare token db-config-read。
 DAILY-0905-01 db：新增手动触发的 Daily Boss Brief 样例生成器与邮件入口，JST 当日窗口、来源分类、业务健康灯、全 registry SEO/GEO 行和 EI 降级均覆盖；未增加 20:00 cron。
 DAILY-0905-01 db：新增手动触发的 Daily Boss Brief 样例生成器与邮件入口，JST 当日窗口、来源分类、业务健康灯、全 registry SEO/GEO 行和 EI 降级均覆盖；未增加 20:00 cron。
+
+- HB-197 (2026-11-15): Preview JSON history validates the listed R2 object key rather than a field absent from raw exports. Regression reproduces false invalid before fix; 123/123 tests pass after. Deployment pending: current atomic release also deploys db-private, outside this task's single-monitor scope; no production change.

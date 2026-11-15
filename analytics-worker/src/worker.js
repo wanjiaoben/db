@@ -4656,7 +4656,7 @@ export async function readProgressBackupHistory(bucket, expectedEnvironment, exp
       && data.kind === 'progress-d1-backup'
       && data.environment === expectedEnvironment
       && data.database === expectedDatabase
-      && String(data.object_key || '').startsWith(`d1/progress/${expectedEnvironment}/`);
+      && String(object.key || '').startsWith(`d1/progress/${expectedEnvironment}/`);
     rows.push({
       date,
       ok: valid,
