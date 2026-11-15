@@ -672,3 +672,27 @@ test('timestamped manifests preserve each run and latest failure remains visible
   assert.match(rows[0].error, /test failure/);
   assert.equal(rows[0].latest_at, '2026-07-18T19:00:00Z');
 });
+
+test('HB-197 history validates the listed object key when raw export has no object_key', async () => {
+  const key = 'd1/progress/preview/2026-11-14T18-19-37-000Z.json';
+  const data = {kind:'progress-d1-backup',environment:'preview',database:'progress-otp-preview',generated_at:'2026-11-14T18:19:37.000Z',tables:[]};
+  const bucket = memoryBucket('preview', {[key]:{data}});
+  const rows = await readProgressBackupHistory(bucket,'preview','progress-otp-preview',new Date('2026-11-15T01:00:00Z'),2);
+  assert.equal(rows[0].status,'complete');
+  assert.equal(rows[1].status,'missing');
+  assert.deepEqual(bucket.calls.filter(x=>x.startsWith('get:')),['get:'+key]);
+});
+
+test('HB-197 actual key does not bypass kind, environment, database, or foreign-key checks', async () => {
+  const key='d1/progress/preview/2026-11-14T18-19-37-000Z.json';
+  const base={kind:'progress-d1-backup',environment:'preview',database:'progress-otp-preview',generated_at:'2026-11-14T18:19:37.000Z'};
+  for(const patch of [{kind:'wrong'},{environment:'production'},{database:'progress'}]){
+    const rows=await readProgressBackupHistory(memoryBucket('preview',{[key]:{data:{...base,...patch}}}),'preview','progress-otp-preview',new Date('2026-11-15T01:00:00Z'),1);
+    assert.equal(rows[0].status,'invalid');
+  }
+  const bucket=memoryBucket('preview',{});
+  bucket.list=async()=>({objects:[{key:key.replace('/preview/','/production/')}]});
+  const rows=await readProgressBackupHistory(bucket,'preview','progress-otp-preview',new Date('2026-11-15T01:00:00Z'),1);
+  assert.equal(rows[0].status,'missing');
+  assert.equal(bucket.calls.length,0);
+});
