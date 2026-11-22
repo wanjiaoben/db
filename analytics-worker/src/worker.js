@@ -18,6 +18,16 @@ const SEARCH_TERM_SOURCES = new Set(['google', 'bing', 'all']);
 const DEFAULT_BING_SITE_URLS = 'https://bjt.nice.okinawa/,https://kiso.nice.okinawa/,https://snorkel.nice.okinawa/,https://progress.nice.okinawa/,https://nice.okinawa/,https://translation.nice.okinawa/';
 const VISITOR_EVENT_PATH = '/events';
 const VISITOR_DASHBOARD_PATH = '/visitors';
+const SOURCE_CLICK_PATH = '/source-click';
+const SOURCE_CLICK_CODES = new Set([
+  'reddit',
+  'linkedin',
+  'youtube_shorts',
+  'instagram',
+  'book_vocabulary_en',
+  'book_lipbalm_en',
+  'book_coursebook_en'
+]);
 const DAILY_BRIEF_SAMPLE_PATH = '/daily-brief/sample';
 const DAILY_BRIEF_RECIPIENT = 'aboutokinawa@gmail.com';
 const DAILY_BRIEF_SENT_PREFIX = 'daily_brief_sent:';
@@ -158,6 +168,9 @@ export default {
     const url = new URL(request.url);
 
     if (request.method === 'OPTIONS') {
+      if (url.pathname === SOURCE_CLICK_PATH) {
+        return sourceClickPreflight(request);
+      }
       if (url.pathname === VISITOR_EVENT_PATH) {
         return new Response(null, {
           status: 204,
@@ -169,6 +182,10 @@ export default {
 
     if (url.pathname === VISITOR_EVENT_PATH && request.method === 'POST') {
       return collectVisitorEvent(request, env, ctx);
+    }
+
+    if (url.pathname === SOURCE_CLICK_PATH && request.method === 'POST') {
+      return collectSourceClick(request, env);
     }
 
     if (url.pathname === '/collect' && request.method === 'POST') {
@@ -369,6 +386,61 @@ function json(data, request, status = 200) {
       ...corsHeaders(request)
     }
   });
+}
+
+function sourceClickCorsHeaders(request) {
+  const origin = request.headers.get('origin') || '';
+  return {
+    'access-control-allow-origin': origin === 'https://nice.okinawa' ? origin : 'https://nice.okinawa',
+    'access-control-allow-methods': 'POST,OPTIONS',
+    'access-control-allow-headers': 'content-type',
+    'access-control-max-age': '86400',
+    'vary': 'Origin'
+  };
+}
+
+function sourceClickPreflight(request) {
+  if (request.headers.get('origin') !== 'https://nice.okinawa') {
+    return new Response(null, { status: 403 });
+  }
+  return new Response(null, { status: 204, headers: sourceClickCorsHeaders(request) });
+}
+
+async function ensureSourceClickTable(db) {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS source_click_daily (
+      date TEXT NOT NULL,
+      source TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (date, source)
+    )
+  `).run();
+}
+
+async function collectSourceClick(request, env) {
+  if (request.headers.get('origin') !== 'https://nice.okinawa') {
+    return new Response(null, { status: 403 });
+  }
+  let body;
+  try {
+    body = await request.json();
+  } catch (error) {
+    return new Response(null, { status: 400 });
+  }
+  const source = clean(body?.source, 40).toLowerCase();
+  if (!SOURCE_CLICK_CODES.has(source)) return new Response(null, { status: 400 });
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10);
+  await ensureSourceClickTable(env.DB);
+  await env.DB.prepare(`
+    INSERT INTO source_click_daily (date, source, count, updated_at)
+    VALUES (?, ?, 1, ?)
+    ON CONFLICT(date, source) DO UPDATE SET
+      count = count + 1,
+      updated_at = excluded.updated_at
+  `).bind(date, source, now.toISOString()).run();
+  return new Response(null, { status: 204, headers: sourceClickCorsHeaders(request) });
 }
 
 function clean(value, max = 500) {
@@ -685,6 +757,8 @@ async function visitorDashboard(request, env) {
   const requestedDays = Number(url.searchParams.get('days') || 28);
   const days = VISITOR_DASHBOARD_DAY_OPTIONS.has(requestedDays) ? requestedDays : 28;
   const since = new Date(Date.now() - days * 86400000).toISOString();
+  const sinceDate = since.slice(0, 10);
+  await ensureSourceClickTable(env.DB);
 
   const [
     totals,
@@ -697,7 +771,8 @@ async function visitorDashboard(request, env) {
     uiLangs,
     utmSources,
     rawRecords,
-    visitorRows
+    visitorRows,
+    sourceClicks
   ] = await Promise.all([
     all(env.DB, `
       SELECT
@@ -853,7 +928,14 @@ async function visitorDashboard(request, env) {
       LEFT JOIN external_touch e ON e.site_id = g.site_id AND e.visitor_id = g.visitor_id AND e.rn = 1
       ORDER BY g.last_seen_at DESC
       LIMIT 160
-    `, [since])
+    `, [since]),
+    all(env.DB, `
+      SELECT source, SUM(count) AS count
+      FROM source_click_daily
+      WHERE date >= ?
+      GROUP BY source
+      ORDER BY count DESC, source
+    `, [sinceDate])
   ]);
 
   const medianBySite = mapBySite(medianDwell, 'median_dwell_ms');
@@ -907,6 +989,10 @@ async function visitorDashboard(request, env) {
         count: Number(row.count || 0)
       }))
     },
+    source_clicks: sourceClicks.map((row) => ({
+      source: SOURCE_CLICK_CODES.has(row.source) ? row.source : 'unknown',
+      count: Number(row.count || 0)
+    })),
     sites,
     visitor_rows: visitorRows.map((row) => ({
       site_id: row.site_id || '',

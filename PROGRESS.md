@@ -68,8 +68,8 @@ M0718-19 splits Progress backup health into production/preview manifests, valida
 
 ### Verification
 
-- Ran `python3 /Users/jiajia/Documents/GitHub/db/scripts/content_stats.py --dry-run` successfully against real local repos and Cloudflare KV.
-- Ran `python3 /Users/jiajia/Documents/GitHub/db/scripts/content_stats.py --no-push` to write `content-stats.json` and history.
+- Ran `python3 scripts/content_stats.py --dry-run` successfully against real local repos and Cloudflare KV.
+- Ran `python3 scripts/content_stats.py --no-push` to write `content-stats.json` and history.
 - Temporarily inserted a 2026-06-15 history snapshot and reran the script to verify positive, negative, and zero `change` values, then restored real history and regenerated the final JSON.
 M0807-69 db：新增 nice_analytics 生产 D1 每日备份 workflow，UTC 18:29 导出到 `progress-backup/d1/nice_analytics/production/`，manifest 记录时间、大小、sha256、表行数、failures 与 30 天游走+月留一份保留策略；上传后立即读回校验 sha256；dashboard 备份健康加入 nice_analytics manifest 校验。
 BACKUP-0902-03 db：监控分别展示 Progress preview JSON/SQL 专用桶，按每日 17:18 UTC cadence 增加 36h warning / 48h critical freshness；新增只读 `PROGRESS_DB_BACKUP` binding，production 既有 JSON bucket/key/freshness 语义保持不变。
@@ -85,3 +85,4 @@ DAILY-0905-01 db：新增手动触发的 Daily Boss Brief 样例生成器与邮�
 - HB-197 (2026-11-15): Preview JSON history validates the listed R2 object key rather than a field absent from raw exports. Regression reproduces false invalid before fix; 123/123 tests pass after. Deployment pending: current atomic release also deploys db-private, outside this task's single-monitor scope; no production change.
 
 - HB-197 2026-11-15: Wan 10:54 3A批准增加tag注记Release-Target: analytics-only，只跳过db-private发布；原无注记双发布及全部原门保留。新增范围输出/未知/重复注记测试；尚未生产发布。
+# HB-065 — Added allowlisted daily aggregate promotion-source click counts and a dashboard source block; no visitor, email, IP, session or order identifiers are stored.

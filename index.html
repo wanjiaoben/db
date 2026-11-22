@@ -1683,6 +1683,10 @@ td.num, th.num { text-align: right; }
         <button type="button" data-range="180">180天</button>
       </div>
     </div>
+    <div class="site-detail-block" aria-labelledby="sourceClickTitle">
+      <h3 id="sourceClickTitle">推广短链来源 <span class="sub">点击次数，不是独立人数</span></h3>
+      <div id="sourceClicks"><div class="empty">等待来源计数</div></div>
+    </div>
     <div class="site-overview" id="siteOverview"><div class="empty">等待访客数据</div></div>
     <div class="site-detail" id="siteDetail"></div>
   </details>
@@ -2218,6 +2222,24 @@ function siteOverviewHtml(sites) {
       '<div class="site-overview-cell" role="columnheader">停留</div>' +
       '<div class="site-overview-cell" role="columnheader">联络</div>' +
     '</div>' + rows + '</div>';
+}
+
+function sourceClicksHtml(rows) {
+  const labels = {
+    reddit: 'Reddit',
+    linkedin: 'LinkedIn',
+    youtube_shorts: 'YouTube Shorts',
+    instagram: 'Instagram',
+    book_vocabulary_en: 'BJT Vocabulary 英文书',
+    book_lipbalm_en: 'LIP BALM 英文书',
+    book_coursebook_en: 'BJT Score-Up Coursebook'
+  };
+  if (!rows || !rows.length) return '<div class="empty">当前区间暂无短链点击</div>';
+  return '<div class="site-overview-table" role="table" aria-label="推广短链来源次数">' +
+    '<div class="site-overview-row site-overview-head" role="row"><div class="site-overview-cell">来源</div><div class="site-overview-cell">次数</div></div>' +
+    rows.map((row) => '<div class="site-overview-row" role="row"><div class="site-overview-cell">' +
+      escapeHtml(labels[row.source] || row.source || '-') + '</div><div class="site-overview-cell">' + n(row.count) + '</div></div>').join('') +
+    '</div>';
 }
 
 function listTopHtml(items) {
@@ -2896,11 +2918,13 @@ async function loadVisitors() {
     if (!res.ok || !data.ok) throw new Error(data.error || 'visitors API 请求失败');
     $('visitorUpdated').textContent = rangeLabel(data.days) + ' · 更新 ' + new Date(data.generated_at).toLocaleTimeString();
     const sites = data.sites || [];
+    $('sourceClicks').innerHTML = sourceClicksHtml(data.source_clicks || []);
     $('siteOverview').innerHTML = siteOverviewHtml(sites);
     $('siteDetail').innerHTML = siteDetailsHtml(sites) +
       '<details class="visitor-flow"><summary>访客明细流水 ' + n((data.visitor_rows || []).length) + '</summary>' + visitorRowsHtml(data.visitor_rows || []) + '</details>';
   } catch (e) {
     $('visitorUpdated').textContent = rangeLabel(visitorDays) + ' · 读取失败';
+    $('sourceClicks').innerHTML = '<div class="empty">来源计数读取失败：' + escapeHtml(e.message) + '</div>';
     $('siteOverview').innerHTML = '<div class="empty">访客数据读取失败：' + escapeHtml(e.message) + '</div>';
     $('siteDetail').innerHTML = '';
   }
