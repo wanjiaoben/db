@@ -4553,17 +4553,17 @@ export async function getBackupStatus(env, now = new Date()) {
   const progressItem = attachBackupHistory(progressBackupItem('progress-production', 'Progress production D1 export', progressProduction, 'production', 'progress', now), progressHistory);
   const progressProductionSqlItem = d1BackupItem('progress-production-sql', 'Progress production SQL export', progressProductionSql, 'production', 'progress', 'd1/progress/production/', now, { expectedKind: 'progress-d1-sql-backup-manifest' });
   const previewBase = progressBackupItem('progress-preview', 'Progress preview JSON export', progressPreview, 'preview', 'progress-otp-preview', now, { warningAgeHours: 36, criticalAgeHours: 48 });
-  const previewItem = !previewProgressBucket
+  const previewItem = { ...(!previewProgressBucket
     ? previewUnavailableItem(previewBase, 'MONITOR_BINDING_MISSING', 'missing PROGRESS_BACKUP_PREVIEW binding')
     : previewHistory?.history_unavailable
       ? previewUnavailableItem(previewBase, 'MONITOR_HISTORY_UNAVAILABLE', previewHistory.history_error || 'preview backup history unavailable')
-      : attachBackupHistory(previewBase, previewHistory, now);
+      : attachBackupHistory(previewBase, previewHistory, now)), email_alert: false };
   const previewSqlBase = d1BackupItem('progress-preview-sql', 'Progress preview SQL export', progressPreviewSql, 'preview', 'progress-otp-preview', 'd1/progress/preview/', now, {
     expectedKind: 'progress-d1-sql-backup-manifest', warningAgeHours: 36, criticalAgeHours: 48
   });
-  const previewSqlItem = !previewProgressSqlBucket
+  const previewSqlItem = { ...(!previewProgressSqlBucket
     ? previewUnavailableItem(previewSqlBase, 'MONITOR_BINDING_MISSING', 'missing PROGRESS_DB_BACKUP_PREVIEW binding')
-    : previewSqlBase;
+    : previewSqlBase), email_alert: false };
   const niceItem = attachBackupHistory(d1BackupItem('nice-analytics-production', 'nice_analytics production D1 export', niceAnalyticsProduction, 'production', 'nice_analytics', 'd1/nice_analytics/production/', now), niceAnalyticsHistory);
   return {
     generated_at: now.toISOString(),
@@ -5375,7 +5375,7 @@ async function sendMonthlyAlertChannelSelfCheck(env, scheduledAt, reason = MONTH
 export function collectAlertItems(backups, deployments, probes, expiries) {
   const items = [];
   for (const item of backups?.items || []) {
-    if (!item.ok && !item.manual) {
+    if (!item.ok && !item.manual && item.email_alert !== false) {
       const failureDate = item.failure_date || jstDateKey(new Date());
       const consecutiveFailures = Number(item.consecutive_failures || 0);
       const silent = item.status === 'silent' || (jstHour(new Date()) >= 12 && item.success_rate_7d < 1 && item.failure_date === jstDateKey(new Date()));
