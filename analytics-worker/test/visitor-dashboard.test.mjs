@@ -73,6 +73,10 @@ test('visitor dashboard returns ranged aggregate with sample protection', async 
       { site_id: 'snorkel', field: 'referrer_host', value: 'google.com', count: 2 },
       { site_id: 'snorkel', field: 'referrer_host', value: 'direct', count: 1 }
     ],
+    'FROM source_click_daily': [
+      { source: 'reddit', count: 7 },
+      { source: 'book_vocabulary_en', count: 2 }
+    ],
     'GROUP_CONCAT(DISTINCT CASE WHEN event_type': [
       {
         site_id: 'snorkel',
@@ -128,7 +132,12 @@ test('visitor dashboard returns ranged aggregate with sample protection', async 
   assert.deepEqual(data.visitor_rows[0].bot_reasons, ['city:Council Bluffs']);
   assert.deepEqual(data.visitor_rows[0].contact_channels, ['email']);
   assert.deepEqual(data.visitor_rows[0].section_ids, ['hero', 'price']);
-  assert.match(db.calls[0].params[0], /^\d{4}-\d{2}-\d{2}T/);
+  assert.deepEqual(data.source_clicks, [
+    { source: 'reddit', count: 7 },
+    { source: 'book_vocabulary_en', count: 2 }
+  ]);
+  const rangedCall = db.calls.find((call) => /^\d{4}-\d{2}-\d{2}T/.test(call.params[0] || ''));
+  assert.ok(rangedCall);
 });
 
 test('visitor dashboard accepts 1/7/30/180 day ranges and keeps legacy fallback', async () => {

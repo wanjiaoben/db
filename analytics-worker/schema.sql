@@ -63,6 +63,15 @@ CREATE INDEX IF NOT EXISTS idx_visitor_events_site_ts ON visitor_events(site_id,
 CREATE INDEX IF NOT EXISTS idx_visitor_events_site_type_ts ON visitor_events(site_id, event_type, ts);
 CREATE INDEX IF NOT EXISTS idx_visitor_events_site_visitor_created ON visitor_events(site_id, visitor_id, created_at);
 
+-- HB-065: aggregate-only source click counts. No visitor, IP, email, session or order identifiers.
+CREATE TABLE IF NOT EXISTS source_click_daily (
+  date TEXT NOT NULL,
+  source TEXT NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (date, source)
+);
+
 CREATE TABLE IF NOT EXISTS search_console_daily (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   imported_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
