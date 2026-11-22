@@ -172,6 +172,32 @@ test('mutation guard: missing preview SQL latest is stale even when preview JSON
   assert.equal(sql.status, 'missing');
 });
 
+test('preview backup failures remain visible but are excluded from email alerts', async () => {
+  const status = await getBackupStatus({
+    BJT_BACKUPS: memoryBucket('bjt'),
+    PROGRESS_BACKUP: memoryBucket('production'),
+    PROGRESS_BACKUP_PREVIEW: memoryBucket('preview-json'),
+    PROGRESS_DB_BACKUP_PREVIEW: memoryBucket('preview-sql')
+  }, new Date('2026-09-02T18:00:00.000Z'));
+  const previewItems = status.items.filter((item) => item.key === 'progress-preview' || item.key === 'progress-preview-sql');
+  assert.equal(previewItems.length, 2);
+  assert.ok(previewItems.every((item) => item.ok === false));
+  assert.ok(previewItems.every((item) => item.email_alert === false));
+  assert.deepEqual(collectAlertItems({ items: previewItems }, { items: [] }, { targets: [] }), []);
+});
+
+test('production backup failures remain eligible for email alerts', () => {
+  const production = progressBackupItem(
+    'progress-production', 'Progress production', result('production', '2026-09-01T00:00:00.000Z'),
+    'production', 'progress', new Date('2026-09-02T18:00:00.000Z')
+  );
+  assert.equal(production.ok, false);
+  assert.deepEqual(
+    collectAlertItems({ items: [production] }, { items: [] }, { targets: [] }).map((item) => item.key),
+    ['progress-production']
+  );
+});
+
 test('mutation guard: preview SQL must not read the production SQL bucket', async () => {
   const sql = {
     kind: 'progress-d1-sql-backup-manifest', environment: 'preview', database: 'progress-otp-preview',
