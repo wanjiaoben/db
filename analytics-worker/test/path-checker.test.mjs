@@ -64,6 +64,30 @@ test('path checker text contracts catch broken 200 shells', () => {
   assert.match(broken.error, /missing_text/);
 });
 
+test('BJT home contract follows the current homepage and verifies the purchase destination', () => {
+  const target = PATH_CHECK_BASELINES.find((item) => item.key === 'site-bjt-home');
+  assert.equal(target.contract.type, 'text_contains_all');
+  assert.deepEqual(target.contract.contains, [
+    'BJT 考前突击，来这里刷题',
+    '¥900',
+    '¥1,900',
+    '¥3,100',
+    'href="https://bjt.nice.okinawa/pro/buy/"',
+    '查看 Pro 购买页'
+  ]);
+  assert.deepEqual(target.resources, [{
+    url: 'https://bjt.nice.okinawa/pro/buy/',
+    okStatuses: [200]
+  }]);
+  const liveShape = `
+    <title>BJT 考前突击，来这里刷题 · 深耕自留地</title>
+    <p>¥900</p><strong>3 天 ¥1,900</strong><strong>10 天 ¥3,100</strong>
+    <a href="https://bjt.nice.okinawa/pro/buy/">查看 Pro 购买页</a>`;
+  assert.deepEqual(checkPathContract(target.contract, liveShape), { ok: true });
+  assert.match(checkPathContract(target.contract, liveShape.replace('¥3,100', '')).error, /missing_text:¥3,100/);
+  assert.match(checkPathContract(target.contract, liveShape.replace('pro\/buy', 'missing')).error, /missing_text:href=/);
+});
+
 test('japanusedcars home contract uses stable title text case-insensitively', () => {
   const byKey = new Map(PATH_CHECK_BASELINES.map((target) => [target.key, target]));
   const target = byKey.get('site-japanusedcars-home');

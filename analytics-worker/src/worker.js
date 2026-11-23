@@ -100,7 +100,19 @@ const PATH_CHECK_BASELINES = Object.freeze([
   pageCheck('site-translation-home', 'translation home', 'https://translation.nice.okinawa/', '商务文件翻译', { caseInsensitive: true }),
   pageCheck('site-ev-home', 'ev home', 'https://ev.nice.okinawa/', 'EV SEA'),
   pageCheck('site-nice-okinawa-home', 'nice.okinawa home', 'https://nice.okinawa/', 'Nice Okinawa'),
-  pageCheck('site-bjt-home', 'bjt home', 'https://bjt.nice.okinawa/', 'BJT商务日语能力考试'),
+  {
+    ...pageCheck('site-bjt-home', 'bjt home', 'https://bjt.nice.okinawa/', [
+      'BJT 考前突击，来这里刷题',
+      '¥900',
+      '¥1,900',
+      '¥3,100',
+      'href="https://bjt.nice.okinawa/pro/buy/"',
+      '查看 Pro 购买页'
+    ]),
+    resources: [
+      resourceCheck('https://bjt.nice.okinawa/pro/buy/', [200])
+    ]
+  },
   pageCheck('site-progress-home', 'progress home', 'https://progress.nice.okinawa/', 'progress · nice.okinawa'),
   pageCheck('site-kiso-home', 'kiso home', 'https://kiso.nice.okinawa/', '从零开始学日语'),
   {
@@ -2396,13 +2408,16 @@ function siteIdFromHostname(hostname) {
 }
 
 function pageCheck(key, label, url, contains, options = {}) {
+  const needles = Array.isArray(contains) ? contains : [contains];
   return {
     key,
     label,
     url,
     method: options.method || 'GET',
     okStatuses: options.okStatuses || [200],
-    contract: { type: 'text_contains', contains, case_insensitive: !!options.caseInsensitive },
+    contract: needles.length === 1
+      ? { type: 'text_contains', contains: needles[0], case_insensitive: !!options.caseInsensitive }
+      : { type: 'text_contains_all', contains: needles, case_insensitive: !!options.caseInsensitive },
     critical: options.critical !== false,
     serviceBinding: options.serviceBinding || ''
   };
@@ -2728,6 +2743,15 @@ function checkPathContract(contract, text) {
     return haystack.includes(match)
       ? { ok: true }
       : { ok: false, error: `missing_text:${needle.slice(0, 80)}` };
+  }
+  if (contract.type === 'text_contains_all') {
+    const haystack = contract.case_insensitive ? String(text || '').toLowerCase() : String(text || '');
+    for (const value of contract.contains || []) {
+      const needle = String(value || '');
+      const match = contract.case_insensitive ? needle.toLowerCase() : needle;
+      if (!haystack.includes(match)) return { ok: false, error: `missing_text:${needle.slice(0, 80)}` };
+    }
+    return { ok: true };
   }
   if (contract.type === 'json_fields') {
     let data;
