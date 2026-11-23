@@ -1,5 +1,7 @@
 # db.nice.okinawa Progress
 
+HB-350 db：BJT 首页巡检改为核对新版首页标题、三档价格、购买按钮链接及购买页 200，避免 HB-347 改版后旧标题契约造成 Daily 假红；BJT 备份 latest manifest 已确认 complete。
+
 INFRA-0904-02 drafts Cloudflare/GitHub configuration snapshots into analytics Worker巡检, with safe name/value redaction, D1 diff storage, dashboard status, and missing-permission reporting.
 
 AUTH-0903-01 adds Cloudflare Access JWT verification to db-private before falling back to Basic, with AUD/email env allowlist checks and beacon write-path regression tests.
