@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
+import { aggregateGrowthBrief } from '../src/growth-brief.js';
 
 import {
   buildDailyBriefSubject,
@@ -75,8 +76,8 @@ test('daily brief idempotency key uses the JST date', () => {
 
 test('official daily brief subject has no SAMPLE prefix', () => {
   const report = sampleReport();
-  assert.equal(buildDailyBriefSubject(report, false), '【Nice Okinawa Daily】09/07｜访客12｜浏览30');
-  assert.equal(buildDailyBriefSubject(report, true), '【SAMPLE｜Nice Okinawa Daily】09/07｜访客12｜浏览30');
+  assert.equal(buildDailyBriefSubject(report, false), '【Nice Okinawa Daily】09/07｜学习·旅游·二手车');
+  assert.equal(buildDailyBriefSubject(report, true), '【SAMPLE｜Nice Okinawa Daily】09/07｜学习·旅游·二手车');
 });
 
 test('official send is idempotent for one JST date and does not repeat on manual retrigger', async () => {
@@ -92,7 +93,7 @@ test('official send is idempotent for one JST date and does not repeat on manual
     const first = await sendDailyBossBrief(env, now, { report: sampleReport(), reason: 'manual' });
     const second = await sendDailyBossBrief(env, now, { report: sampleReport(), reason: 'cron' });
     assert.equal(first.sent, true);
-    assert.equal(first.subject, '【Nice Okinawa Daily】09/07｜访客12｜浏览30');
+    assert.equal(first.subject, '【Nice Okinawa Daily】09/07｜学习·旅游·二手车');
     assert.equal(second.sent, false);
     assert.equal(second.skipped, true);
     assert.equal(second.reason, 'already_sent');
@@ -135,21 +136,17 @@ test('one unavailable data source stays EI and does not block the brief render',
   try {
     const env = fakeDailyBriefEnv({ dbMode: 'throw' });
     const report = await buildDailyBossBrief(env, new Date('2026-09-07T11:00:00.000Z'));
-    assert.equal(report.window.start, '2026-09-06T15:00:00.000Z');
-    assert.equal(report.window.end, '2026-09-07T11:00:00.000Z');
-    assert.equal(report.visitors, null);
-    assert.match(renderDailyBossBrief(report), /访客数据暂不可用/);
+    assert.equal(report.window.start, '2026-09-05T15:00:00.000Z');
+    assert.equal(report.window.end, '2026-09-06T15:00:00.000Z');
+    assert.equal(report.eventsAvailable, false);
+    assert.match(renderDailyBossBrief(report), /站外暂无/);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
 function sampleReport() {
-  return {
-    generated_at: '2026-09-07T11:00:00.000Z',
-    window: { start: '2026-09-06T15:00:00.000Z', end: '2026-09-07T11:00:00.000Z' },
-    visitors: { totals: { visitors: 12, sessions: 9, pageviews: 30 }, by_source: { Google: { visitors: 12, views: 30 } }, visitors: [] }
-  };
+  return aggregateGrowthBrief({ events: [] }, new Date('2026-09-07T11:00:00.000Z'), { weekly: false });
 }
 
 function fakeDailyBriefEnv(options = {}) {

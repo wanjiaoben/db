@@ -1,4 +1,5 @@
-import { loadVisitorBrief, renderVisitorBrief } from './visitor-brief.js';
+import { loadVisitorBrief } from './visitor-brief.js';
+import { loadGrowthBrief, renderGrowthBrief } from './growth-brief.js';
 import expiriesConfig from '../expiries.json' with { type: 'json' };
 import auditHumanDataPlan from '../audit-human-data-plan.json' with { type: 'json' };
 
@@ -1629,14 +1630,12 @@ function dailyBriefHasGscEvidence(row) {
 }
 
 async function buildDailyBossBrief(env, now = new Date()) {
-  const window = jstWindow(now.getTime());
-  const visitors = await dailyBriefSource('visitor_events', () => loadDailyBriefVisitors(env, window));
-  return { generated_at: now.toISOString(), window: { timezone: 'Asia/Tokyo', start: window.start, end: window.end.toISOString() }, visitors: visitors.available ? visitors.value : null, sources: { visitors } };
+  return loadGrowthBrief(env, now, { botCities: BOT_LIKE_CITIES });
 }
 
 export function buildDailyBriefSubject(report, sample = false) {
   const date = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tokyo', month: '2-digit', day: '2-digit' }).format(new Date(report.generated_at));
-  return `${sample ? '【SAMPLE｜Nice Okinawa Daily】' : '【Nice Okinawa Daily】'}${date}｜访客${report.visitors?.totals?.visitors ?? '—'}｜浏览${report.visitors?.totals?.pageviews ?? '—'}`;
+  return `${sample ? '【SAMPLE｜Nice Okinawa Daily】' : '【Nice Okinawa Daily】'}${date}｜学习·旅游·二手车${report.weekly ? '｜周报' : ''}`;
 }
 
 function dailyBriefJstTime(value) {
@@ -1646,7 +1645,7 @@ function dailyBriefJstTime(value) {
 }
 
 export function renderDailyBossBrief(report) {
-  return renderVisitorBrief(report).text;
+  return renderGrowthBrief(report).text;
 }
 
 async function searchConsoleSummary(db, filters) {
@@ -5772,7 +5771,7 @@ async function sendDailyBossBrief(env, now = new Date(), options = {}) {
   const config = getAlertConfig({ ...env, ALERT_RECIPIENTS: DAILY_BRIEF_RECIPIENT });
   const subject = buildDailyBriefSubject(report, sample);
   try {
-    const body = renderVisitorBrief(report);
+    const body = renderGrowthBrief(report);
     const result = await sendAlertEmail(config, subject, body.text, body.html);
     if (!sample) await markDailyBriefSent(env, sentKey, subject, now);
     return { sent: true, skipped: false, key: sample ? '' : sentKey, to: config.to, subject, result, report };

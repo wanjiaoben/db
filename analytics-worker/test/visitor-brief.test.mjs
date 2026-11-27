@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import { aggregateVisitorBrief, loadVisitorBrief, renderVisitorBrief } from '../src/visitor-brief.js';
-import { buildDailyBossBrief, jstWindow } from '../src/worker.js';
+import { buildDailyBossBrief, renderDailyBossBrief, jstWindow } from '../src/worker.js';
 const event = (id, overrides = {}) => ({ id, site_id: 'bjt', visitor_id: 'private-visitor', session_id: 'private-session', event_type: 'pageview', landing_path: '/start?email=secret@example.com', referrer_host: '', utm_source: '', dwell_ms: null, contact_channel: '', created_at: `2026-11-26T01:00:${String(id).padStart(2,'0')}.000Z`, ...overrides });
 const report = (visitors) => ({ generated_at: '2026-11-26T11:00:00Z', window: { start: '2026-11-25T15:00:00Z', end: '2026-11-26T11:00:00Z' }, visitors });
 test('same visitor across sites is separate; first-page source wins over later referrers', () => {
@@ -52,6 +52,7 @@ test('daily report reads visitor_events only, no payment or health services',asy
   const sqls=[];
   const DB={prepare(sql){sqls.push(sql);return{bind(){return{all:async()=>({results:[]})}}}}};
   const built=await buildDailyBossBrief({DB},new Date('2026-11-26T11:00:00Z'));
-  assert.deepEqual(Object.keys(built.sources),['visitors']);assert.ok(sqls.every(s=>s.includes('FROM visitor_events')));
-  assert.doesNotMatch(renderVisitorBrief(built).text,/系统红项|营收|SEO|SNS 队列|Review 摘要/);
+  assert.equal(built.weekly,false);assert.equal(built.eventsAvailable,true);
+  assert.ok(sqls.length>0 && sqls.every(s=>/^SELECT/.test(s)&&s.includes('FROM visitor_events')));
+  assert.doesNotMatch(renderDailyBossBrief(built),/系统红项|营收|SNS 队列|Review 摘要/);
 });
