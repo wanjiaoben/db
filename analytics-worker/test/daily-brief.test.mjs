@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
+import { aggregateGrowthBrief } from '../src/growth-brief.js';
 
 import {
   buildDailyBriefSubject,
@@ -57,13 +58,13 @@ test('daily brief GSC evidence requires both latest date and imported_at', () =>
   assert.equal(dailyBriefHasGscEvidence({ latest_available_date: '', imported_at: '2026-09-07T00:00:00Z' }), false);
 });
 
-test('formal daily brief cron is 20:00 JST and old 08:30 summary cron is absent', () => {
+test('formal daily brief cron is 19:00 JST and old 08:30 summary cron is absent', () => {
   const source = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
   const wrangler = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
   assert.match(source, /DAILY_BRIEF_SAMPLE_PATH = '\/daily-brief\/sample'/);
-  assert.match(source, /DAILY_BOSS_BRIEF_CRON = '0 11 \* \* \*'/);
-  assert.match(wrangler, /crons = \[/);
-  assert.match(wrangler, /"0 11 \* \* \*"/);
+  assert.match(source, /DAILY_BOSS_BRIEF_CRON = '0 10 \* \* \*'/);
+  assert.deepEqual(JSON.parse(wrangler.match(/crons = (\[[^\n]+\])/)[1]), ['*/15 * * * *','18 * * * *','0 0 * * *','7 0 * * *','0 0 1 * *','0 10 * * *']);
+  assert.match(wrangler, /"0 10 \* \* \*"/);
   assert.match(wrangler, /"\*\/15 \* \* \* \*"/);
   assert.doesNotMatch(wrangler, /"30 23 \* \* \*"/);
   assert.doesNotMatch(source, /08:30 summary/);
@@ -75,8 +76,8 @@ test('daily brief idempotency key uses the JST date', () => {
 
 test('official daily brief subject has no SAMPLE prefix', () => {
   const report = sampleReport();
-  assert.equal(buildDailyBriefSubject(report, false), '【Nice Okinawa Daily】09/07｜访客12｜浏览30');
-  assert.equal(buildDailyBriefSubject(report, true), '【SAMPLE｜Nice Okinawa Daily】09/07｜访客12｜浏览30');
+  assert.equal(buildDailyBriefSubject(report, false), '【Nice Okinawa Daily】09/07｜学习·旅游·二手车');
+  assert.equal(buildDailyBriefSubject(report, true), '【SAMPLE｜Nice Okinawa Daily】09/07｜学习·旅游·二手车');
 });
 
 test('official send is idempotent for one JST date and does not repeat on manual retrigger', async () => {
@@ -90,9 +91,9 @@ test('official send is idempotent for one JST date and does not repeat on manual
     const env = fakeDailyBriefEnv();
     const now = new Date('2026-09-07T11:00:00.000Z');
     const first = await sendDailyBossBrief(env, now, { report: sampleReport(), reason: 'manual' });
-    const second = await sendDailyBossBrief(env, now, { report: sampleReport(), reason: 'cron' });
+    const second = await sendDailyBossBrief(env, new Date('2026-09-07T10:00:00.000Z'), { report: sampleReport(), reason: 'cron' });
     assert.equal(first.sent, true);
-    assert.equal(first.subject, '【Nice Okinawa Daily】09/07｜访客12｜浏览30');
+    assert.equal(first.subject, '【Nice Okinawa Daily】09/07｜学习·旅游·二手车');
     assert.equal(second.sent, false);
     assert.equal(second.skipped, true);
     assert.equal(second.reason, 'already_sent');
@@ -135,21 +136,17 @@ test('one unavailable data source stays EI and does not block the brief render',
   try {
     const env = fakeDailyBriefEnv({ dbMode: 'throw' });
     const report = await buildDailyBossBrief(env, new Date('2026-09-07T11:00:00.000Z'));
-    assert.equal(report.window.start, '2026-09-06T15:00:00.000Z');
-    assert.equal(report.window.end, '2026-09-07T11:00:00.000Z');
-    assert.equal(report.visitors, null);
-    assert.match(renderDailyBossBrief(report), /访客数据暂不可用/);
+    assert.equal(report.window.start, '2026-09-05T15:00:00.000Z');
+    assert.equal(report.window.end, '2026-09-06T15:00:00.000Z');
+    assert.equal(report.eventsAvailable, false);
+    assert.match(renderDailyBossBrief(report), /站外 暂无/);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
 function sampleReport() {
-  return {
-    generated_at: '2026-09-07T11:00:00.000Z',
-    window: { start: '2026-09-06T15:00:00.000Z', end: '2026-09-07T11:00:00.000Z' },
-    visitors: { totals: { visitors: 12, sessions: 9, pageviews: 30 }, by_source: { Google: { visitors: 12, views: 30 } }, visitors: [] }
-  };
+  return aggregateGrowthBrief({ events: [] }, new Date('2026-09-07T11:00:00.000Z'), { weekly: false });
 }
 
 function fakeDailyBriefEnv(options = {}) {
