@@ -48,11 +48,11 @@ test('real SQLite query handles >1000 rows, boundary times and only approved sit
   assert.equal(result.totals.visitors,1005);assert.equal(result.totals.pageviews,1005);assert.equal(sqls.length,2);
   assert.ok(sqls.every(s=>/^SELECT/.test(s))); sqlite.close();
 });
-test('daily report reads visitor_events only, no payment or health services',async()=>{
+test('daily report reads existing analytics tables only, no payment or health services',async()=>{
   const sqls=[];
   const DB={prepare(sql){sqls.push(sql);return{bind(){return{all:async()=>({results:[]})}}}}};
   const built=await buildDailyBossBrief({DB},new Date('2026-11-26T11:00:00Z'));
-  assert.equal(built.weekly,false);assert.equal(built.eventsAvailable,true);
-  assert.ok(sqls.length>0 && sqls.every(s=>/^SELECT/.test(s)&&s.includes('FROM visitor_events')));
+  assert.equal(built.weekly,true);assert.equal(built.eventsAvailable,true);
+  assert.ok(sqls.length>0 && sqls.every(s=>/^SELECT/.test(s)&&/FROM (visitor_events|events|search_terms)/.test(s)));
   assert.doesNotMatch(renderDailyBossBrief(built),/系统红项|营收|SNS 队列|Review 摘要/);
 });

@@ -6,8 +6,8 @@ const now=new Date('2026-11-27T11:00:00Z');
 const options={botCities:['Boardman','The Dalles','Ashburn','Council Bluffs'],weekly:true};
 const event=(extra={})=>({id:1,created_at:'2026-11-26T01:00:00.000Z',site_id:'bjt',visitor_id:'private-person',session_id:'s1',event_type:'pageview',landing_path:'/en/free-practice/',referrer_host:'google.com',...extra});
 
-test('yesterday and weekly windows are complete JST days; Monday adds the week',()=>{
- const w=growthWindows(now);assert.deepEqual(w.day,{start:'2026-11-25T15:00:00.000Z',end:'2026-11-26T15:00:00.000Z'});assert.equal(w.week.start,'2026-11-19T15:00:00.000Z');assert.equal(w.monday,false);assert.equal(growthWindows(new Date('2026-11-30T11:00:00Z')).monday,true);
+test('yesterday and rolling seven-day windows use complete JST days',()=>{
+ const w=growthWindows(now);assert.deepEqual(w.day,{start:'2026-11-25T15:00:00.000Z',end:'2026-11-26T15:00:00.000Z'});assert.equal(w.week.start,'2026-11-19T15:00:00.000Z');
 });
 test('AI domains are distinguished before search engines; internal hops and direct visits excluded',()=>{
  for(const [host,expected] of [['gemini.google.com','Gemini'],['copilot.microsoft.com','Copilot'],['chatgpt.com','ChatGPT'],['perplexity.ai','Perplexity'],['claude.ai','Claude'],['google.co.jp','Google'],['www.google.com.au','Google'],['google.com.evil.example','其他外站'],['bing.com','Bing'],['duckduckgo.com','DDG'],['search.yahoo.co.jp','Yahoo'],['m.facebook.com','社交']])assert.equal(acquisitionChannel(host),expected);
@@ -24,7 +24,7 @@ test('contact clicks require a prior external arrival; form clicks are not submi
 });
 test('GSC weighting, exact JST dates, unseen queries and domain-form site aliases',()=>{
  const gsc=[{site:'exams.nice.okinawa',path:'/x',query:'new keyword',period:0,impressions:40,clicks:0,position_weight:400},{site:'exams.nice.okinawa',path:'/y',query:'new keyword',period:0,impressions:10,clicks:1,position_weight:200}];
- const r=aggregateGrowthBrief({events:[],gsc,coverage:[{site:'exams.nice.okinawa',latest_date:'2026-11-24'}],queryFirst:[{site:'exams.nice.okinawa',query:'new keyword',first_date:'2026-11-20'}]},now,options),w=r.lines[0].weekly;
+ const r=aggregateGrowthBrief({events:[],gsc,coverage:[{site:'exams.nice.okinawa',latest_date:'2026-11-24'}],queryFirst:[{site:'exams.nice.okinawa',query:'new keyword',first_date:'2026-11-26'}]},now,options),w=r.lines[0].weekly;
  assert.equal(w.keywords.near[0].position,12);assert.equal(w.keywords.fresh.length,1);assert.equal(w.keywords.lowCtr.length,0);assert.equal(w.gscMissing.includes('exams'),false);assert.equal(w.gscMissing.includes('progress'),true);
 });
 test('first country means first in the business line, not first in another site',()=>{
@@ -43,7 +43,7 @@ test('read-only loader paginates real schema; missing GSC is unavailable, not ze
  const r=await loadGrowthBrief({DB:adapter},now,options);assert.equal(r.lines[0].daily.visitors,1005);assert.equal(r.lines[0].daily.outcomes,1005);assert.equal(r.lines[0].weekly.gscAvailable,false);assert.deepEqual(r.lines[0].weekly.gscMissing,[]);assert.equal(statements.filter(s=>s.includes('ORDER BY created_at,id')).length,2);db.close();
 });
 test('missing visitor data stays unavailable and email escapes query text',()=>{
- const r=aggregateGrowthBrief({eventsAvailable:false,gscAvailable:false},now,options);const body=renderGrowthBrief(r);assert.match(body.text,/站外暂无/);assert.doesNotMatch(body.text,/学习：站外0/);assert.match(body.html,/<main lang="zh-Hans" dir="ltr"/);
+ const r=aggregateGrowthBrief({eventsAvailable:false,gscAvailable:false},now,options);const body=renderGrowthBrief(r);assert.match(body.text,/站外 暂无/);assert.doesNotMatch(body.text,/学习：站外0/);assert.match(body.html,/<main lang="zh-Hans" dir="ltr"/);
  r.lines[0].weekly.keywords.fresh=[{site:'bjt',query:'<script>alert(1)</script>',impressions:1,clicks:0,position:10}];r.lines[0].weekly.gscAvailable=true;assert.doesNotMatch(renderGrowthBrief(r).html,/<script>/);
 });
 test('declining page is recommended even after it disappears from current landings',()=>{
@@ -54,4 +54,12 @@ test('HTML keeps the complete keyword list rather than cutting a paragraph at 24
  const r=aggregateGrowthBrief({events:[]},now,options);
  r.lines[2].weekly.keywords.fresh=Array.from({length:5},(_,i)=>({site:'japanusedcars',query:'long import question for a customer destination number '+i,impressions:2,clicks:0,position:10}));
  const body=renderGrowthBrief(r);assert.match(body.html,/destination number 4/);
+});
+
+test('daily email always has three rolling blocks and new markers last one day only',()=>{
+ const input={events:[event({referrer_host:'chatgpt.com',country:'NZ'})],aiFirst:[{site_id:'bjt',landing_path:'/en/free-practice/',referrer_host:'chatgpt.com',first_at:'2026-11-26T01:00:00Z'}],countryFirst:[{site_id:'bjt',country:'NZ',first_at:'2026-11-26T01:00:00Z'}],gsc:[{site:'bjt',path:'/',query:'new q',period:0,impressions:2,clicks:0,position_weight:20}],queryFirst:[{site:'bjt',query:'new q',first_date:'2026-11-26'}]};
+ const first=aggregateGrowthBrief(input,now,options),next=aggregateGrowthBrief(input,new Date('2026-11-28T10:00:00Z'),options);
+ assert.equal(first.lines[0].weekly.pages[0].newAI,true);assert.deepEqual(first.lines[0].weekly.newCountries,['NZ']);assert.equal(first.lines[0].weekly.keywords.fresh.length,1);
+ assert.equal(next.lines[0].weekly.pages[0].newAI,false);assert.deepEqual(next.lines[0].weekly.newCountries,[]);assert.equal(next.lines[0].weekly.keywords.fresh.length,0);
+ const body=renderGrowthBrief(first);assert.equal((body.html.match(/<section /g)||[]).length,3);assert.match(body.text,/昨天：站外 1/);assert.doesNotMatch(body.text,/周报|本周建议/);
 });

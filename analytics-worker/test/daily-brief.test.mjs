@@ -58,13 +58,13 @@ test('daily brief GSC evidence requires both latest date and imported_at', () =>
   assert.equal(dailyBriefHasGscEvidence({ latest_available_date: '', imported_at: '2026-09-07T00:00:00Z' }), false);
 });
 
-test('formal daily brief cron is 20:00 JST and old 08:30 summary cron is absent', () => {
+test('formal daily brief cron is 19:00 JST and old 08:30 summary cron is absent', () => {
   const source = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
   const wrangler = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
   assert.match(source, /DAILY_BRIEF_SAMPLE_PATH = '\/daily-brief\/sample'/);
-  assert.match(source, /DAILY_BOSS_BRIEF_CRON = '0 11 \* \* \*'/);
-  assert.match(wrangler, /crons = \[/);
-  assert.match(wrangler, /"0 11 \* \* \*"/);
+  assert.match(source, /DAILY_BOSS_BRIEF_CRON = '0 10 \* \* \*'/);
+  assert.deepEqual(JSON.parse(wrangler.match(/crons = (\[[^\n]+\])/)[1]), ['*/15 * * * *','18 * * * *','0 0 * * *','7 0 * * *','0 0 1 * *','0 10 * * *']);
+  assert.match(wrangler, /"0 10 \* \* \*"/);
   assert.match(wrangler, /"\*\/15 \* \* \* \*"/);
   assert.doesNotMatch(wrangler, /"30 23 \* \* \*"/);
   assert.doesNotMatch(source, /08:30 summary/);
@@ -91,7 +91,7 @@ test('official send is idempotent for one JST date and does not repeat on manual
     const env = fakeDailyBriefEnv();
     const now = new Date('2026-09-07T11:00:00.000Z');
     const first = await sendDailyBossBrief(env, now, { report: sampleReport(), reason: 'manual' });
-    const second = await sendDailyBossBrief(env, now, { report: sampleReport(), reason: 'cron' });
+    const second = await sendDailyBossBrief(env, new Date('2026-09-07T10:00:00.000Z'), { report: sampleReport(), reason: 'cron' });
     assert.equal(first.sent, true);
     assert.equal(first.subject, '【Nice Okinawa Daily】09/07｜学习·旅游·二手车');
     assert.equal(second.sent, false);
@@ -139,7 +139,7 @@ test('one unavailable data source stays EI and does not block the brief render',
     assert.equal(report.window.start, '2026-09-05T15:00:00.000Z');
     assert.equal(report.window.end, '2026-09-06T15:00:00.000Z');
     assert.equal(report.eventsAvailable, false);
-    assert.match(renderDailyBossBrief(report), /站外暂无/);
+    assert.match(renderDailyBossBrief(report), /站外 暂无/);
   } finally {
     globalThis.fetch = originalFetch;
   }

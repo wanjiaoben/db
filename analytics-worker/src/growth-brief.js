@@ -16,10 +16,10 @@ const pageName = p => {const parts=p.path.split('/').filter(Boolean),last=parts.
 const inRange = (date,range) => date >= range.start && date < range.end;
 const range = (end,days,offset=0) => ({start:new Date(end-(days+offset)*DAY).toISOString(),end:new Date(end-offset*DAY).toISOString()});
 const ranked = map => [...map.values()].sort((a,b)=>b.visitors-a.visitors || a.name.localeCompare(b.name));
-const delta = (value,baseline) => baseline ? `${value>=baseline?'↑':'↓'}${Math.round(Math.abs(value-baseline)/baseline*100)}%` : value ? '新' : '持平';
+const delta = (value,baseline) => baseline ? `${value>=baseline?'↑':'↓'}${Math.round(Math.abs(value-baseline)/baseline*100)}%` : value ? '前期0' : '持平';
 export function growthWindows(now=new Date()) {
   const end=Math.floor((now.getTime()+9*3600000)/DAY)*DAY-9*3600000;
-  return {day:range(end,1),baseline:range(end,7,1),week:range(end,7),previous:range(end,7,7),older:range(end,7,14),history:range(end,22),monday:new Date(now.getTime()+9*3600000).getUTCDay()===1};
+  return {day:range(end,1),baseline:range(end,7,1),week:range(end,7),previous:range(end,7,7),older:range(end,7,14),history:range(end,22)};
 }
 export function acquisitionChannel(referrer='',utm='') {
   let host='';
@@ -111,14 +111,14 @@ export function aggregateGrowthBrief(input,now=new Date(),options={}) {
     if(key!=='other'&&lost.length)alerts.push(name+' '+lost.join('/')+'归零');
     const channels=ranked(w.channels).map(v=>({...v,previous:prev.channels.get(v.name)?.visitors||0,change:delta(v.visitors,prev.channels.get(v.name)?.visitors||0)}));
     for(const v of prev.channels.values())if(!w.channels.has(v.name))channels.push({...v,visitors:0,outcomes:0,previous:v.visitors,change:'↓100%'});
-    const pages=ranked(w.pages).slice(0,10).map(v=>({...v,name:titles.get(v.key)||pageName(v),channel:[...v.channels].sort((a,b)=>b[1]-a[1])[0]?.[0]||'暂无',newAI:inRange(historyAi.get(v.key)||'',windows.week),languages:undefined,channels:undefined}));
+    const pages=ranked(w.pages).slice(0,10).map(v=>({...v,name:titles.get(v.key)||pageName(v),channel:[...v.channels].sort((a,b)=>b[1]-a[1])[0]?.[0]||'暂无',newAI:inRange(historyAi.get(v.key)||'',windows.day),languages:undefined,channels:undefined}));
     const coverage=(input.coverage||[]).filter(r=>lineOf(r.site)===key);
     const absent=input.gscAvailable===false?[]:sites.filter(site=>!coverage.some(r=>siteOf(r.site)===site));
     if(absent.length)missing.push(...absent.map(s=>s+' 未接 GSC'));
     const dates=coverage.map(r=>r.latest_date).sort();
-    const kw=keywords(input,key,jstDate(windows.week.start),jstDate(windows.week.end));
-    const newCountries=[...w.countries.keys()].filter(c=>{const first=[...historyCountries].filter(([k])=>k.endsWith('|'+c)&&lineOf(k.split('|')[0])===key).map(([,at])=>at).sort()[0];return first&&inRange(first,windows.week);});
-    const advicePages=ranked(w.pages).map(v=>({...v,name:titles.get(v.key)||pageName(v),newAI:inRange(historyAi.get(v.key)||'',windows.week)}));
+    const kw=keywords(input,key,jstDate(windows.day.start),jstDate(windows.day.end));
+    const newCountries=[...w.countries.keys()].filter(c=>{const first=[...historyCountries].filter(([k])=>k.endsWith('|'+c)&&lineOf(k.split('|')[0])===key).map(([,at])=>at).sort()[0];return first&&inRange(first,windows.day);});
+    const advicePages=ranked(w.pages).map(v=>({...v,name:titles.get(v.key)||pageName(v),newAI:inRange(historyAi.get(v.key)||'',windows.day)}));
     for(const p of prev.pages.values())if(!w.pages.has(p.key))advicePages.push({...p,name:titles.get(p.key)||pageName(p),visitors:0,outcomes:0,newAI:false});
     for(const p of advicePages) {
       if(p.visitors>=3&&p.outcomes===0&&key!=='other')suggestions.push({score:p.visitors*4,text:`${name}：${p.name} 有${p.visitors}位站外客人，未记录${key==='learning'?'免费练习':'联系点击'}，先检查入口文案。`,page:p.key});
@@ -131,7 +131,7 @@ export function aggregateGrowthBrief(input,now=new Date(),options={}) {
     lines.push({key,name,daily:{visitors:input.eventsAvailable===false?null:d.visitors,ai:input.eventsAvailable===false?null:d.ai,outcomes:input.eventsAvailable===false?null:d.outcomes,average,change:delta(d.visitors,average),firstChannels:[...d.outcomeChannels].sort((a,b)=>b[1]-a[1])},weekly:{visitors:w.visitors,channels,pages,keywords:kw,newCountries,gscMissing:absent,gscThrough:dates.at(-1)||null,gscAvailable:input.gscAvailable!==false}});
   }
   const seen=new Set();const best=suggestions.sort((a,b)=>b.score-a.score||a.text.localeCompare(b.text)).filter(s=>{if(seen.has(s.page))return false;seen.add(s.page);return true;}).slice(0,3);
-  return {generated_at:now.toISOString(),window:windows.day,weekly:options.weekly??windows.monday,week:windows.week,lines,alerts:alerts.length?[alerts.sort((a,b)=>Number(b.includes('少'))-Number(a.includes('少'))).slice(0,3).join('；')]:[],suggestions:best,missing,limitations:['成交、表单成功、二手车询价关联暂无','Plus访客未接入；爬虫标识未采集，已剔除机房城市'],eventsAvailable:input.eventsAvailable!==false};
+  return {generated_at:now.toISOString(),window:windows.day,weekly:true,week:windows.week,lines,alerts:alerts.length?[alerts.sort((a,b)=>Number(b.includes('少'))-Number(a.includes('少'))).slice(0,3).join('；')]:[],suggestions:best,missing,limitations:['成交、表单成功、二手车询价关联暂无','Plus访客未接入；爬虫标识未采集，已剔除机房城市'],eventsAvailable:input.eventsAvailable!==false};
 }
 async function select(db,sql,params=[]) {return (await db.prepare(sql).bind(...params).all()).results||[];}
 export async function loadGrowthBrief(env,now=new Date(),options={}) {
@@ -140,7 +140,7 @@ export async function loadGrowthBrief(env,now=new Date(),options={}) {
     let cursor=w.history.start,id=-1;
     for(;;){const page=await select(env.DB,`SELECT id,site_id,visitor_id,session_id,event_type,landing_path,referrer_host,utm_source,country,city,ui_lang,browser_lang,contact_channel,device_type,created_at FROM visitor_events WHERE created_at >= ? AND created_at < ? AND (created_at > ? OR (created_at = ? AND id > ?)) AND event_type IN ('pageview','contact_click') ORDER BY created_at,id LIMIT 1000`,[w.history.start,w.day.end,cursor,cursor,id]);input.events.push(...page);if(page.length<1000)break;cursor=page.at(-1).created_at;id=page.at(-1).id;}
   } catch {input.events=[];input.eventsAvailable=false;}
-  if(options.weekly??w.monday) {
+  {
     const start=jstDate(w.week.start),end=jstDate(w.week.end),previous=jstDate(w.previous.start),older=jstDate(w.older.start);
     try {
       input.gsc=await select(env.DB,`SELECT site,path,query,MIN(date) AS first_date,MAX(date) AS last_date,SUM(impressions) AS impressions,SUM(clicks) AS clicks,SUM(position*impressions) AS position_weight,CASE WHEN date >= ? THEN 0 WHEN date >= ? THEN 1 ELSE 2 END AS period FROM search_terms WHERE source='google' AND date >= ? AND date < ? GROUP BY site,path,query,period`,[start,previous,older,end]);
@@ -157,22 +157,25 @@ export async function loadGrowthBrief(env,now=new Date(),options={}) {
 }
 export function renderGrowthBrief(report) {
   const lines=report.lines||[],when=report.window?.start?new Date(Date.parse(report.window.start)+9*3600000).toISOString().slice(0,10):'暂无';
-  const title=`${when} · 客人从哪里来${report.weekly?'｜周报':''}`;
-  const daily=lines.filter(l=>l.key!=='other'||l.daily.visitors).map(l=>`${l.name}：站外${l.daily.visitors??'暂无'}（${l.daily.change}）· AI ${l.daily.ai??'暂无'} · ${l.key==='learning'?'练习':'联系'} ${l.daily.outcomes??'暂无'}${l.daily.firstChannels.length?'（'+l.daily.firstChannels.map(([c,n])=>c+' '+n).join('、')+'）':''}`);
+  const title=`${when} · 客人从哪里来`;
+  const business=lines.filter(l=>l.key!=='other');
+  const total=field=>report.eventsAvailable?business.reduce((sum,l)=>sum+(l.daily[field]||0),0):'暂无';
+  const summary=`昨天：站外 ${total('visitors')}（${business.map(l=>l.name+' '+(l.daily.visitors??'暂无')).join('／')}）· AI ${total('ai')} · 收获 ${total('outcomes')}`;
+  const other=lines.find(l=>l.key==='other'&&l.daily.visitors);
   const notes='按站去重，不含直接/站内；成交/表单/询价暂无；Plus采集暂无。';
-  const paragraphs=[...daily,...(report.alerts||[]).map(a=>'异常：'+a),notes].slice(0,6);
+  const paragraphs=[summary,...(other?[`其他：昨天站外 ${other.daily.visitors} · AI ${other.daily.ai} · 收获 ${other.daily.outcomes}`]:[]),...(report.alerts||[]).map(a=>'异常：'+a)];
   const text=[title,...paragraphs],blocks=[];
   const p=(s)=>`<p style="margin:8px 0">${esc(s)}</p>`;
-  if(report.weekly)for(const l of lines){if(l.key==='other')continue;const w=l.weekly;
+  for(const l of lines){if(l.key==='other')continue;const w=l.weekly;
     const sources=!report.eventsAvailable?'访客数据暂无':w.channels.length?w.channels.map(c=>`${c.name} ${c.visitors}（${c.change}；收获${c.outcomes}）`).join(' · '):'暂无站外来客';
     const pages=w.pages.map((r,i)=>`${i+1}. ${r.name} · ${r.channel} ${r.visitors}人 / 收获${r.outcomes}${r.newAI?' · 新AI':''}`);
     const kw=q=>q.map(v=>`${v.site}「${v.query}」${v.impressions}曝/${v.clicks}点/位${v.position.toFixed(1)}`).join('；')||'暂无';
     const keywordLines=w.gscAvailable?[`改标题：${kw(w.keywords.lowCtr)}`,`再推一把：${kw(w.keywords.near)}`,`新词：${kw(w.keywords.fresh)}`]:['关键字：暂无'];
     const coverage=w.gscMissing.length?w.gscMissing.map(s=>s+'：该站未接 GSC').join('；'):'';
-    const parts=['怎么找到：'+sources,'落脚点：',...(pages.length?pages:['暂无']),...keywordLines,coverage,w.gscThrough?'GSC 截至 '+w.gscThrough:'',w.newCountries.length?'新国家：'+w.newCountries.join('、'):''].filter(Boolean);
+    const parts=['怎么找到（较前7天）：'+sources,'落脚点：',...(pages.length?pages:['暂无']),...keywordLines,coverage,w.gscThrough?'GSC 截至 '+w.gscThrough:'',w.newCountries.length?'新国家：'+w.newCountries.join('、'):''].filter(Boolean);
     text.push(l.name+' · 最近7个完整日',...parts);
-    blocks.push(`<section data-line="${l.key}" style="background:#fff;border:1px solid #dce4df;border-radius:12px;padding:14px;margin:18px 0"><h2 style="font-size:19px;margin:0 0 8px">${esc(l.name)}</h2>${parts.map(p).join('')}</section>`);
+    blocks.push(`<section data-line="${l.key}" style="background:#fff;border:1px solid #dce4df;border-radius:12px;padding:14px;margin:18px 0"><h2 style="font-size:19px;margin:0 0 8px">${esc(l.name)} · 最近7天</h2>${parts.map(p).join('')}</section>`);
   }
-  if(report.weekly){const suggestions=(report.suggestions||[]).map(s=>s.text);text.push('本周建议',...(suggestions.length?suggestions:['暂无足够证据，先保持现有内容。']));blocks.push('<h2 style="font-size:19px">本周建议</h2>'+ (suggestions.length?suggestions:['暂无足够证据，先保持现有内容。']).map(p).join(''));text.push('口径：首触为统计期内首次站外来源；收获只含已采集的免费入口访问/联系点击，不等于咨询送达。机房城市已剔除，其他爬虫识别、语言页对应关系暂无；新指现有记录内首次。');blocks.push(p(text.at(-1)));}
+  {const suggestions=(report.suggestions||[]).map(s=>s.text);text.push('建议',...(suggestions.length?suggestions:['暂无足够证据，先保持现有内容。']));blocks.push('<h2 style="font-size:19px">建议</h2>'+ (suggestions.length?suggestions:['暂无足够证据，先保持现有内容。']).map(p).join(''));text.push(notes+' 口径：首触为统计期内首次站外来源；收获只含已采集的免费入口访问/联系点击，不等于咨询送达。机房城市已剔除，其他爬虫识别、语言页对应关系暂无；新只指昨天在现有记录内首次出现。');blocks.push(p(text.at(-1)));}
   return {text:text.join('\n'),html:`<!doctype html><html lang="zh-Hans" dir="ltr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title></head><body style="margin:0;background:#f3f5f4;color:#18372e;font:14px/1.55 -apple-system,BlinkMacSystemFont,PingFang SC,Arial,sans-serif"><main lang="zh-Hans" dir="ltr" style="max-width:600px;margin:auto;padding:20px 16px;overflow-wrap:anywhere"><h1 style="font-size:22px;margin:0 0 14px">${esc(title)}</h1><div data-daily="true">${paragraphs.map(p).join('')}</div>${blocks.join('')}</main></body></html>`};
 }

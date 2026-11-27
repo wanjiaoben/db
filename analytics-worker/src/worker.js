@@ -12,7 +12,7 @@ const PATH_CHECK_PREVIEW_TEST_EMAIL_CRON = '12 29 7 29 *';
 const GSC_DAILY_SYNC_CRON = '0 0 * * *';
 const CONFIG_SNAPSHOT_CRON = '7 0 * * *';
 const AUDIT_HUMAN_METRICS_CRON = '0 0 1 * *';
-const DAILY_BOSS_BRIEF_CRON = '0 11 * * *';
+const DAILY_BOSS_BRIEF_CRON = '0 10 * * *';
 const GSC_DEFAULT_SYNC_DAYS = 28;
 const GSC_REPORT_WINDOW_DAYS = 7;
 const BING_SYNC_DAYS = 7;
@@ -1635,7 +1635,7 @@ async function buildDailyBossBrief(env, now = new Date()) {
 
 export function buildDailyBriefSubject(report, sample = false) {
   const date = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tokyo', month: '2-digit', day: '2-digit' }).format(new Date(report.generated_at));
-  return `${sample ? '【SAMPLE｜Nice Okinawa Daily】' : '【Nice Okinawa Daily】'}${date}｜学习·旅游·二手车${report.weekly ? '｜周报' : ''}`;
+  return `${sample ? '【SAMPLE｜Nice Okinawa Daily】' : '【Nice Okinawa Daily】'}${date}｜学习·旅游·二手车`;
 }
 
 function dailyBriefJstTime(value) {
