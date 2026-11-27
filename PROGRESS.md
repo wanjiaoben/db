@@ -88,3 +88,6 @@ DAILY-0905-01 db：新增手动触发的 Daily Boss Brief 样例生成器与邮�
 
 - HB-197 2026-11-15: Wan 10:54 3A批准增加tag注记Release-Target: analytics-only，只跳过db-private发布；原无注记双发布及全部原门保留。新增范围输出/未知/重复注记测试；尚未生产发布。
 # HB-065 — Added allowlisted daily aggregate promotion-source click counts and a dashboard source block; no visitor, email, IP, session or order identifiers are stored.
+
+## HB-420 · 2026-11-27 · 每日访客简报
+Wan通过11/26匿名样信后，第二步仅替换Daily Boss Brief正文和标题：按站点列来源、每位匿名访客的页面/停留时长、联系点击，付款/咨询无可靠关联时明确说明。移除健康/营收/Review/SEO等杂项，独立告警与原20:00定时、收件人、幂等不变。128项测试、真实样信60访客/124浏览逐条一致、375px无横滑通过。发布仅nice-analytics；生产结果以任务报告为准。

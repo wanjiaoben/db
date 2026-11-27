@@ -1,3 +1,4 @@
+import { loadVisitorBrief, renderVisitorBrief } from './visitor-brief.js';
 import expiriesConfig from '../expiries.json' with { type: 'json' };
 import auditHumanDataPlan from '../audit-human-data-plan.json' with { type: 'json' };
 
@@ -1545,50 +1546,7 @@ async function dailyBriefSource(label, loader) {
 }
 
 export async function loadDailyBriefVisitors(env, window) {
-  const rows = await all(env.DB, `
-    WITH pageviews AS (
-      SELECT *, COUNT(*) OVER (PARTITION BY visitor_id) AS views
-      FROM visitor_events
-      WHERE created_at >= ? AND created_at < ? AND event_type = 'pageview'
-    ), ranked AS (
-      SELECT *, ROW_NUMBER() OVER (PARTITION BY visitor_id ORDER BY
-        CASE WHEN TRIM(COALESCE(referrer_host, '')) <> ''
-          AND LOWER(TRIM(referrer_host)) NOT IN ('direct', 'nice.okinawa')
-          AND LOWER(RTRIM(TRIM(referrer_host), '.')) <> 'nice.okinawa'
-          AND LOWER(RTRIM(TRIM(referrer_host), '.')) NOT LIKE '%.nice.okinawa' THEN 0
-          WHEN TRIM(COALESCE(utm_source, '')) <> '' THEN 1 ELSE 2 END,
-        created_at, id) AS rn
-      FROM pageviews
-    )
-    SELECT referrer_host, utm_source, COUNT(*) AS visitors, SUM(views) AS views
-    FROM ranked WHERE rn = 1
-    GROUP BY referrer_host, utm_source
-  `, [window.start, window.end.toISOString()]);
-  const bySource = Object.fromEntries(['Google', 'AI', 'Bing', 'SNS', 'Direct', 'Other'].map((key) => [key, { views: 0, visitors: 0, raw_referrers: [] }]));
-  const otherHosts = new Map();
-  for (const row of rows) {
-    const category = classifyDailyBriefSource(row.referrer_host, row.utm_source);
-    bySource[category].views += Number(row.views || 0);
-    bySource[category].visitors += Number(row.visitors || 0);
-    const host = dailyBriefExternalHost(row.referrer_host);
-    if (host) bySource[category].raw_referrers.push(host);
-    if (category === 'Other' && host) {
-      const counts = otherHosts.get(host) || { views: 0, visitors: 0, raw_referrers: [host] };
-      counts.views += Number(row.views || 0);
-      counts.visitors += Number(row.visitors || 0);
-      otherHosts.set(host, counts);
-    }
-  }
-  for (const [host, counts] of [...otherHosts].sort((a, b) => b[1].visitors - a[1].visitors || a[0].localeCompare(b[0])).slice(0, 5)) {
-    bySource[`外链 ${host}`] = counts;
-    bySource.Other.views -= counts.views;
-    bySource.Other.visitors -= counts.visitors;
-  }
-  const totals = await first(env.DB, `
-    SELECT COUNT(*) AS pageviews, COUNT(DISTINCT visitor_id) AS visitors, COUNT(DISTINCT session_id) AS sessions
-    FROM visitor_events WHERE created_at >= ? AND created_at < ? AND event_type = 'pageview'
-  `, [window.start, window.end.toISOString()]);
-  return { totals: { pageviews: Number(totals?.pageviews || 0), visitors: Number(totals?.visitors || 0), sessions: Number(totals?.sessions || 0) }, by_source: bySource };
+  return loadVisitorBrief(env.DB, window);
 }
 
 export function dailyBriefRedItems(alerts, businessHealth = []) {
@@ -1672,38 +1630,13 @@ function dailyBriefHasGscEvidence(row) {
 
 async function buildDailyBossBrief(env, now = new Date()) {
   const window = jstWindow(now.getTime());
-  const [visitors, review, paths, backups, alerts, seo] = await Promise.all([
-    dailyBriefSource('visitor_events / attribution', () => loadDailyBriefVisitors(env, window)),
-    dailyBriefSource('Review task API', () => loadDailyBriefReview(env)),
-    dailyBriefSource('customer-paths', () => getPathCheckStatus(env)),
-    dailyBriefSource('backup', () => getBackupStatus(env)),
-    dailyBriefSource('alert_state', async () => all(env.DB, 'SELECT key, status, detail, updated_at FROM alert_state WHERE status = \'red\'')),
-    dailyBriefSource('Search Console sync', async () => loadDailyBriefSeo(env, await getPathCheckStatus(env)))
-  ]);
-  const visitorValue = visitors.available ? visitors.value : null;
-  const redAlerts = alerts.available ? alerts.value : [];
-  const pathStates = paths.available ? paths.value.states : [];
-  const backupItems = backups.available ? backups.value.items : [];
-  const pathFor = (site) => pathStates.find((row) => row.check_key === `site-${site}-home`);
-  const backupFor = (key) => backupItems.find((row) => row.key === key);
-  const businessHealth = [
-    { name: 'BJT', lamp: dailyBriefLamp([dailyBriefPathSignal(pathFor('bjt')), backupFor('bjt')?.ok ?? null]) },
-    { name: 'KISO', lamp: dailyBriefLamp([dailyBriefPathSignal(pathFor('kiso'))]) },
-    { name: 'Progress', lamp: dailyBriefLamp([dailyBriefPathSignal(pathFor('progress')), backupFor('progress-production')?.ok ?? null]) }
-  ];
-  const redItems = dailyBriefRedItems(redAlerts, businessHealth);
-  const systemRed = redItems.length;
-  const headline = systemRed ? '🔴 有系统红项，先处理阻断项' : (review.value?.pending ? '🟡 有待审核事项，建议今日处理' : '🟢 今日暂无紧急阻断');
-  const reviewCount = review.available ? review.value.pending : null;
-  return { generated_at: now.toISOString(), window: { timezone: 'Asia/Tokyo', start: window.start, end: window.end.toISOString() }, headline, review_count: reviewCount, system_red: systemRed, visitors: visitorValue, review, system: { red_items: redItems, business_health: businessHealth }, seo: seo.available ? seo.value : Object.entries(VISITOR_EVENT_SITES).map(([site, host]) => ({ site, host, seo: dailyBriefLamp([]), geo: dailyBriefLamp([]), signals: { robots: '—', sitemap: '—', canonical: '—', not_found_404: '—', schema: '—', gsc_latest_available_date: '—' } })), sns: dailyBriefUnavailable('SNS queue', 'no_existing_sns_queue_source'), top_actions: redItems.slice(0, 3).map((item) => `${item.label}：${item.detail}`).concat(review.value?.pending ? ['打开审核台处理待审核项'] : []).slice(0, 3), sources: { visitors, review, customer_paths: paths, backup: backups, alert_state: alerts, search_console: seo } };
+  const visitors = await dailyBriefSource('visitor_events', () => loadDailyBriefVisitors(env, window));
+  return { generated_at: now.toISOString(), window: { timezone: 'Asia/Tokyo', start: window.start, end: window.end.toISOString() }, visitors: visitors.available ? visitors.value : null, sources: { visitors } };
 }
 
 export function buildDailyBriefSubject(report, sample = false) {
   const date = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tokyo', month: '2-digit', day: '2-digit' }).format(new Date(report.generated_at));
-  const review = report.review_count === null ? '—' : report.review_count;
-  const red = report.system_red === null || report.system_red === undefined ? '—' : report.system_red;
-  const visitors = report.visitors?.totals?.visitors ?? '—';
-  return `${sample ? '【SAMPLE｜Nice Okinawa Daily】' : '【Nice Okinawa Daily】'}${date}｜待审核${review}｜系统${red}红｜今日访客${visitors}`;
+  return `${sample ? '【SAMPLE｜Nice Okinawa Daily】' : '【Nice Okinawa Daily】'}${date}｜访客${report.visitors?.totals?.visitors ?? '—'}｜浏览${report.visitors?.totals?.pageviews ?? '—'}`;
 }
 
 function dailyBriefJstTime(value) {
@@ -1713,28 +1646,7 @@ function dailyBriefJstTime(value) {
 }
 
 export function renderDailyBossBrief(report) {
-  const redItems = report.system?.red_items || [];
-  const visitorCount = report.visitors?.totals?.visitors || 0;
-  const reviewLines = report.review?.available ? [
-    'Review 摘要（业务分组仅显示数量）',
-    ...Object.entries(report.review.value.groups).map(([key, value]) => `- ${key}：${value}`),
-    `审核台：${report.review.value.entry}`, ''
-  ] : [];
-  const lines = [
-    report.headline, '', `窗口：${dailyBriefJstTime(report.window.start)} → ${dailyBriefJstTime(report.window.end)} JST`,
-    ...(report.review?.available ? [`待我处理：${report.review_count}`] : []),
-    `系统处理中：${report.system?.business_health?.map((item) => `${item.name}${item.lamp.icon}`).join(' / ') || '—'}`,
-    `系统红项：${report.system_red || 0}`,
-    ...redItems.slice(0, 5).map((item) => `- ${item.label || item.key || '系统检查'}：${item.detail || '状态异常，详见面板'}`),
-    ...(redItems.length > 5 ? [`另 ${redItems.length - 5} 条见面板`] : []),
-    '', '今日访客', `访客：${report.visitors?.totals?.visitors ?? '—'}｜会话：${report.visitors?.totals?.sessions ?? '—'}｜PV：${report.visitors?.totals?.pageviews ?? '—'}`,
-    '来源占比（按唯一访客；外部 referrer → UTM → Direct；站内自引用排除）',
-    ...Object.entries(report.visitors?.by_source || {}).map(([key, value]) => `- ${key}：${value.visitors || 0} 人（${visitorCount ? ((value.visitors || 0) * 100 / visitorCount).toFixed(1) : '0.0'}%）`), '',
-    ...reviewLines,
-    '营业健康', ...report.system.business_health.map((item) => `- ${item.lamp.icon} ${item.name}`), '', '全站 SEO/GEO', ...report.seo.map((site) => `- ${site.site}（${site.host}）：SEO ${site.seo.icon}｜GEO ${site.geo.icon}｜GSC latest_available_date ${site.signals.gsc_latest_available_date}${site.evidence_status === 'EI' ? '｜EI' : ''}`), '',
-    'SNS 队列六指标', '- 排队：—｜可发布：—｜已排程：—｜已发布：—｜失败：—｜过期：—（EI / 数据暂不可用）', '', '今日值得做（最多 3 件）', ...(report.top_actions.length ? report.top_actions.map((item) => `- ${item}`) : ['- 暂无']), '', '数据不可用项按 — / EI 展示；单项缺失不阻断日报。', `生成：${dailyBriefJstTime(report.generated_at)} JST`
-  ];
-  return lines.filter((line, index) => !(line === '' && lines[index - 1] === '')).join('\n');
+  return renderVisitorBrief(report).text;
 }
 
 async function searchConsoleSummary(db, filters) {
@@ -5719,7 +5631,7 @@ export function buildAlertEmailPreview(env, status, redItems) {
   return { subject, text, recipient: getAlertRecipient(env) };
 }
 
-async function sendAlertEmail(config, subject, text) {
+async function sendAlertEmail(config, subject, text, html) {
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -5730,7 +5642,8 @@ async function sendAlertEmail(config, subject, text) {
       from: config.from,
       to: [config.to],
       subject,
-      text
+      text,
+      ...(html ? { html } : {})
     })
   });
   const data = await res.json().catch(() => ({}));
@@ -5859,7 +5772,8 @@ async function sendDailyBossBrief(env, now = new Date(), options = {}) {
   const config = getAlertConfig({ ...env, ALERT_RECIPIENTS: DAILY_BRIEF_RECIPIENT });
   const subject = buildDailyBriefSubject(report, sample);
   try {
-    const result = await sendAlertEmail(config, subject, renderDailyBossBrief(report));
+    const body = renderVisitorBrief(report);
+    const result = await sendAlertEmail(config, subject, body.text, body.html);
     if (!sample) await markDailyBriefSent(env, sentKey, subject, now);
     return { sent: true, skipped: false, key: sample ? '' : sentKey, to: config.to, subject, result, report };
   } catch (error) {
