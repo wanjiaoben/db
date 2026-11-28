@@ -46,9 +46,9 @@ test('missing visitor data stays unavailable and email escapes query text',()=>{
  const r=aggregateGrowthBrief({eventsAvailable:false,gscAvailable:false},now,options);const body=renderGrowthBrief(r);assert.match(body.text,/站外 暂无/);assert.doesNotMatch(body.text,/学习：站外0/);assert.match(body.html,/<main lang="zh-Hans" dir="ltr"/);
  r.lines[0].weekly.keywords.fresh=[{site:'bjt',query:'<script>alert(1)</script>',impressions:1,clicks:0,position:10}];r.lines[0].weekly.gscAvailable=true;assert.doesNotMatch(renderGrowthBrief(r).html,/<script>/);
 });
-test('declining page is recommended even after it disappears from current landings',()=>{
+test('tiny declining or disappeared pages do not have enough evidence for advice',()=>{
  const events=[...Array.from({length:5},(_,i)=>event({visitor_id:'old'+i,landing_path:'/lost',created_at:'2026-11-08T01:00:00Z'})),...Array.from({length:2},(_,i)=>event({visitor_id:'prev'+i,landing_path:'/lost',created_at:'2026-11-15T01:00:00Z'}))];
- const r=aggregateGrowthBrief({events},now,options);assert.equal(r.lines[0].weekly.pages.length,0);assert.match(r.suggestions[0].text,/5→2→0/);
+ const r=aggregateGrowthBrief({events},now,options);assert.equal(r.lines[0].weekly.pages.length,0);assert.deepEqual(r.suggestions,[]);
 });
 test('HTML keeps the complete keyword list rather than cutting a paragraph at 240 characters',()=>{
  const r=aggregateGrowthBrief({events:[]},now,options);
@@ -62,4 +62,35 @@ test('daily email always has three rolling blocks and new markers last one day o
  assert.equal(first.lines[0].weekly.pages[0].newAI,true);assert.deepEqual(first.lines[0].weekly.newCountries,['NZ']);assert.equal(first.lines[0].weekly.keywords.fresh.length,1);
  assert.equal(next.lines[0].weekly.pages[0].newAI,false);assert.deepEqual(next.lines[0].weekly.newCountries,[]);assert.equal(next.lines[0].weekly.keywords.fresh.length,0);
  const body=renderGrowthBrief(first);assert.equal((body.html.match(/<section /g)||[]).length,3);assert.match(body.text,/昨天：站外 1/);assert.doesNotMatch(body.text,/周报|本周建议/);
+});
+
+const weeklyVisitors=(counts,extra={})=>counts.flatMap((count,week)=>Array.from({length:count},(_,i)=>event({visitor_id:`w${week}-${i}`,landing_path:'/',created_at:['2026-11-08T01:00:00Z','2026-11-15T01:00:00Z','2026-11-26T01:00:00Z'][week],...extra})));
+test('decline advice requires every week >=30 and both weekly drops >=30%',()=>{
+ for(const [counts,expected] of [[[100,70,49],true],[[100,70,30],true],[[100,70,29],false],[[100,71,49],false],[[100,70,50],false],[[13,9,5],false],[[100,60,0],false]]){
+  const r=aggregateGrowthBrief({events:weeklyVisitors(counts)},now,options);
+  assert.equal(r.suggestions.some(s=>s.text.includes('连续两周')),expected,counts.join('→'));
+ }
+});
+test('missing free-entry/language mapping never yields no-practice advice even at high volume',()=>{
+ for(const path of ['/','/zh-tw/','/en/','/plus/']){
+  const r=aggregateGrowthBrief({events:weeklyVisitors([0,0,100],{landing_path:path})},now,options);
+  assert.deepEqual(r.suggestions,[]);
+ }
+});
+test('observed contact coverage uses 20 visitor floor and does not infer a cause',()=>{
+ for(const site of ['rental','japanusedcars'])for(const count of [19,20]){
+  const r=aggregateGrowthBrief({events:weeklyVisitors([0,0,count],{site_id:site})},now,options);
+  assert.equal(r.suggestions.length,count===20?1:0);
+  if(count===20)assert.match(r.suggestions[0].text,/20位站外客人，未记录联系点击，先查看/);
+  assert.doesNotMatch(renderGrowthBrief(r).text,/内容是否过时|入口文案/);
+ }
+});
+test('one recorded contact prevents zero-outcome advice; unavailable visitors or GSC suppress dependent advice',()=>{
+ const events=weeklyVisitors([0,0,20],{site_id:'rental'});
+ events.push(event({site_id:'rental',visitor_id:'w2-0',event_type:'contact_click',contact_channel:'whatsapp',created_at:'2026-11-26T02:00:00Z'}));
+ assert.deepEqual(aggregateGrowthBrief({events},now,options).suggestions,[]);
+ const input={events:weeklyVisitors([100,70,49]),eventsAvailable:false,gscAvailable:false,gsc:[{site:'bjt',path:'/',query:'new q',period:0,impressions:100}],queryFirst:[{site:'bjt',query:'new q',first_date:'2026-11-26'}]};
+ assert.deepEqual(aggregateGrowthBrief(input,now,options).suggestions,[]);
+ const body=renderGrowthBrief(aggregateGrowthBrief({events:[]},now,options));
+ assert.match(body.text,/建议\n今天没有值得动的/);assert.equal((body.html.match(/今天没有值得动的/g)||[]).length,1);
 });
