@@ -2,6 +2,10 @@
 const DAY = 86400000;
 export const LINES = Object.freeze({ learning: ['学习', ['bjt','exams','kiso','progress']], travel: ['旅游', ['snorkel','rental','fishing','golf','activity','ev']], cars: ['二手车', ['japanusedcars']], other: ['其他', []] });
 const AI = new Set(['ChatGPT','Perplexity','Gemini','Claude','Copilot']);
+// HB-441: evidence floors for advice only; reporting counts remain unchanged.
+export const SUGGESTION_THRESHOLDS = Object.freeze({ weeklyVisitors:30, weeklyDrop:.30, noOutcomeVisitors:20 });
+// Free-entry/language-page coverage is incomplete; a zero is not evidence of no practice.
+const OUTCOME_COVERAGE = Object.freeze({ learning:false, travel:true, cars:true });
 const safeText = v => String(v ?? '').replace(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi,'***').replace(/[\x00-\x1f]/g,' ');
 const clean = v => safeText(v).slice(0,240);
 const esc = v => safeText(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -121,13 +125,15 @@ export function aggregateGrowthBrief(input,now=new Date(),options={}) {
     const advicePages=ranked(w.pages).map(v=>({...v,name:titles.get(v.key)||pageName(v),newAI:inRange(historyAi.get(v.key)||'',windows.day)}));
     for(const p of prev.pages.values())if(!w.pages.has(p.key))advicePages.push({...p,name:titles.get(p.key)||pageName(p),visitors:0,outcomes:0,newAI:false});
     for(const p of advicePages) {
-      if(p.visitors>=3&&p.outcomes===0&&key!=='other')suggestions.push({score:p.visitors*4,text:`${name}：${p.name} 有${p.visitors}位站外客人，未记录${key==='learning'?'免费练习':'联系点击'}，先检查入口文案。`,page:p.key});
+      if(input.eventsAvailable===false || key==='other' || p.site==='plus' || /^\/plus(?:\/|$)/i.test(p.path))continue;
+      if(OUTCOME_COVERAGE[key]&&p.visitors>=SUGGESTION_THRESHOLDS.noOutcomeVisitors&&p.outcomes===0)suggestions.push({score:p.visitors*4,text:`${name}：${p.name} 有${p.visitors}位站外客人，未记录联系点击，先查看该页的联系点击记录。`,page:p.key});
       const n1=prev.pages.get(p.key)?.visitors||0,n2=old.pages.get(p.key)?.visitors||0;
-      if(n2>n1&&n1>p.visitors)suggestions.push({score:(n2-p.visitors)*5,text:`${name}：${p.name} 连续两周掉量（${n2}→${n1}→${p.visitors}），先检查内容是否过时。`,page:p.key});
-      if(p.newAI)suggestions.push({score:10+p.visitors,text:`${name}：${p.name} 首次记录到 AI 来客，补清楚这页的直接答案与来源。`,page:p.key});
+      if([n2,n1,p.visitors].every(n=>n>=SUGGESTION_THRESHOLDS.weeklyVisitors)&&
+         (n2-n1)/n2>=SUGGESTION_THRESHOLDS.weeklyDrop&&(n1-p.visitors)/n1>=SUGGESTION_THRESHOLDS.weeklyDrop)suggestions.push({score:(n2-p.visitors)*5,text:`${name}：${p.name} 连续两周站外客人数下降（${n2}→${n1}→${p.visitors}），先查看各周来源渠道和访问记录。`,page:p.key});
+      if(p.newAI)suggestions.push({score:10+p.visitors,text:`${name}：${p.name} 首次记录到 AI 来客，先查看来源与后续访问记录。`,page:p.key});
     }
-    for(const country of newCountries){const entry=rows.find(e=>e.country===country&&lineOf(e.site_id)===key&&inRange(e.created_at,windows.week)&&acquisitionChannel(e.referrer_host,e.utm_source));if(entry)suggestions.push({score:8,text:`${name}：新国家 ${country} 从 ${siteOf(entry.site_id)}${pathOf(entry.landing_path)} 进入，先确认页面语言和服务范围。`,page:pageKey(entry.site_id,entry.landing_path)});}
-    for(const q of kw.fresh)suggestions.push({score:Math.min(30,q.impressions/5),text:`${name}：新词「${q.query}」有${q.impressions}次曝光，可在 ${q.site}${q.path} 补一段直接回答。`,page:pageKey(q.site,q.path)});
+    if(input.eventsAvailable!==false)for(const country of newCountries){const entry=rows.find(e=>e.country===country&&lineOf(e.site_id)===key&&inRange(e.created_at,windows.week)&&acquisitionChannel(e.referrer_host,e.utm_source));if(entry)suggestions.push({score:8,text:`${name}：新国家 ${country} 从 ${siteOf(entry.site_id)}${pathOf(entry.landing_path)} 进入，先查看该页的来客与后续访问记录。`,page:pageKey(entry.site_id,entry.landing_path)});}
+    if(input.gscAvailable!==false)for(const q of kw.fresh)suggestions.push({score:Math.min(30,q.impressions/5),text:`${name}：新词「${q.query}」有${q.impressions}次曝光，先查看 ${q.site}${q.path} 的对应点击记录。`,page:pageKey(q.site,q.path)});
     lines.push({key,name,daily:{visitors:input.eventsAvailable===false?null:d.visitors,ai:input.eventsAvailable===false?null:d.ai,outcomes:input.eventsAvailable===false?null:d.outcomes,average,change:delta(d.visitors,average),firstChannels:[...d.outcomeChannels].sort((a,b)=>b[1]-a[1])},weekly:{visitors:w.visitors,channels,pages,keywords:kw,newCountries,gscMissing:absent,gscThrough:dates.at(-1)||null,gscAvailable:input.gscAvailable!==false}});
   }
   const seen=new Set();const best=suggestions.sort((a,b)=>b.score-a.score||a.text.localeCompare(b.text)).filter(s=>{if(seen.has(s.page))return false;seen.add(s.page);return true;}).slice(0,3);
@@ -176,6 +182,6 @@ export function renderGrowthBrief(report) {
     text.push(l.name+' · 最近7个完整日',...parts);
     blocks.push(`<section data-line="${l.key}" style="background:#fff;border:1px solid #dce4df;border-radius:12px;padding:14px;margin:18px 0"><h2 style="font-size:19px;margin:0 0 8px">${esc(l.name)} · 最近7天</h2>${parts.map(p).join('')}</section>`);
   }
-  {const suggestions=(report.suggestions||[]).map(s=>s.text);text.push('建议',...(suggestions.length?suggestions:['暂无足够证据，先保持现有内容。']));blocks.push('<h2 style="font-size:19px">建议</h2>'+ (suggestions.length?suggestions:['暂无足够证据，先保持现有内容。']).map(p).join(''));text.push(notes+' 口径：首触为统计期内首次站外来源；收获只含已采集的免费入口访问/联系点击，不等于咨询送达。机房城市已剔除，其他爬虫识别、语言页对应关系暂无；新只指昨天在现有记录内首次出现。');blocks.push(p(text.at(-1)));}
+  {const suggestions=(report.suggestions||[]).map(s=>s.text);text.push('建议',...(suggestions.length?suggestions:['今天没有值得动的']));blocks.push('<h2 style="font-size:19px">建议</h2>'+ (suggestions.length?suggestions:['今天没有值得动的']).map(p).join(''));text.push(notes+' 口径：首触为统计期内首次站外来源；收获只含已采集的免费入口访问/联系点击，不等于咨询送达。机房城市已剔除，其他爬虫识别、语言页对应关系暂无；新只指昨天在现有记录内首次出现。');blocks.push(p(text.at(-1)));}
   return {text:text.join('\n'),html:`<!doctype html><html lang="zh-Hans" dir="ltr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title></head><body style="margin:0;background:#f3f5f4;color:#18372e;font:14px/1.55 -apple-system,BlinkMacSystemFont,PingFang SC,Arial,sans-serif"><main lang="zh-Hans" dir="ltr" style="max-width:600px;margin:auto;padding:20px 16px;overflow-wrap:anywhere"><h1 style="font-size:22px;margin:0 0 14px">${esc(title)}</h1><div data-daily="true">${paragraphs.map(p).join('')}</div>${blocks.join('')}</main></body></html>`};
 }
